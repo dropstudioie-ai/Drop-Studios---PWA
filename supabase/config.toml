@@ -27,3 +27,6 @@ verify_jwt = true
 
 [functions.dev-checkout]
 verify_jwt = true
+
+[functions.send-notifications]
+verify_jwt = false

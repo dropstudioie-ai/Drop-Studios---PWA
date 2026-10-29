@@ -1,11 +1,14 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import type { BookingOptions, ClassSession } from '../api/types';
 import { AppError } from '../lib/supabase';
+import { checkout, paymentsMode } from '../lib/payments';
 import { cancellationOutcome, cutoffLabel, spotsLeft } from '../domain/booking';
+import { formatPrice } from '../domain/money';
 import { messageFor } from '../domain/messages';
 import { fmt } from '../domain/time';
+import { ClockIcon, UserIcon } from './icons';
 import { ErrorNotice, Notice, Sheet, Spinner, useToast } from './ui';
 
 interface Props {
@@ -19,12 +22,15 @@ const DEAD_ISSUES = new Set(['membership_expired', 'no_classes_left', 'membershi
 
 export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Props) {
   const toast = useToast();
+  const navigate = useNavigate();
   const [opts, setOpts] = useState<BookingOptions | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [membershipId, setMembershipId] = useState<string | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  // One key per opened class: retries reuse the same ticket payment.
+  const ticketKey = useMemo(() => crypto.randomUUID(), [session?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!session) return;
@@ -46,6 +52,8 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
 
   if (!session) return null;
   const start = new Date(session.starts_at);
+  const left = spotsLeft(session);
+  const ticketPrice = session.is_special ? (opts?.ticket_price_cents ?? session.ticket_price_cents) : null;
   const eligible = opts?.memberships?.filter((m) => !m.issue) ?? [];
   const blocking = opts?.memberships?.find((m) => m.issue && !DEAD_ISSUES.has(m.issue)) ?? opts?.memberships?.find((m) => m.issue);
   const policy = {
@@ -54,99 +62,157 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
     late_cancel_restores_class: opts?.late_cancel_restores_class ?? false,
   };
   const cancelInfo = cancellationOutcome(start, new Date(), policy);
+  const scheduled = session.status === 'scheduled';
+  const free = Boolean(opts?.authenticated && !opts.my_booking_id && !opts.pending_hold_booking_id);
 
-  async function book() {
+  async function run(action: () => Promise<void>) {
     setBusy(true);
     setError(null);
     try {
-      const res = await api.book(session!.id, membershipId);
-      toast(`Booked! ${res.classes_remaining} ${res.classes_remaining === 1 ? 'class' : 'classes'} left.`);
-      onChanged();
-      onClose();
+      await action();
     } catch (e) {
-      setError(e instanceof AppError ? e.message : messageFor(null));
-      // Refresh options so the explanation and alternatives are current.
+      const code = (e as { code?: string }).code;
+      setError(e instanceof AppError ? e.message : messageFor(code ?? (e as Error).message));
       api.bookingOptions(session!.id).then(setOpts).catch(() => {});
     } finally {
       setBusy(false);
     }
   }
 
-  async function cancel() {
-    if (!opts?.my_booking_id) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await api.cancel(opts.my_booking_id);
-      toast(res.class_restored ? 'Booking cancelled. Your class has been returned.' : 'Booking cancelled. This late cancellation used the class.', res.class_restored ? 'success' : 'info');
-      onChanged();
-      onClose();
-    } catch (e) {
-      setError(e instanceof AppError ? e.message : messageFor(null));
-    } finally {
-      setBusy(false);
-    }
-  }
+  const book = () => run(async () => {
+    const res = await api.book(session.id, membershipId);
+    toast(`Booked! ${res.classes_remaining} ${res.classes_remaining === 1 ? 'class' : 'classes'} left.`);
+    onChanged();
+    onClose();
+  });
+
+  const cancel = () => run(async () => {
+    const res = await api.cancel(opts!.my_booking_id!);
+    toast(res.class_restored ? 'Booking cancelled. Your class has been returned.' : 'Booking cancelled. This late cancellation used the class.', res.class_restored ? 'success' : 'info');
+    onChanged();
+    onClose();
+  });
+
+  const buyTicket = () => run(async () => {
+    const next = await checkout({ session_id: session.id, idempotency_key: ticketKey });
+    if ('redirect' in next) window.location.assign(next.redirect);
+    else navigate(next.navigate);
+  });
+
+  const releaseHold = () => run(async () => {
+    await api.cancel(opts!.pending_hold_booking_id!);
+    toast('Spot released.', 'info');
+    onChanged();
+    onClose();
+  });
 
   return (
     <Sheet open onClose={onClose} title={session.title}>
-      <div className="space-y-1 text-ink-soft">
-        <p className="font-semibold text-ink">{fmt.weekdayLong(start)} · {fmt.time(start)}–{fmt.time(session.ends_at)}</p>
-        <p className="flex flex-wrap items-center gap-2 text-sm">
+      <div className="-mt-2 rounded-2xl bg-canvas p-4">
+        <div className="flex flex-wrap items-center gap-2">
           {session.style && <span className="chip text-white" style={{ background: session.style.color }}>{session.style.name}</span>}
-          {session.instructor && <span>with {session.instructor.full_name}</span>}
-          {session.level && <span>· {session.level}</span>}
-          {session.room && <span>· {session.room}</span>}
+          {session.is_special && <span className="chip bg-accent-500 text-ink">Special event</span>}
+          {session.level && <span className="chip bg-white text-ink-soft">{session.level}</span>}
+        </div>
+        <p className="mt-3 flex items-center gap-2 font-semibold text-ink">
+          <ClockIcon width={18} height={18} className="shrink-0 text-brand-600" />
+          {fmt.weekdayLong(start)} · {fmt.time(start)}–{fmt.time(session.ends_at)}
         </p>
-        {session.status === 'scheduled' && (
-          <p className="text-sm">{spotsLeft(session) > 0 ? `${spotsLeft(session)} of ${session.capacity} spots left` : 'Class full'}</p>
+        {session.instructor && (
+          <p className="mt-1 flex items-center gap-2 text-sm text-ink-soft">
+            <UserIcon width={18} height={18} className="shrink-0 text-muted" />with {session.instructor.full_name}{session.room ? ` · ${session.room}` : ''}
+          </p>
+        )}
+        {scheduled && (
+          <div className="mt-3">
+            <div className="h-1.5 overflow-hidden rounded-full bg-white" aria-hidden="true">
+              <div className={`h-full rounded-full ${left === 0 ? 'bg-muted' : left <= 3 ? 'bg-accent-500' : 'bg-brand-500'}`}
+                style={{ width: `${Math.min(100, (session.booked_count / session.capacity) * 100)}%` }} />
+            </div>
+            <p className="mt-1 text-xs font-semibold text-ink-soft">{left > 0 ? `${left} of ${session.capacity} spots left` : 'Class full'}</p>
+          </div>
         )}
       </div>
 
       <div className="mt-5 space-y-4">
-        {session.status === 'cancelled' && <Notice tone="warn">This class has been cancelled{session.cancel_reason ? `: ${session.cancel_reason}` : '.'}</Notice>}
-        {session.is_special && <Notice tone="info">Special event — not included in memberships. Contact the studio for tickets.</Notice>}
+        {!scheduled && <Notice tone="warn">This class has been cancelled{session.cancel_reason ? `: ${session.cancel_reason}` : '.'}</Notice>}
         {loading && <div className="flex justify-center py-4 text-brand-600"><Spinner className="h-6 w-6" /></div>}
         {error && <ErrorNotice error={error} />}
 
-        {opts && !opts.authenticated && session.status === 'scheduled' && (
+        {opts && !opts.authenticated && scheduled && (
           <div className="space-y-2">
-            <p className="text-sm text-ink-soft">Log in or create an account to book this class.</p>
-            <Link to={`/login?next=${encodeURIComponent('/timetable')}`} className="btn-primary w-full">Log in to book</Link>
+            <p className="text-sm text-ink-soft">
+              {ticketPrice != null ? `Tickets are ${formatPrice(ticketPrice)}. ` : ''}Log in or create an account to {ticketPrice != null ? 'buy a ticket' : 'book this class'}.
+            </p>
+            <Link to={`/login?next=${encodeURIComponent('/timetable')}`} className="btn-primary w-full">Log in</Link>
             <Link to="/register" className="btn-outline w-full">Create an account</Link>
           </div>
         )}
 
+        {/* Already booked */}
         {opts?.authenticated && opts.my_booking_id && (
           <div className="space-y-3">
-            <Notice tone="success"><strong>You’re booked in.</strong> See you on the floor!</Notice>
-            {cancelInfo.allowed && !confirmCancel && (
+            <Notice tone="success"><strong>{opts.my_booking_is_ticket ? 'You have a ticket.' : 'You’re booked in.'}</strong> See you on the floor!</Notice>
+            {opts.my_booking_is_ticket ? (
+              <p className="text-sm text-muted">Can’t make it? Contact the studio about your ticket.</p>
+            ) : (
               <>
-                <p className="text-sm text-muted">
-                  Free cancellation until {fmt.time(new Date(start.getTime() - policy.cancellation_cutoff_minutes * 60_000))} ({cutoffLabel(policy.cancellation_cutoff_minutes)} before class).
-                </p>
-                <button className="btn-danger w-full" onClick={() => setConfirmCancel(true)}>Cancel booking</button>
+                {cancelInfo.allowed && !confirmCancel && (
+                  <>
+                    <p className="text-sm text-muted">
+                      Free cancellation until {fmt.time(new Date(start.getTime() - policy.cancellation_cutoff_minutes * 60_000))} ({cutoffLabel(policy.cancellation_cutoff_minutes)} before class).
+                    </p>
+                    <button className="btn-danger w-full" onClick={() => setConfirmCancel(true)}>Cancel booking</button>
+                  </>
+                )}
+                {confirmCancel && (
+                  <div className="space-y-3">
+                    {cancelInfo.restores
+                      ? <Notice tone="info">You’ll get this class back on your membership.</Notice>
+                      : <Notice tone="warn">It’s less than {cutoffLabel(policy.cancellation_cutoff_minutes)} before class. If you cancel now, you <strong>won’t</strong> get this class back.</Notice>}
+                    <div className="flex gap-2">
+                      <button className="btn-ghost flex-1" onClick={() => setConfirmCancel(false)}>Keep booking</button>
+                      <button className="btn-danger flex-1" disabled={busy} onClick={cancel}>{busy && <Spinner />}Yes, cancel</button>
+                    </div>
+                  </div>
+                )}
               </>
-            )}
-            {confirmCancel && (
-              <div className="space-y-3">
-                {cancelInfo.restores
-                  ? <Notice tone="info">You’ll get this class back on your membership.</Notice>
-                  : <Notice tone="warn">It’s less than {cutoffLabel(policy.cancellation_cutoff_minutes)} before class. If you cancel now, you <strong>won’t</strong> get this class back.</Notice>}
-                <div className="flex gap-2">
-                  <button className="btn-ghost flex-1" onClick={() => setConfirmCancel(false)}>Keep booking</button>
-                  <button className="btn-danger flex-1" disabled={busy} onClick={cancel}>{busy && <Spinner />}Yes, cancel</button>
-                </div>
-              </div>
             )}
           </div>
         )}
 
-        {opts?.authenticated && !opts.my_booking_id && opts.session_issue && session.status === 'scheduled' && (
-          <Notice tone="warn">{messageFor(opts.session_issue)}</Notice>
+        {/* Ticket checkout in progress */}
+        {opts?.authenticated && opts.pending_hold_booking_id && (
+          <div className="space-y-3">
+            <Notice tone="warn">Your spot is held while you finish paying. Unpaid holds are released after about 30 minutes.</Notice>
+            <button className="btn-accent w-full text-lg" disabled={busy} onClick={buyTicket}>{busy && <Spinner />}Continue to payment</button>
+            <button className="btn-ghost w-full" disabled={busy} onClick={releaseHold}>Release my spot</button>
+          </div>
         )}
 
-        {opts?.authenticated && !opts.my_booking_id && !opts.session_issue && eligible.length > 0 && (
+        {/* Special event: buy a ticket */}
+        {opts && free && scheduled && session.is_special && (
+          ticketPrice != null && !opts.session_issue ? (
+            <div className="space-y-3">
+              {paymentsMode === 'test' && <Notice tone="test"><strong>TEST MODE</strong> — no real payment will be taken.</Notice>}
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-ink-soft">Ticket · one-off payment</span>
+                <span className="font-display text-2xl font-black">{formatPrice(ticketPrice, 'EUR', { forceDecimals: true })}</span>
+              </div>
+              <button className="btn-accent w-full text-lg" disabled={busy} onClick={buyTicket}>
+                {busy && <Spinner />}{paymentsMode === 'test' ? 'Get TEST ticket' : 'Buy ticket'}
+              </button>
+              <p className="text-center text-xs text-muted">Not included in memberships. Tickets are non-refundable unless the studio cancels the event.</p>
+            </div>
+          ) : (
+            <Notice tone="warn">{opts.session_issue === 'session_full' ? messageFor('session_full') : messageFor('tickets_not_available')}</Notice>
+          )
+        )}
+
+        {/* Regular class */}
+        {opts && free && !session.is_special && opts.session_issue && scheduled && <Notice tone="warn">{messageFor(opts.session_issue)}</Notice>}
+
+        {opts && free && !session.is_special && !opts.session_issue && eligible.length > 0 && (
           <div className="space-y-3">
             {eligible.length > 1 ? (
               <label className="block">
@@ -163,14 +229,14 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
           </div>
         )}
 
-        {opts?.authenticated && !opts.my_booking_id && !opts.session_issue && eligible.length === 0 && (
+        {opts && free && !session.is_special && !opts.session_issue && eligible.length === 0 && (
           <div className="space-y-3">
             <Notice tone="warn">{blocking ? messageFor(blocking.issue) : 'You need a membership to book classes.'}</Notice>
             <Link to="/memberships" className="btn-accent w-full">Explore memberships</Link>
           </div>
         )}
 
-        {opts?.authenticated && !opts.my_booking_id && (opts.alternatives?.length ?? 0) > 0 && (
+        {opts && free && (opts.alternatives?.length ?? 0) > 0 && (
           <div>
             <p className="mb-2 text-sm font-semibold">Classes you can book instead</p>
             <ul className="space-y-2">

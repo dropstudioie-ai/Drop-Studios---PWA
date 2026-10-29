@@ -15,7 +15,7 @@ export function Layout() {
       <UpdatePrompt />
       <OfflineBanner />
       <header className="sticky top-0 z-30 border-b border-line bg-white/90 pt-[env(safe-area-inset-top)] backdrop-blur">
-        <div className="container-page flex h-16 items-center justify-between">
+        <div className="container-page flex h-14 items-center justify-between md:h-16">
           <Link to="/" aria-label="Drop Studios home"><Logo /></Link>
           <nav className="hidden items-center gap-1 md:flex" aria-label="Main">
             <NavLink to="/timetable" className={navCls}>Timetable</NavLink>
@@ -30,7 +30,7 @@ export function Layout() {
               </>
             )}
           </nav>
-          {!session && <Link to="/login" className="btn-sm btn-outline md:hidden">Log in</Link>}
+          {!session && <Link to="/register" className="btn-sm btn-accent md:hidden">Join</Link>}
           {session && isAdmin && <Link to="/admin" className="btn-sm btn-ghost md:hidden" aria-label="Admin"><ShieldIcon /></Link>}
         </div>
       </header>

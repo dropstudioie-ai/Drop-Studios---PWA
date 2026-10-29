@@ -36,17 +36,21 @@ export function adminClient(): SupabaseClient {
   });
 }
 
-export interface CheckoutBody {
-  plan_id: string;
-  selected_style_id: string | null;
-  idempotency_key: string;
-}
+/** Either a membership plan or a workshop ticket. */
+export type CheckoutBody =
+  | { kind: 'membership'; plan_id: string; selected_style_id: string | null; idempotency_key: string }
+  | { kind: 'ticket'; session_id: string; idempotency_key: string };
 
 export async function readCheckoutBody(req: Request): Promise<CheckoutBody | null> {
   try {
     const b = await req.json();
-    if (typeof b?.plan_id !== 'string' || typeof b?.idempotency_key !== 'string') return null;
+    if (typeof b?.idempotency_key !== 'string') return null;
+    if (typeof b.session_id === 'string') {
+      return { kind: 'ticket', session_id: b.session_id, idempotency_key: b.idempotency_key };
+    }
+    if (typeof b.plan_id !== 'string') return null;
     return {
+      kind: 'membership',
       plan_id: b.plan_id,
       selected_style_id: typeof b.selected_style_id === 'string' ? b.selected_style_id : null,
       idempotency_key: b.idempotency_key,
@@ -54,6 +58,22 @@ export async function readCheckoutBody(req: Request): Promise<CheckoutBody | nul
   } catch {
     return null;
   }
+}
+
+/** Creates the pending payment server-side (price from the database). */
+export function startCheckout(supa: SupabaseClient, body: CheckoutBody, provider: 'stripe' | 'dev_test') {
+  return body.kind === 'ticket'
+    ? supa.rpc('create_ticket_checkout', {
+      p_session_id: body.session_id,
+      p_idempotency_key: body.idempotency_key,
+      p_provider: provider,
+    })
+    : supa.rpc('create_checkout', {
+      p_plan_id: body.plan_id,
+      p_selected_style_id: body.selected_style_id,
+      p_idempotency_key: body.idempotency_key,
+      p_provider: provider,
+    });
 }
 
 /** Database functions raise short codes like "intro_not_eligible". */

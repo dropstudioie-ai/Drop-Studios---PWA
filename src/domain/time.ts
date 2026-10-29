@@ -67,6 +67,8 @@ export const fmt = {
     new Intl.DateTimeFormat(LOCALE, { timeZone: tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(d)),
   date: (d: Date | string, tz = STUDIO_TZ) =>
     new Intl.DateTimeFormat(LOCALE, { timeZone: tz, day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(d)),
+  weekdayShort: (d: Date | string, tz = STUDIO_TZ) =>
+    new Intl.DateTimeFormat(LOCALE, { timeZone: tz, weekday: 'short' }).format(new Date(d)),
   dayMonth: (d: Date | string, tz = STUDIO_TZ) =>
     new Intl.DateTimeFormat(LOCALE, { timeZone: tz, weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(d)),
   weekdayLong: (d: Date | string, tz = STUDIO_TZ) =>

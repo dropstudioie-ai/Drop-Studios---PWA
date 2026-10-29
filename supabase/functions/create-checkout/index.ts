@@ -1,7 +1,7 @@
-// Starts a real Stripe Checkout for a membership plan.
+// Starts a real Stripe Checkout for a membership plan or a workshop ticket.
 // The price comes from the database (create_checkout RPC), never from the client.
 import Stripe from 'npm:stripe@17.7.0';
-import { adminClient, corsHeaders, dbErrorCode, json, readCheckoutBody, userClient } from '../_shared/http.ts';
+import { adminClient, corsHeaders, dbErrorCode, json, readCheckoutBody, startCheckout, userClient } from '../_shared/http.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(req) });
@@ -18,12 +18,7 @@ Deno.serve(async (req) => {
   const { data: auth } = await supa.auth.getUser();
   if (!auth.user) return json(req, { error: 'not_authenticated' }, 401);
 
-  const { data: payment, error } = await supa.rpc('create_checkout', {
-    p_plan_id: body.plan_id,
-    p_selected_style_id: body.selected_style_id,
-    p_idempotency_key: body.idempotency_key,
-    p_provider: 'stripe',
-  });
+  const { data: payment, error } = await startCheckout(supa, body, 'stripe');
   if (error) return json(req, { error: dbErrorCode(error) }, 400);
   if (payment.status === 'succeeded') return json(req, { payment_id: payment.payment_id, status: 'succeeded' });
   if (payment.status !== 'pending') return json(req, { error: 'payment_not_pending' }, 409);
@@ -49,7 +44,9 @@ Deno.serve(async (req) => {
           unit_amount: payment.amount_cents,
           product_data: {
             name: `Drop Studios — ${payment.plan_name}`,
-            description: `${payment.class_count} classes. Prepaid pack, no subscription.`,
+            description: body.kind === 'ticket'
+              ? 'Workshop ticket. Your spot is held for 30 minutes while you pay.'
+              : `${payment.class_count} classes. Prepaid pack, no subscription.`,
           },
         },
       }],
@@ -58,7 +55,7 @@ Deno.serve(async (req) => {
       metadata: { payment_id: payment.payment_id, user_id: auth.user.id },
       payment_intent_data: { metadata: { payment_id: payment.payment_id, user_id: auth.user.id } },
       success_url: `${siteUrl}/checkout/success?payment_id=${payment.payment_id}`,
-      cancel_url: `${siteUrl}/checkout/cancelled`,
+      cancel_url: `${siteUrl}/checkout/cancelled?payment_id=${payment.payment_id}`,
       expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
       locale: 'en',
     },

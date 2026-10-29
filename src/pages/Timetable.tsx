@@ -71,17 +71,18 @@ export default function Timetable() {
 
   return (
     <div className="container-page py-6 sm:py-10">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-3xl font-black sm:text-4xl">Weekly Timetable</h1>
-          <p className="mt-1 text-ink-soft">Book up to {Math.round(windowDays / 7)} weeks ahead.</p>
+          <p className="mt-1 text-sm text-ink-soft sm:text-base">Book up to {Math.round(windowDays / 7)} weeks ahead · Dublin time</p>
         </div>
-        <div className="flex items-center gap-1 rounded-xl border border-line bg-white p-1">
-          <button className="btn-sm btn-ghost" onClick={() => setWeek(offset - 1)} disabled={offset <= 0} aria-label="Previous week"><ChevronLeft /></button>
-          <span className="min-w-40 text-center text-sm font-semibold">
-            {offset === 0 ? 'This week' : offset === 1 ? 'Next week' : `${formatKey(days[0], { day: 'numeric', month: 'short' })} – ${formatKey(days[6], { day: 'numeric', month: 'short' })}`}
+        <div className="flex w-full items-center justify-between gap-1 rounded-2xl border border-line bg-white p-1 sm:w-auto">
+          <button className="btn-sm btn-ghost px-2" onClick={() => setWeek(offset - 1)} disabled={offset <= 0} aria-label="Previous week"><ChevronLeft /></button>
+          <span className="min-w-44 text-center leading-tight">
+            <span className="block text-sm font-bold">{offset === 0 ? 'This week' : offset === 1 ? 'Next week' : `In ${offset} weeks`}</span>
+            <span className="block text-xs text-muted">{formatKey(days[0], { day: 'numeric', month: 'short' })} – {formatKey(days[6], { day: 'numeric', month: 'short' })}</span>
           </span>
-          <button className="btn-sm btn-ghost" onClick={() => setWeek(offset + 1)} disabled={offset >= maxOffset} aria-label="Next week"><ChevronRight /></button>
+          <button className="btn-sm btn-ghost px-2" onClick={() => setWeek(offset + 1)} disabled={offset >= maxOffset} aria-label="Next week"><ChevronRight /></button>
         </div>
       </div>
 
@@ -105,10 +106,10 @@ export default function Timetable() {
           const count = byDay.get(d)?.length ?? 0;
           return (
             <button key={d} role="tab" aria-selected={active} onClick={() => setSelectedDay(d)}
-              className={`flex min-w-[3.25rem] flex-1 flex-col items-center rounded-xl py-2 ${active ? 'bg-brand-600 text-white' : 'bg-white text-ink'} ${d < todayKey ? 'opacity-50' : ''}`}>
+              className={`flex min-w-[3.6rem] flex-1 flex-col items-center rounded-xl border py-2 transition ${active ? 'border-brand-600 bg-brand-600 text-white shadow-md shadow-brand-600/25' : 'border-line bg-white text-ink'} ${d < todayKey ? 'opacity-50' : ''} ${d === todayKey && !active ? 'border-brand-400' : ''}`}>
               <span className="text-[11px] font-semibold uppercase">{formatKey(d, { weekday: 'short' })}</span>
               <span className="font-display text-lg font-extrabold">{formatKey(d, { day: 'numeric' })}</span>
-              <span className={`h-1.5 w-1.5 rounded-full ${count ? (active ? 'bg-accent-400' : 'bg-brand-500') : 'bg-transparent'}`} />
+              <span className={`text-[10px] font-semibold ${active ? 'text-white/80' : 'text-muted'}`}>{count ? `${count} ${count === 1 ? 'class' : 'classes'}` : '—'}</span>
             </button>
           );
         })}

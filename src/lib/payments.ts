@@ -3,11 +3,10 @@ import { supabase } from './supabase';
 export type PaymentsMode = 'stripe' | 'test';
 export const paymentsMode: PaymentsMode = import.meta.env.VITE_PAYMENTS_MODE === 'test' ? 'test' : 'stripe';
 
-export interface CheckoutRequest {
-  plan_id: string;
-  selected_style_id: string | null;
-  idempotency_key: string;
-}
+/** A membership plan, or a ticket for a special event (session_id). */
+export type CheckoutRequest =
+  | { plan_id: string; selected_style_id: string | null; idempotency_key: string }
+  | { session_id: string; idempotency_key: string };
 
 async function invoke<T>(fn: string, body: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.functions.invoke(fn, { body });
@@ -29,4 +28,14 @@ export const startStripeCheckout = (req: CheckoutRequest) =>
 
 /** Development only. The server refuses unless ALLOW_TEST_PAYMENTS=true. */
 export const completeTestCheckout = (req: CheckoutRequest) =>
-  invoke<{ payment_id: string; membership_id: string; is_test: true }>('dev-checkout', { ...req });
+  invoke<{ payment_id: string; membership_id: string | null; booking_id: string | null; is_test: true }>('dev-checkout', { ...req });
+
+/** Starts payment for either kind of checkout and returns where to go next. */
+export async function checkout(req: CheckoutRequest): Promise<{ redirect: string } | { navigate: string }> {
+  if (paymentsMode === 'test') {
+    const res = await completeTestCheckout(req);
+    return { navigate: `/checkout/success?payment_id=${res.payment_id}` };
+  }
+  const res = await startStripeCheckout(req);
+  return res.url ? { redirect: res.url } : { navigate: `/checkout/success?payment_id=${res.payment_id}` };
+}

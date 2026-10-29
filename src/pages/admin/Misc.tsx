@@ -114,7 +114,7 @@ export function AdminSettings() {
         <Field label="Expiry reminder (days before)"><input className="input" type="number" min={0} value={f.expiry_reminder_days} onChange={(e) => set('expiry_reminder_days', Number(e.target.value))} /></Field>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-5 w-5" checked={f.late_cancel_restores_class} onChange={(e) => set('late_cancel_restores_class', e.target.checked)} />Late cancellations get the class back</label>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-5 w-5" checked={f.no_show_restores_class} onChange={(e) => set('no_show_restores_class', e.target.checked)} />No-shows get the class back</label>
-        <label className="flex items-center gap-2 text-sm sm:col-span-2"><input type="checkbox" className="h-5 w-5" checked={f.expiry_reminders_enabled} onChange={(e) => set('expiry_reminders_enabled', e.target.checked)} />Queue expiry reminder notifications (needs a sender — see deployment docs)</label>
+        <label className="flex items-center gap-2 text-sm sm:col-span-2"><input type="checkbox" className="h-5 w-5" checked={f.expiry_reminders_enabled} onChange={(e) => set('expiry_reminders_enabled', e.target.checked)} />Send expiry reminders (needs email or push set up — see deployment docs)</label>
         {error && <div className="sm:col-span-2"><ErrorNotice error={error} /></div>}
         <div className="sm:col-span-2"><button className="btn-primary" disabled={busy}>{busy && <Spinner />}Save settings</button></div>
       </form>

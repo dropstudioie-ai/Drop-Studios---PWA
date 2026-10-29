@@ -14,7 +14,9 @@ RLS, Edge Functions) · Stripe Checkout · Workbox service worker.
 - **Memberships**: 3-Class Intro €35 · 4-Class Single Style €49 · 5-Class Multi-Style €55 · 8-Class Multi-Style €79 · 12-Class Multi-Style €99. All configurable data.
 - **My Membership**: classes remaining, eligible styles, activation and expiry dates, pause up to 3 months a year, upcoming bookings and history.
 - **Admin**: timetable, instructors, styles, plans (price, classes, validity, access, exclusions), customers (grant/revoke classes, pause, in-studio sales, roles), bookings and attendance, audit log, settings, analytics.
-- **PWA**: installable (Android prompt and iOS hint), offline shell and fallback page, cached timetable, update prompt, push-notification groundwork.
+- **Workshops**: special events sold by ticket via Stripe, with a held spot during checkout so they can't be oversold.
+- **Notifications**: expiry reminders and studio-cancelled-class messages by email (Resend) and/or web push.
+- **PWA**: installable (Android prompt and iOS hint), offline shell and fallback page, cached timetable, update prompt, push notifications.
 
 ## Quick start
 

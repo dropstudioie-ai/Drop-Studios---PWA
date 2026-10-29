@@ -47,6 +47,7 @@ export interface ClassTemplate {
   level: string | null;
   room: string | null;
   is_special: boolean;
+  ticket_price_cents: number | null;
   is_active: boolean;
   valid_from: string;
   valid_until: string | null;
@@ -65,19 +66,21 @@ export interface ClassSession {
   level: string | null;
   room: string | null;
   is_special: boolean;
+  ticket_price_cents: number | null;
   status: 'scheduled' | 'cancelled';
   cancel_reason: string | null;
   style?: Pick<DanceStyle, 'id' | 'name' | 'color' | 'slug'> | null;
   instructor?: Pick<Instructor, 'id' | 'full_name'> | null;
 }
 
-export type BookingStatus = 'booked' | 'cancelled' | 'late_cancelled' | 'attended' | 'no_show';
+export type BookingStatus = 'booked' | 'cancelled' | 'late_cancelled' | 'attended' | 'no_show' | 'pending_payment';
 
 export interface Booking {
   id: string;
   user_id: string;
   session_id: string;
   membership_id: string | null;
+  payment_id: string | null;
   status: BookingStatus;
   class_restored: boolean;
   booked_at: string;
@@ -143,6 +146,9 @@ export interface BookingOptions {
   authenticated: boolean;
   session_issue: string | null;
   my_booking_id?: string | null;
+  my_booking_is_ticket?: boolean | null;
+  pending_hold_booking_id?: string | null;
+  ticket_price_cents?: number | null;
   eligible_membership_id?: string | null;
   memberships?: { membership_id: string; plan_name: string; state: MembershipState; classes_remaining: number; issue: string | null }[];
   alternatives?: { id: string; title: string; starts_at: string; spots_left: number }[];

@@ -1,5 +1,6 @@
 import type { ClassSession } from '../api/types';
 import { spotsLeft } from '../domain/booking';
+import { formatPrice } from '../domain/money';
 import { fmt } from '../domain/time';
 import { CheckIcon } from './icons';
 
@@ -12,26 +13,29 @@ export function ClassCard({ session, booked, onOpen, compact = false }: {
   const past = new Date(session.starts_at) <= new Date();
   const cancelled = session.status === 'cancelled';
   const left = spotsLeft(session);
+  const full = !cancelled && !past && left === 0;
   const color = session.style?.color ?? '#2f5bff';
 
   let status: { text: string; cls: string } | null = null;
   if (cancelled) status = { text: 'Cancelled', cls: 'bg-red-50 text-danger' };
-  else if (booked) status = { text: 'Booked', cls: 'bg-green-50 text-success' };
+  else if (booked) status = { text: 'Booked', cls: 'bg-success text-white' };
   else if (past) status = null;
-  else if (session.is_special) status = { text: 'Special event', cls: 'bg-accent-50 text-accent-600' };
-  else if (left === 0) status = { text: 'Full', cls: 'bg-canvas text-muted' };
-  else if (left <= 3) status = { text: `${left} left`, cls: 'bg-accent-50 text-ink' };
+  else if (full) status = { text: 'Full', cls: 'bg-ink/10 text-ink-soft' };
+  else if (session.is_special) status = { text: session.ticket_price_cents != null ? formatPrice(session.ticket_price_cents) : 'Event', cls: 'bg-accent-500 text-ink' };
+  else if (left <= 3) status = { text: `${left} left`, cls: 'bg-accent-100 text-ink' };
+
+  const surface = booked ? 'border-success/60 bg-green-50/60' : full ? 'border-line bg-canvas' : 'border-line bg-white';
 
   return (
     <button
       onClick={onOpen}
-      className={`group relative w-full overflow-hidden rounded-xl border bg-white text-left transition hover:-translate-y-0.5 hover:shadow-md ${
-        booked ? 'border-success' : 'border-line'} ${past || cancelled ? 'opacity-55' : ''} ${compact ? 'p-3 pl-4' : 'p-4 pl-5'}`}
-      aria-label={`${session.title}, ${fmt.dayMonth(session.starts_at)} at ${fmt.time(session.starts_at)}${booked ? ', booked' : ''}`}
+      className={`group relative w-full overflow-hidden rounded-xl border text-left transition hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 ${surface} ${
+        past || cancelled ? 'opacity-55' : ''} ${compact ? 'p-3 pl-4' : 'p-4 pl-5'}`}
+      aria-label={`${session.title}, ${fmt.dayMonth(session.starts_at)} at ${fmt.time(session.starts_at)}${booked ? ', booked' : full ? ', full' : ''}`}
     >
       <span className="absolute inset-y-0 left-0 w-1.5" style={{ background: color }} aria-hidden="true" />
       <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
-        <p className={`whitespace-nowrap font-display font-extrabold ${compact ? 'text-sm' : 'text-base'} ${cancelled ? 'line-through' : ''}`}>
+        <p className={`whitespace-nowrap font-display font-extrabold ${compact ? 'text-sm' : 'text-lg'} ${cancelled ? 'line-through' : ''}`}>
           {fmt.time(session.starts_at)}<span className="font-semibold text-muted">–{fmt.time(session.ends_at)}</span>
         </p>
         {status && (
@@ -40,10 +44,14 @@ export function ClassCard({ session, booked, onOpen, compact = false }: {
           </span>
         )}
       </div>
-      <p className={`mt-1 font-bold leading-tight ${compact ? 'text-sm' : ''}`}>{session.title}</p>
+      <p className={`mt-1 font-bold leading-tight ${compact ? 'text-sm' : 'text-base'}`}>{session.title}</p>
       <p className="mt-0.5 text-xs text-muted">
-        {session.style?.name}{session.instructor ? ` · ${session.instructor.full_name}` : ''}{session.level ? ` · ${session.level}` : ''}
+        <span className="font-semibold" style={{ color }}>{session.style?.name}</span>
+        {session.instructor ? ` · ${session.instructor.full_name}` : ''}{session.level && !compact ? ` · ${session.level}` : ''}
       </p>
+      {!compact && !past && !cancelled && !booked && !full && left > 3 && (
+        <p className="mt-2 text-xs text-muted">{left} spots left</p>
+      )}
     </button>
   );
 }

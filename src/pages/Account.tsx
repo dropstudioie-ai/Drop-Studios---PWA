@@ -13,7 +13,7 @@ import { PauseSheet } from '../components/PauseSheet';
 import { EmptyState, ErrorNotice, Field, Notice, PageSpinner, Sheet, Spinner, useToast } from '../components/ui';
 
 const BOOKING_LABEL: Record<string, string> = {
-  booked: 'Booked', attended: 'Attended', no_show: 'No-show', cancelled: 'Cancelled', late_cancelled: 'Late cancellation',
+  booked: 'Booked', pending_payment: 'Payment not completed', attended: 'Attended', no_show: 'No-show', cancelled: 'Cancelled', late_cancelled: 'Late cancellation',
 };
 
 export default function Account() {
@@ -92,10 +92,12 @@ export default function Account() {
           {upcoming.map((b) => (
             <div key={b.id} className="card flex items-center justify-between gap-3 p-4">
               <div>
-                <p className="font-bold">{b.session!.title}</p>
+                <p className="font-bold">{b.session!.title}{b.payment_id && <span className="chip ml-2 bg-accent-500 align-middle text-ink">Ticket</span>}</p>
                 <p className="text-sm text-muted">{fmt.dateTime(b.session!.starts_at)}{b.session!.instructor ? ` · ${b.session!.instructor.full_name}` : ''}</p>
               </div>
-              <button className="btn-sm btn-ghost text-danger" onClick={() => setCancelling(b)}>Cancel</button>
+              {b.payment_id
+                ? <span className="max-w-28 text-right text-xs text-muted">Contact the studio to change</span>
+                : <button className="btn-sm btn-ghost text-danger" onClick={() => setCancelling(b)}>Cancel</button>}
             </div>
           ))}
         </div>

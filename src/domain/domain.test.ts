@@ -3,7 +3,7 @@ import { formatPrice, parseEurosToCents } from './money';
 import { classesLabel, durationLabel, planBadges, pricePerClass, sortPlans, styleAccessLabel, validityLabel } from './plans';
 import { computeExpiry, isExpiringSoon, lastValidDay, membershipState, progressLabel, totalPauseDays, validatePause } from './membership';
 import { cancellationOutcome, cutoffLabel, isWithinBookingWindow, spotsLeft } from './booking';
-import { addDaysToKey, daysInclusive, isoWeekday, localDateKey, weekStartKey, zonedTime } from './time';
+import { addDaysToKey, daysInclusive, fmt, isoWeekday, localDateKey, weekStartKey, zonedTime } from './time';
 import { messageFor } from './messages';
 
 const PLANS = [
@@ -73,6 +73,7 @@ describe('studio time', () => {
     expect(weekStartKey('2026-11-01')).toBe('2026-10-26');
     expect(addDaysToKey('2026-12-30', 3)).toBe('2027-01-02');
     expect(daysInclusive('2026-11-01', '2026-11-14')).toBe(14);
+    expect(fmt.weekdayShort('2026-10-29T18:00:00Z')).toBe('Thu');
   });
 });
 

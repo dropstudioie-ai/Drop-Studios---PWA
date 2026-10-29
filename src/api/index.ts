@@ -99,8 +99,8 @@ export const api = {
     unwrap(await supabase.from('profiles').update(patch).eq('id', userId).select().single()) as Profile,
 
   paymentStatus: async (paymentId: string) =>
-    unwrap(await supabase.from('payments').select('id, status, is_test, amount_cents, currency, failure_reason').eq('id', paymentId).maybeSingle()) as {
-      id: string; status: string; is_test: boolean; amount_cents: number; currency: string; failure_reason: string | null;
+    unwrap(await supabase.from('payments').select('id, kind, status, is_test, amount_cents, currency, failure_reason').eq('id', paymentId).maybeSingle()) as {
+      id: string; kind: 'membership' | 'ticket'; status: string; is_test: boolean; amount_cents: number; currency: string; failure_reason: string | null;
     } | null,
 };
 

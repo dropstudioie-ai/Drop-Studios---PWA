@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { useAsync } from '../lib/useAsync';
-import { completeTestCheckout, paymentsMode, startStripeCheckout } from '../lib/payments';
+import { checkout, paymentsMode } from '../lib/payments';
 import { messageFor } from '../domain/messages';
 import { formatPrice } from '../domain/money';
 import { classesLabel, styleAccessLabel, validityLabel } from '../domain/plans';
@@ -54,14 +54,9 @@ export default function Checkout() {
     setError(null);
     const req = { plan_id: plan!.id, selected_style_id: needsStyle ? styleId : null, idempotency_key: idempotencyKey };
     try {
-      if (paymentsMode === 'test') {
-        const res = await completeTestCheckout(req);
-        navigate(`/checkout/success?payment_id=${res.payment_id}`);
-      } else {
-        const res = await startStripeCheckout(req);
-        if (res.url) window.location.assign(res.url);
-        else navigate(`/checkout/success?payment_id=${res.payment_id}`);
-      }
+      const next = await checkout(req);
+      if ('redirect' in next) window.location.assign(next.redirect);
+      else navigate(next.navigate);
     } catch (e) {
       const code = (e as { code?: string }).code ?? (e as Error).message;
       setError(messageFor(code, 'We couldn’t start the payment. Please try again.'));

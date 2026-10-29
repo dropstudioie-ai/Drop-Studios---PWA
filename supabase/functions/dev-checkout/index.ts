@@ -2,7 +2,7 @@
 // Refuses to run unless ALLOW_TEST_PAYMENTS=true, and never alongside a live
 // Stripe key. Everything it creates is flagged is_test / provider 'dev_test',
 // labelled TEST in the app and excluded from revenue reporting.
-import { adminClient, corsHeaders, dbErrorCode, json, readCheckoutBody, userClient } from '../_shared/http.ts';
+import { adminClient, corsHeaders, dbErrorCode, json, readCheckoutBody, startCheckout, userClient } from '../_shared/http.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(req) });
@@ -19,12 +19,7 @@ Deno.serve(async (req) => {
   const { data: auth } = await supa.auth.getUser();
   if (!auth.user) return json(req, { error: 'not_authenticated' }, 401);
 
-  const { data: payment, error } = await supa.rpc('create_checkout', {
-    p_plan_id: body.plan_id,
-    p_selected_style_id: body.selected_style_id,
-    p_idempotency_key: body.idempotency_key,
-    p_provider: 'dev_test',
-  });
+  const { data: payment, error } = await startCheckout(supa, body, 'dev_test');
   if (error) return json(req, { error: dbErrorCode(error) }, 400);
 
   const { data: result, error: fulfilError } = await adminClient().rpc('fulfill_payment', {
@@ -37,5 +32,5 @@ Deno.serve(async (req) => {
   });
   if (fulfilError || !result?.ok) return json(req, { error: dbErrorCode(fulfilError) }, 400);
 
-  return json(req, { payment_id: payment.payment_id, membership_id: result.membership_id, is_test: true });
+  return json(req, { payment_id: payment.payment_id, membership_id: result.membership_id ?? null, booking_id: result.booking_id ?? null, is_test: true });
 });

@@ -473,6 +473,180 @@ run('database: plans, booking, allowances, pauses, security', () => {
     });
   });
 
+  // ---------------------------------------------------------------- tickets
+  describe('workshop tickets', () => {
+    async function workshop(capacity = 10, price: number | null = 2500, startsInMinutes = 3 * 24 * 60) {
+      const id = await makeSession({ style: 'heels', startsInMinutes, capacity, isSpecial: true });
+      await db.query(`update class_sessions set ticket_price_cents = $2 where id = $1`, [id, price]);
+      return id;
+    }
+    const startTicket = async (uid: string, sessionId: string, key = randomUUID()) =>
+      (await as<{ r: { payment_id: string; amount_cents: number; currency: string } }>(
+        db, user(uid), `select create_ticket_checkout($1, $2, 'stripe') as r`, [sessionId, key],
+      ))[0].r;
+    const pay = async (paymentId: string, amount: number) =>
+      (await as<{ r: { ok: boolean; booking_id: string | null; refund_required?: boolean; duplicate: boolean } }>(
+        db, service, `select fulfill_payment($1, 'stripe', 'pi_t', $2, $3, 'EUR') as r`, [paymentId, `evt_${randomUUID()}`, amount],
+      ))[0].r;
+
+    it('sells a ticket at the database price and books the spot after payment', async () => {
+      const c = await createUser(db, 'TicketBuyer');
+      const s = await workshop();
+      const t = await startTicket(c, s);
+      expect(t.amount_cents).toBe(2500);
+      let [b] = (await db.query(`select status from bookings where user_id = $1 and session_id = $2`, [c, s])).rows;
+      expect(b.status).toBe('pending_payment');
+      const r = await pay(t.payment_id, 2500);
+      expect(r).toMatchObject({ ok: true, refund_required: false });
+      [b] = (await db.query(`select status, membership_id from bookings where user_id = $1 and session_id = $2`, [c, s])).rows;
+      expect(b).toEqual({ status: 'booked', membership_id: null });
+      expect((await pay(t.payment_id, 2500)).duplicate).toBe(true);
+      const { rows } = await db.query(`select booked_count from class_sessions where id = $1`, [s]);
+      expect(rows[0].booked_count).toBe(1);
+    });
+
+    it('returning to a workshop resumes the checkout already in progress', async () => {
+      const c = await createUser(db, 'Resumer');
+      const s = await workshop();
+      const first = await startTicket(c, s);
+      const again = await startTicket(c, s); // different idempotency key
+      expect(again.payment_id).toBe(first.payment_id);
+      expect((await db.query(`select booked_count from class_sessions where id = $1`, [s])).rows[0].booked_count).toBe(1);
+    });
+
+    it('memberships still cannot be used for special events', async () => {
+      const c = await createUser(db, 'MemberAtWorkshop');
+      await buy(c, 'multi-12');
+      await expectError(book(c, await workshop()), 'special_event');
+    });
+
+    it('refuses tickets for normal classes or workshops without a price', async () => {
+      const c = await createUser(db, 'NoTicket');
+      await expectError(startTicket(c, await makeSession({ style: 'heels', startsInMinutes: 600 })), 'tickets_not_available');
+      await expectError(startTicket(c, await workshop(10, null)), 'tickets_not_available');
+    });
+
+    it('holds spots so concurrent buyers cannot oversell a workshop', async () => {
+      const s = await workshop(2);
+      const users = await Promise.all(Array.from({ length: 5 }, (_, i) => createUser(db, `TicketRace${i}`)));
+      const clients = await Promise.all(users.map(async () => {
+        const cl = new pg.Client({ connectionString: ctx.connectionString });
+        await cl.connect();
+        return cl;
+      }));
+      const results = await Promise.allSettled(users.map((u, i) =>
+        as(clients[i], user(u), `select create_ticket_checkout($1, $2, 'stripe')`, [s, randomUUID()])));
+      await Promise.all(clients.map((cl) => cl.end()));
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(2);
+      const { rows } = await db.query(`select booked_count from class_sessions where id = $1`, [s]);
+      expect(rows[0].booked_count).toBe(2);
+    });
+
+    it('releases expired holds and still honours a late payment if a spot is free', async () => {
+      const a = await createUser(db, 'SlowPayer');
+      const s = await workshop(1);
+      const t = await startTicket(a, s);
+      await db.query(`update bookings set hold_expires_at = now() - interval '1 minute' where session_id = $1`, [s]);
+      const [rel] = await as<{ n: number }>(db, service, `select release_expired_holds() as n`);
+      expect(rel.n).toBeGreaterThanOrEqual(1);
+      expect((await db.query(`select booked_count from class_sessions where id = $1`, [s])).rows[0].booked_count).toBe(0);
+      const r = await pay(t.payment_id, 2500);
+      expect(r).toMatchObject({ ok: true, refund_required: false });
+      expect((await db.query(`select booked_count from class_sessions where id = $1`, [s])).rows[0].booked_count).toBe(1);
+    });
+
+    it('flags a refund when a late payment arrives after the spot was taken', async () => {
+      const a = await createUser(db, 'TooLate');
+      const b = await createUser(db, 'GotIt');
+      const s = await workshop(1);
+      const ta = await startTicket(a, s);
+      await db.query(`update bookings set hold_expires_at = now() - interval '1 minute' where user_id = $1 and session_id = $2`, [a, s]);
+      const tb = await startTicket(b, s); // releases A's hold, takes the spot
+      await pay(tb.payment_id, 2500);
+      const r = await pay(ta.payment_id, 2500);
+      expect(r).toMatchObject({ ok: true, booking_id: null, refund_required: true });
+      const { rows } = await db.query(`select count(*)::int n from audit_log where action = 'ticket_refund_required' and entity_id = $1`, [ta.payment_id]);
+      expect(rows[0].n).toBe(1);
+    });
+
+    it('an expired Stripe checkout frees the spot', async () => {
+      const c = await createUser(db, 'Abandoner');
+      const s = await workshop(1);
+      const t = await startTicket(c, s);
+      await db.query(`update payments set provider_session_id = 'cs_test_1' where id = $1`, [t.payment_id]);
+      await as(db, service, `select expire_payment($1, 'cancelled', 'cs_test_1')`, [t.payment_id]);
+      const [row] = (await db.query(
+        `select p.status ps, b.status bs, s.booked_count from payments p join bookings b on b.id = p.booking_id join class_sessions s on s.id = p.session_id where p.id = $1`,
+        [t.payment_id])).rows;
+      expect(row).toEqual({ ps: 'cancelled', bs: 'cancelled', booked_count: 0 });
+    });
+
+    it('customers can abandon a hold but must contact the studio to cancel a paid ticket', async () => {
+      const c = await createUser(db, 'TicketCancel');
+      const s = await workshop();
+      const t = await startTicket(c, s);
+      const [hold] = (await db.query(`select id from bookings where payment_id = $1`, [t.payment_id])).rows;
+      await as(db, user(c), `select cancel_booking($1)`, [hold.id]);
+      expect((await db.query(`select status from payments where id = $1`, [t.payment_id])).rows[0].status).toBe('cancelled');
+
+      const t2 = await startTicket(c, s);
+      await pay(t2.payment_id, 2500);
+      const [paid] = (await db.query(`select id from bookings where payment_id = $1`, [t2.payment_id])).rows;
+      await expectError(as(db, user(c), `select cancel_booking($1)`, [paid.id]), 'ticket_contact_studio');
+    });
+
+    it('ticket sales are reported separately from memberships', async () => {
+      const [r] = await as<{ r: { tickets_sold: number; ticket_revenue_cents: number } }>(db, user(admin), `select admin_ticket_sales(current_date, current_date) as r`);
+      expect(r.r.tickets_sold).toBeGreaterThanOrEqual(1);
+      expect(r.r.ticket_revenue_cents).toBe(r.r.tickets_sold * 2500);
+    });
+  });
+
+  // ---------------------------------------------------------------- notifications
+  describe('notifications', () => {
+    it('studio cancellations queue a notification per booked customer', async () => {
+      const c = await createUser(db, 'Notified');
+      await buy(c, 'multi-5');
+      const s = await makeSession({ style: 'heels', startsInMinutes: 300 });
+      await book(c, s);
+      await as(db, user(admin), `select admin_cancel_session($1, 'Studio flooded')`, [s]);
+      const { rows } = await db.query(`select kind, payload from notification_outbox where user_id = $1`, [c]);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ kind: 'class_cancelled', payload: { reason: 'Studio flooded', class_returned: true } });
+    });
+
+    it('expiry reminders are queued once when enabled', async () => {
+      const c = await createUser(db, 'Expiring');
+      const { membershipId } = await buy(c, 'multi-5');
+      await db.query(`update memberships set expires_at = now() + interval '2 days' where id = $1`, [membershipId]);
+      await db.query(`update app_settings set expiry_reminders_enabled = true`);
+      try {
+        await as(db, service, `select queue_expiry_reminders()`);
+        await as(db, service, `select queue_expiry_reminders()`);
+      } finally {
+        await db.query(`update app_settings set expiry_reminders_enabled = false`);
+      }
+      const { rows } = await db.query(`select count(*)::int n from notification_outbox where user_id = $1 and kind = 'membership_expiring'`, [c]);
+      expect(rows[0].n).toBe(1);
+    });
+
+    it('delivery claims each message once and records the outcome', async () => {
+      const claim = () => as<{ id: number; email: string }>(db, service, `select * from claim_notifications(500)`);
+      const first = await claim();
+      expect(first.length).toBeGreaterThanOrEqual(2);
+      expect(first.every((r) => r.email.endsWith('@example.com'))).toBe(true);
+      expect(await claim()).toHaveLength(0); // already claimed
+      await as(db, service, `select complete_notification($1)`, [first[0].id]);
+      await as(db, service, `select complete_notification($1, 'smtp down')`, [first[1].id]);
+      const { rows } = await db.query(`select id, sent_at is not null sent, error from notification_outbox where id = any($1) order by id`, [[first[0].id, first[1].id]]);
+      expect(rows[0]).toMatchObject({ sent: true, error: null });
+      expect(rows[1]).toMatchObject({ sent: false, error: 'smtp down' });
+      const retry = await claim(); // failed one is claimable again
+      expect(retry.map((r) => Number(r.id))).toContain(Number(first[1].id));
+      await expect(as(db, user(admin), `select * from claim_notifications(10)`)).rejects.toThrow(/permission denied/);
+    });
+  });
+
   // ---------------------------------------------------------------- admin
   describe('administration', () => {
     it('grants and revokes classes with a reason and audit trail', async () => {

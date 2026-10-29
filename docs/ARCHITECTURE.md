@@ -54,19 +54,19 @@ Times are evaluated in `Europe/Dublin` (`app_settings.timezone`), including DST.
 | `dance_styles` | Admin-managed list of styles (seeded: FitDance, Commercial, Hip Hop, Heels, Jazz Funk, Reggaeton) |
 | `instructors` | Teachers, optionally linked to a profile |
 | `class_templates` | Recurring weekly classes (weekday + local start time) |
-| `class_sessions` | Dated, bookable classes generated from templates (or one-offs); `booked_count` maintained server-side; `is_special` = workshop needing separate payment |
+| `class_sessions` | Dated, bookable classes generated from templates (or one-offs); `booked_count` maintained server-side (includes held ticket spots); `is_special` + `ticket_price_cents` = workshop sold by ticket |
 | `membership_plans` | Configurable products: price (cents), classes, validity days, single/multi, first-time-only, active, “Most Popular” opt-in |
 | `plan_styles` | Eligible styles when a plan isn’t “all styles” |
 | `plan_exclusions` | Recurring class or single session excluded from a plan |
-| `payments` | One row per checkout attempt; server-side amount, `plan_snapshot`, provider (`stripe` / `manual` / `dev_test`), `is_test`, idempotency key, Stripe references |
+| `payments` | One row per checkout attempt; `kind` membership or ticket; server-side amount, `plan_snapshot`, provider (`stripe` / `manual` / `dev_test`), `is_test`, idempotency key, Stripe references |
 | `membership_purchases` | **Immutable** snapshot of the terms bought: price, classes, validity, allowed styles, excluded classes, activation policy |
 | `memberships` | The live instance: classes remaining, activation, base expiry, effective expiry |
 | `membership_pauses` | Pause windows (inclusive dates); expiry = base + paused days |
-| `bookings` | Customer ↔ session; status booked / cancelled / late_cancelled / attended / no_show |
+| `bookings` | Customer ↔ session; status booked / pending_payment (ticket hold) / cancelled / late_cancelled / attended / no_show; `payment_id` for tickets |
 | `credit_transactions` | **Immutable** class-allowance ledger (+grant, −booking, +refunds, admin grant/revoke with reason) |
 | `audit_log` | **Immutable** record of admin and configuration actions (config tables are audited by trigger) |
-| `notification_outbox` | Queued notifications (e.g. expiry reminders) for a sender worker |
-| `push_subscriptions` | Web-push endpoints per user (groundwork) |
+| `notification_outbox` | Queued notifications (expiry reminders, studio-cancelled classes), claimed and delivered by `send-notifications` (email via Resend, web push) |
+| `push_subscriptions` | Web-push endpoints per user; expired endpoints are pruned on delivery |
 
 “Credits” exist only internally (`classes_remaining`, `credit_transactions`);
 customers always see “classes”.
@@ -89,6 +89,16 @@ customers always see “classes”.
 when the server has `ALLOW_TEST_PAYMENTS=true` and no live Stripe key. Its
 records are flagged `is_test`, badged **TEST** in the UI and excluded from
 revenue analytics.
+
+## Workshop tickets
+
+`create_ticket_checkout` locks the session, releases expired holds, and inserts a
+`pending_payment` booking that counts towards capacity for 35 minutes (the
+Stripe session expires after 30). Returning to the same workshop resumes that
+checkout. `fulfill_payment` confirms the hold. If the hold lapsed, it re-books
+when a spot is free; otherwise it records `ticket_refund_required`.
+`expire_payment` (from the webhook) and the `drop-release-holds` cron job free
+abandoned spots.
 
 ## Frontend structure
 

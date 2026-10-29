@@ -41,6 +41,7 @@ Deno.serve(async (req) => {
         return new Response('fulfilment error', { status: 500 }); // Stripe retries
       }
       if (data && !data.ok) console.error('payment rejected', paymentId, data.error);
+      if (data?.refund_required) console.error('ticket paid but no spot available — refund needed', paymentId);
       break;
     }
     case 'checkout.session.expired':
@@ -48,9 +49,16 @@ Deno.serve(async (req) => {
       const s = event.data.object as Stripe.Checkout.Session;
       const paymentId = s.metadata?.payment_id ?? s.client_reference_id;
       if (paymentId) {
-        await db.from('payments')
-          .update({ status: event.type === 'checkout.session.expired' ? 'cancelled' : 'failed' })
-          .eq('id', paymentId).eq('status', 'pending').eq('provider_session_id', s.id);
+        // Also releases any workshop spot held for this checkout.
+        const { error } = await db.rpc('expire_payment', {
+          p_payment_id: paymentId,
+          p_status: event.type === 'checkout.session.expired' ? 'cancelled' : 'failed',
+          p_provider_session_id: s.id,
+        });
+        if (error) {
+          console.error('expire_payment failed', error.message);
+          return new Response('expire error', { status: 500 });
+        }
       }
       break;
     }
