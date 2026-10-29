@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en-IE">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Offline — Drop Studios</title>
+<style>
+  :root { color-scheme: light; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0b1020; color: #fff;
+         font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; text-align: center; padding: 24px; }
+  h1 { font-size: 28px; margin: 16px 0 8px; }
+  p { color: rgba(255,255,255,.8); max-width: 340px; margin: 0 auto 24px; line-height: 1.5; }
+  button { min-height: 48px; padding: 0 24px; border: 0; border-radius: 12px; background: #ff7a00; color: #0b1020; font-weight: 700; font-size: 16px; }
+</style>
+</head>
+<body>
+  <main>
+    <svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#1F43E6"/><path d="M32 12c7 10 14 18 14 27a14 14 0 0 1-28 0c0-9 7-17 14-27z" fill="#FF7A00"/></svg>
+    <h1>You’re offline</h1>
+    <p>Check your connection and try again. Booking and payments need an internet connection.</p>
+    <button onclick="location.reload()">Try again</button>
+  </main>
+</body>
+</html>

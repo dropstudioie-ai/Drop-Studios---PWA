@@ -1,0 +1,118 @@
+import { Link } from 'react-router-dom';
+import { api } from '../api';
+import { useAsync } from '../lib/useAsync';
+import { formatPrice } from '../domain/money';
+import { classesLabel, sortPlans } from '../domain/plans';
+import { addDaysToKey, fmt, localDateKey, zonedTime } from '../domain/time';
+import { STUDIO } from '../config/studio';
+import { CalendarIcon, PinIcon, TicketIcon, UserIcon } from '../components/icons';
+
+export default function Home() {
+  const today = localDateKey(new Date());
+  const upcoming = useAsync(async () => {
+    const list = await api.sessions(new Date().toISOString(), zonedTime(addDaysToKey(today, 3)).toISOString());
+    return list.filter((s) => s.status === 'scheduled').slice(0, 6);
+  }, [today]);
+  const styles = useAsync(() => api.styles(), []);
+  const plans = useAsync(() => api.plans(), []);
+  const intro = plans.data?.find((p) => p.first_time_only);
+  const cheapestRegular = sortPlans(plans.data?.filter((p) => !p.first_time_only) ?? [])[0];
+
+  return (
+    <>
+      <section className="relative overflow-hidden bg-ink text-white">
+        <div className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-brand-600 opacity-60 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-32 -left-16 h-80 w-80 rounded-full bg-accent-500 opacity-40 blur-3xl" />
+        <div className="container-page relative py-16 sm:py-24">
+          <p className="chip bg-white/10 text-accent-400">{STUDIO.tagline} · {STUDIO.city}</p>
+          <h1 className="mt-4 max-w-3xl text-5xl font-black leading-[0.95] sm:text-7xl">
+            Feel the beat.<br /><span className="text-accent-500">Drop</span> in.
+          </h1>
+          <p className="mt-5 max-w-xl text-lg text-white/80">
+            Dance and fitness classes for every level. Book your spot in seconds, straight from your phone.
+          </p>
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <Link to="/timetable" className="btn-accent text-lg">View timetable</Link>
+            <Link to="/memberships" className="btn border-2 border-white/30 text-lg text-white hover:bg-white/10">
+              {intro ? `New here? ${classesLabel(intro.class_count)} for ${formatPrice(intro.price_cents, intro.currency)}` : 'See memberships'}
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="container-page py-12">
+        <div className="flex items-end justify-between">
+          <h2 className="text-2xl font-black sm:text-3xl">Coming up</h2>
+          <Link to="/timetable" className="text-sm font-semibold text-brand-700">Full timetable →</Link>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {upcoming.data?.map((s) => (
+            <Link key={s.id} to="/timetable" className="card flex items-center gap-4 p-4 transition hover:shadow-md">
+              <span className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-xl text-white" style={{ background: s.style?.color ?? '#1f43e6' }}>
+                <span className="text-[10px] font-semibold uppercase">{fmt.dayMonth(s.starts_at).split(' ')[0]}</span>
+                <span className="font-display font-extrabold">{fmt.time(s.starts_at)}</span>
+              </span>
+              <span>
+                <span className="block font-bold">{s.title}</span>
+                <span className="text-sm text-muted">{s.style?.name}{s.instructor ? ` · ${s.instructor.full_name}` : ''}</span>
+              </span>
+            </Link>
+          ))}
+          {upcoming.data?.length === 0 && <p className="text-muted">No classes scheduled in the next few days. Check the full timetable.</p>}
+        </div>
+      </section>
+
+      {styles.data && styles.data.length > 0 && (
+        <section className="bg-white py-12">
+          <div className="container-page">
+            <h2 className="text-2xl font-black sm:text-3xl">Our styles</h2>
+            <div className="mt-5 flex flex-wrap gap-2">
+              {styles.data.map((s) => (
+                <Link key={s.id} to={`/timetable?style=${s.slug}`} className="rounded-full px-5 py-3 font-display text-lg font-extrabold text-white transition hover:scale-105" style={{ background: s.color }}>
+                  {s.name}
+                </Link>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      <section className="container-page py-12">
+        <h2 className="text-2xl font-black sm:text-3xl">How it works</h2>
+        <ol className="mt-6 grid gap-4 sm:grid-cols-3">
+          {[
+            { icon: <UserIcon />, title: 'Create your account', text: 'Sign up in under a minute.' },
+            { icon: <TicketIcon />, title: 'Pick a membership', text: cheapestRegular ? `Packs from ${formatPrice(cheapestRegular.price_cents, cheapestRegular.currency)}. No subscription.` : 'Prepaid class packs. No subscription.' },
+            { icon: <CalendarIcon />, title: 'Book your classes', text: 'Reserve up to 3 weeks ahead. Free cancellation up to 30 minutes before.' },
+          ].map((step, i) => (
+            <li key={step.title} className="card p-5">
+              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-50 text-brand-600">{step.icon}</span>
+              <p className="mt-3 text-xs font-bold uppercase tracking-wider text-accent-600">Step {i + 1}</p>
+              <p className="mt-1 font-display text-lg font-extrabold">{step.title}</p>
+              <p className="mt-1 text-sm text-ink-soft">{step.text}</p>
+            </li>
+          ))}
+        </ol>
+        <div className="mt-8 text-center">
+          <Link to="/memberships" className="btn-primary text-lg">See memberships</Link>
+        </div>
+      </section>
+
+      {(STUDIO.address || STUDIO.email || STUDIO.phone) && (
+        <section className="bg-white py-12">
+          <div className="container-page flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <PinIcon className="mt-1 text-accent-600" />
+              <div>
+                <h2 className="text-xl font-black">Find us</h2>
+                {STUDIO.address && <p className="text-ink-soft">{STUDIO.address}</p>}
+                <p className="text-sm text-muted">{[STUDIO.email, STUDIO.phone].filter(Boolean).join(' · ')}</p>
+              </div>
+            </div>
+            {STUDIO.mapsUrl && <a href={STUDIO.mapsUrl} target="_blank" rel="noreferrer" className="btn-outline">Get directions</a>}
+          </div>
+        </section>
+      )}
+    </>
+  );
+}

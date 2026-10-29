@@ -1,0 +1,249 @@
+import { useState } from 'react';
+import { supabase, AppError } from '../../lib/supabase';
+import { api, unwrap } from '../../api';
+import type { Membership, MembershipPlan, Profile } from '../../api/types';
+import { useAsync } from '../../lib/useAsync';
+import { formatPrice, parseEurosToCents } from '../../domain/money';
+import { fmt } from '../../domain/time';
+import { MembershipCard } from '../../components/MembershipCard';
+import { PauseSheet } from '../../components/PauseSheet';
+import { ErrorNotice, Field, Notice, PageSpinner, Sheet, Spinner, TestBadge, useToast } from '../../components/ui';
+import { Section, Table, Td } from './shared';
+
+export default function AdminCustomers() {
+  const [q, setQ] = useState('');
+  const [selected, setSelected] = useState<string | null>(null);
+  const list = useAsync(async () => {
+    let query = supabase.from('profiles').select('*, memberships(id, classes_remaining, expires_at, admin_status)').order('created_at', { ascending: false }).limit(100);
+    const term = q.trim().replace(/[%,()]/g, '');
+    if (term) query = query.or(`full_name.ilike.%${term}%,email.ilike.%${term}%,phone.ilike.%${term}%`);
+    return unwrap(await query) as (Profile & { memberships: Pick<Membership, 'id' | 'classes_remaining' | 'expires_at' | 'admin_status'>[] })[];
+  }, [q]);
+
+  if (selected) return <CustomerDetail userId={selected} onBack={() => setSelected(null)} />;
+
+  return (
+    <Section title="Customers">
+      <input className="input mb-3 max-w-md" placeholder="Search name, email or phone" value={q} onChange={(e) => setQ(e.target.value)} />
+      {list.loading && !list.data ? <PageSpinner /> : list.error ? <ErrorNotice error={list.error} /> : (
+        <Table head={['Name', 'Email', 'Role', 'Classes available', 'Joined', '']} empty={!list.data?.length}>
+          {list.data?.map((p) => {
+            const now = new Date();
+            const available = p.memberships
+              .filter((m) => m.admin_status === 'valid' && (!m.expires_at || new Date(m.expires_at) > now))
+              .reduce((s, m) => s + m.classes_remaining, 0);
+            return (
+              <tr key={p.id}>
+                <Td className="font-semibold">{p.full_name || '—'}</Td>
+                <Td>{p.email}</Td>
+                <Td className="capitalize">{p.role}</Td>
+                <Td className="tabular-nums">{available}</Td>
+                <Td>{fmt.date(p.created_at)}</Td>
+                <Td><button className="btn-sm btn-ghost" onClick={() => setSelected(p.id)}>Open</button></Td>
+              </tr>
+            );
+          })}
+        </Table>
+      )}
+    </Section>
+  );
+}
+
+interface LedgerRow { id: number; membership_id: string; delta: number; balance_after: number; kind: string; reason: string | null; created_at: string }
+interface PaymentRow { id: string; amount_cents: number; currency: string; provider: string; status: string; is_test: boolean; created_at: string; completed_at: string | null; provider_payment_ref: string | null; plan_snapshot: { plan_name: string } }
+
+function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void }) {
+  const toast = useToast();
+  const data = useAsync(async () => {
+    const [profile, memberships, bookings, styles, ledger, payments, allowance, plans] = await Promise.all([
+      api.profile(userId),
+      api.myMemberships(userId),
+      api.myBookings(userId),
+      unwrap(await supabase.from('dance_styles').select('*').order('sort_order')),
+      unwrap(await supabase.from('credit_transactions').select('*').eq('user_id', userId).order('id', { ascending: false }).limit(100)) as LedgerRow[],
+      unwrap(await supabase.from('payments').select('*').eq('user_id', userId).order('created_at', { ascending: false })) as PaymentRow[],
+      api.pauseAllowance(userId),
+      unwrap(await supabase.from('membership_plans').select('*').order('sort_order')) as MembershipPlan[],
+    ]);
+    return { profile, memberships, bookings, styles, ledger, payments, allowance, plans };
+  }, [userId]);
+
+  const [adjusting, setAdjusting] = useState<Membership | null>(null);
+  const [pausing, setPausing] = useState<Membership | null>(null);
+  const [selling, setSelling] = useState(false);
+
+  if (data.loading && !data.data) return <PageSpinner />;
+  if (data.error) return <ErrorNotice error={data.error} />;
+  const d = data.data!;
+
+  async function resume(m: Membership) {
+    const reason = window.prompt('Reason for ending the pause:');
+    if (reason === null) return;
+    try {
+      await api.resume(m.id, reason || 'Admin resumed');
+      toast('Pause ended.');
+      void data.reload();
+    } catch (e) {
+      toast((e as Error).message, 'error');
+    }
+  }
+
+  async function setRole(role: Profile['role']) {
+    if (!window.confirm(`Change role to ${role}?`)) return;
+    try {
+      unwrap(await supabase.rpc('admin_set_role', { p_user_id: userId, p_role: role }));
+      toast('Role updated.');
+      void data.reload();
+    } catch (e) {
+      toast((e as Error).message, 'error');
+    }
+  }
+
+  return (
+    <>
+      <button className="mb-4 text-sm font-semibold text-brand-700" onClick={onBack}>← All customers</button>
+      <div className="card mb-6 flex flex-wrap items-start justify-between gap-4 p-5">
+        <div>
+          <h2 className="text-xl font-black">{d.profile.full_name || d.profile.email}</h2>
+          <p className="text-sm text-muted">{d.profile.email}{d.profile.phone ? ` · ${d.profile.phone}` : ''} · joined {fmt.date(d.profile.created_at)}</p>
+          <p className="mt-1 text-sm">Pause days used in {d.allowance.year}: {d.allowance.used_days} / {d.allowance.max_days}</p>
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="text-sm"><span className="label">Role</span>
+            <select className="input" value={d.profile.role} onChange={(e) => void setRole(e.target.value as Profile['role'])}>
+              <option value="customer">Customer</option><option value="instructor">Instructor</option><option value="admin">Admin</option>
+            </select>
+          </label>
+          <button className="btn-sm btn-primary" onClick={() => setSelling(true)}>Record in-studio sale</button>
+        </div>
+      </div>
+
+      <Section title="Memberships">
+        <div className="grid gap-4 lg:grid-cols-2">
+          {d.memberships.length === 0 && <p className="text-sm text-muted">No memberships.</p>}
+          {d.memberships.map((m) => (
+            <div key={m.id}>
+              <MembershipCard m={m} styles={d.styles} reminderDays={0} onPause={() => setPausing(m)} onResume={() => void resume(m)} />
+              <button className="btn-sm btn-outline mt-2" onClick={() => setAdjusting(m)}>Grant / revoke classes</button>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      <Section title="Bookings">
+        <Table head={['Class', 'When', 'Status', 'Booked']} empty={!d.bookings.length}>
+          {d.bookings.slice(0, 50).map((b) => (
+            <tr key={b.id}>
+              <Td className="font-semibold">{b.session?.title}</Td>
+              <Td>{b.session && fmt.dateTime(b.session.starts_at)}</Td>
+              <Td>{b.status.replace('_', ' ')}{b.class_restored ? ' (returned)' : ''}{b.cancel_reason ? ` — ${b.cancel_reason}` : ''}</Td>
+              <Td>{fmt.dateTime(b.booked_at)}</Td>
+            </tr>
+          ))}
+        </Table>
+      </Section>
+
+      <Section title="Class allowance history">
+        <Table head={['When', 'Change', 'Balance', 'Type', 'Reason']} empty={!d.ledger.length}>
+          {d.ledger.map((l) => (
+            <tr key={l.id}>
+              <Td>{fmt.dateTime(l.created_at)}</Td>
+              <Td className={`tabular-nums font-semibold ${l.delta > 0 ? 'text-success' : 'text-danger'}`}>{l.delta > 0 ? `+${l.delta}` : l.delta}</Td>
+              <Td className="tabular-nums">{l.balance_after}</Td>
+              <Td>{l.kind.replace(/_/g, ' ')}</Td>
+              <Td>{l.reason ?? ''}</Td>
+            </tr>
+          ))}
+        </Table>
+      </Section>
+
+      <Section title="Payments">
+        <Table head={['Created', 'Plan', 'Amount', 'Provider', 'Status', 'Reference']} empty={!d.payments.length}>
+          {d.payments.map((p) => (
+            <tr key={p.id}>
+              <Td>{fmt.dateTime(p.created_at)}</Td>
+              <Td>{p.plan_snapshot?.plan_name}</Td>
+              <Td className="tabular-nums">{formatPrice(p.amount_cents, p.currency, { forceDecimals: true })}</Td>
+              <Td>{p.provider} {p.is_test && <TestBadge />}</Td>
+              <Td>{p.status}</Td>
+              <Td className="max-w-40 truncate text-xs">{p.provider_payment_ref ?? '—'}</Td>
+            </tr>
+          ))}
+        </Table>
+      </Section>
+
+      {adjusting && <AdjustSheet m={adjusting} onClose={() => setAdjusting(null)} onDone={() => { toast('Classes updated.'); void data.reload(); }} />}
+      {pausing && <PauseSheet membership={pausing} allowance={d.allowance} adminOverride onClose={() => setPausing(null)} onDone={() => { toast('Membership paused.'); void data.reload(); }} />}
+      {selling && <ManualSaleSheet userId={userId} plans={d.plans} styles={d.styles as { id: string; name: string }[]} onClose={() => setSelling(false)} onDone={() => { toast('Sale recorded.'); void data.reload(); }} />}
+    </>
+  );
+}
+
+function AdjustSheet({ m, onClose, onDone }: { m: Membership; onClose: () => void; onDone: () => void }) {
+  const [delta, setDelta] = useState(1);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <Sheet open onClose={onClose} title="Grant or revoke classes">
+      <p className="text-sm">{m.plan_name} — currently {m.classes_remaining} of {m.classes_total} remaining.</p>
+      <div className="mt-4 space-y-3">
+        <Field label="Change" hint="Positive to grant, negative to revoke."><input className="input" type="number" value={delta} onChange={(e) => setDelta(Number(e.target.value))} /></Field>
+        <Field label="Reason (required, recorded in audit log)"><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
+        {error && <ErrorNotice error={error} />}
+        <button className="btn-primary w-full" disabled={busy || !delta || !reason.trim()} onClick={async () => {
+          setBusy(true);
+          try {
+            unwrap(await supabase.rpc('admin_adjust_classes', { p_membership_id: m.id, p_delta: delta, p_reason: reason }));
+            onDone();
+            onClose();
+          } catch (e) {
+            setError(e instanceof AppError ? e.message : (e as Error).message);
+            setBusy(false);
+          }
+        }}>{busy && <Spinner />}{delta > 0 ? `Grant ${delta}` : `Revoke ${Math.abs(delta)}`}</button>
+      </div>
+    </Sheet>
+  );
+}
+
+function ManualSaleSheet({ userId, plans, styles, onClose, onDone }: {
+  userId: string; plans: MembershipPlan[]; styles: { id: string; name: string }[]; onClose: () => void; onDone: () => void;
+}) {
+  const [planId, setPlanId] = useState(plans.find((p) => p.is_active)?.id ?? '');
+  const plan = plans.find((p) => p.id === planId);
+  const [amount, setAmount] = useState(plan ? (plan.price_cents / 100).toFixed(2) : '');
+  const [styleId, setStyleId] = useState('');
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  return (
+    <Sheet open onClose={onClose} title="Record in-studio sale">
+      <Notice tone="info">Use this for real payments taken at the desk (cash or card terminal). It creates a membership and a “manual” payment record.</Notice>
+      <div className="mt-4 space-y-3">
+        <Field label="Plan"><select className="input" value={planId} onChange={(e) => { setPlanId(e.target.value); const p = plans.find((x) => x.id === e.target.value); if (p) setAmount((p.price_cents / 100).toFixed(2)); }}>
+          {plans.map((p) => <option key={p.id} value={p.id}>{p.name} — {formatPrice(p.price_cents)}{p.is_active ? '' : ' (disabled)'}</option>)}
+        </select></Field>
+        {plan?.style_access === 'single' && (
+          <Field label="Dance style"><select className="input" value={styleId} onChange={(e) => setStyleId(e.target.value)}><option value="">Choose…</option>{styles.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
+        )}
+        <Field label="Amount received (€)"><input className="input" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
+        <Field label="Note (e.g. 'Cash, receipt #123')"><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
+        {error && <ErrorNotice error={error} />}
+        <button className="btn-primary w-full" disabled={busy || !reason.trim() || !planId} onClick={async () => {
+          const cents = parseEurosToCents(amount);
+          if (cents === null) return setError('Enter a valid amount.');
+          setBusy(true);
+          try {
+            unwrap(await supabase.rpc('admin_record_manual_sale', { p_user_id: userId, p_plan_id: planId, p_selected_style_id: styleId || null, p_amount_cents: cents, p_reason: reason }));
+            onDone();
+            onClose();
+          } catch (e) {
+            setError((e as Error).message);
+            setBusy(false);
+          }
+        }}>{busy && <Spinner />}Record sale</button>
+      </div>
+    </Sheet>
+  );
+}

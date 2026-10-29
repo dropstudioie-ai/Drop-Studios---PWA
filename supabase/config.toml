@@ -1,0 +1,29 @@
+# Supabase CLI configuration (local development). See docs/DEPLOYMENT.md.
+project_id = "drop-studios"
+
+[api]
+port = 54321
+schemas = ["public"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 15
+
+[auth]
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://localhost:5173/**"]
+minimum_password_length = 8
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false
+
+[functions.stripe-webhook]
+verify_jwt = false
+
+[functions.create-checkout]
+verify_jwt = true
+
+[functions.dev-checkout]
+verify_jwt = true
