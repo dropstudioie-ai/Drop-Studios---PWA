@@ -9,12 +9,14 @@
    npx supabase link --project-ref <project-ref>
    npx supabase db push
    ```
-   This applies `supabase/migrations/*`, including the five membership plans
-   and the dance styles. It does **not** run `supabase/seed.sql` (local demo data).
-3. Scheduled jobs: the last migration enables **pg_cron** (available on hosted
-   Supabase) and schedules:
+   This applies `supabase/migrations/*`, including the five membership plans,
+   the dance styles and the weekly timetable. It does **not** run
+   `supabase/seed.sql` (local-only test data).
+3. Scheduled jobs: the migrations enable **pg_cron** (available on hosted
+   Supabase) and schedule:
    - `drop-generate-sessions`: daily, publishes 5 weeks of classes from the weekly timetable.
    - `drop-expiry-reminders`: daily, queues reminders (when enabled in Admin → Settings).
+   - `drop-release-holds`: every 10 minutes, frees workshop spots whose checkout was never paid.
    Check them under Database → Cron after pushing.
 4. Auth settings: set **Site URL** to your domain and add
    `https://<domain>/reset-password` to the redirect URLs. Keep email
@@ -28,10 +30,14 @@ update public.profiles set role = 'admin' where email = 'you@dropstudios.ie';
 ```
 Further admins can be promoted from Admin → Customers.
 
-## 3. Load the real timetable
+## 3. Check the timetable
 
-Admin → Instructors → add the team. Then Admin → Timetable → *Add recurring
-class* for each weekly class, and **Publish next 5 weeks**.
+`db push` installs the weekly Drop Studios timetable imported from the studio
+calendars (migration `20261030000003_drop_timetable.sql`): 11 weekly classes
+across the Big and Small Studio, with Monday Heels ending on 14 December 2026.
+In Admin → Timetable, check the **spots** per class (20 by default) and add the
+**instructors** that the calendars didn’t name, then press **Publish next 5 weeks**
+after any change. Room rentals and private sessions were not imported.
 
 ## 4. Stripe (real payments)
 
@@ -90,7 +96,7 @@ required for the service worker and install prompts.
 ```bash
 npm install
 npx supabase start            # needs Docker
-npx supabase db reset         # migrations + demo seed
+npx supabase db reset         # applies migrations (incl. the real timetable)
 cp .env.example .env.local    # fill from `supabase status`; set VITE_PAYMENTS_MODE=test
 cp supabase/functions/.env.example supabase/functions/.env   # ALLOW_TEST_PAYMENTS=true
 npx supabase functions serve --env-file supabase/functions/.env
@@ -146,6 +152,6 @@ subscription are marked done.
 ## 8. Still to do
 
 - **Studio details.** Fill in `src/config/studio.ts` (address, email, phone, Instagram).
-- **Real timetable and copy.** Load your classes in Admin; the home-page wording is a placeholder.
+- **Timetable details.** Confirm spots per class and missing instructors (see section 3); the home-page wording is a placeholder.
 - **Live verification.** Run a Stripe test-mode payment (membership and ticket) and a
   reminder email end-to-end against your Supabase project before launch.

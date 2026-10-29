@@ -99,6 +99,39 @@ run('database: plans, booking, allowances, pauses, security', () => {
     });
   });
 
+  // ---------------------------------------------------------------- timetable
+  describe('studio timetable', () => {
+    it('imports the weekly Drop Studios classes from the studio calendars', async () => {
+      const { rows } = await db.query(
+        `select t.weekday, to_char(t.start_time, 'HH24:MI') as at, t.title, s.name as style, t.room, i.full_name as instructor
+         from class_templates t join dance_styles s on s.id = t.style_id left join instructors i on i.id = t.instructor_id
+         where t.valid_from = '2026-10-26' order by t.weekday, t.start_time`,
+      );
+      expect(rows.map((r) => `${r.weekday} ${r.at} ${r.title} (${r.style}, ${r.room}${r.instructor ? `, ${r.instructor}` : ''})`)).toEqual([
+        '1 18:00 K-Pop (K-Pop, Small Studio)',
+        '1 19:00 Jazz Funk (Jazz Funk, Small Studio)',
+        '1 20:00 Heels (Heels, Small Studio)',
+        '2 18:30 FitDance Special (FitDance, Big Studio, Jorge dos Santos)',
+        '2 19:30 Reggaeton (Reggaeton, Big Studio)',
+        '3 18:30 FitDance (FitDance, Small Studio, Jorge dos Santos)',
+        '3 19:30 Hip Hop (Hip Hop, Big Studio, Ana Souto)',
+        '4 18:00 FitDance (FitDance, Small Studio, Jorge dos Santos)',
+        '4 19:00 Commercial (Commercial, Small Studio)',
+        '6 12:30 FitDance (FitDance, Small Studio, Jorge dos Santos)',
+        '6 13:30 Commercial (Commercial, Small Studio)',
+      ]);
+    });
+
+    it('publishes classes in Dublin time and stops Heels after 14 December', async () => {
+      await db.query(`select generate_sessions('2026-12-07', '2026-12-27')`);
+      const { rows } = await db.query(
+        `select to_char(starts_at at time zone 'Europe/Dublin', 'YYYY-MM-DD HH24:MI') as local
+         from class_sessions where title = 'Heels' and template_id is not null and starts_at >= '2026-12-07' order by starts_at`,
+      );
+      expect(rows.map((r) => r.local)).toEqual(['2026-12-07 20:00', '2026-12-14 20:00']);
+    });
+  });
+
   // ---------------------------------------------------------------- purchases
   describe('purchases and payments', () => {
     it('takes the price from the database and snapshots plan terms', async () => {
