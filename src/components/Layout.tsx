@@ -43,11 +43,11 @@ export function Layout() {
         <div className="container-page flex flex-wrap items-center justify-between gap-4 py-8 text-sm text-muted">
           <div>
             <Logo />
-            <p className="mt-2">{STUDIO.tagline} · {STUDIO.address || STUDIO.city}</p>
+            <p className="mt-2">{STUDIO.tagline} · {STUDIO.address ? <a href={STUDIO.mapsUrl} target="_blank" rel="noreferrer" className="hover:text-ink">{STUDIO.address}</a> : STUDIO.city}</p>
           </div>
           <div className="flex flex-wrap gap-4">
             {STUDIO.email && <a href={`mailto:${STUDIO.email}`} className="hover:text-ink">{STUDIO.email}</a>}
-            {STUDIO.phone && <a href={`tel:${STUDIO.phone}`} className="hover:text-ink">{STUDIO.phone}</a>}
+            {STUDIO.phone && <a href={STUDIO.phoneHref} className="hover:text-ink">{STUDIO.phone}{STUDIO.contactName ? ` (${STUDIO.contactName})` : ''}</a>}
             {STUDIO.instagram && <a href={STUDIO.instagram} className="hover:text-ink" rel="noreferrer" target="_blank">Instagram</a>}
             <Link to="/memberships" className="hover:text-ink">Memberships</Link>
             <Link to="/timetable" className="hover:text-ink">Timetable</Link>

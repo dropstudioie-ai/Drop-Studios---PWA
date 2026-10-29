@@ -126,7 +126,13 @@ export default function Home() {
               <div>
                 <h2 className="text-xl font-black">Find us</h2>
                 {STUDIO.address && <p className="text-ink-soft">{STUDIO.address}</p>}
-                <p className="text-sm text-muted">{[STUDIO.email, STUDIO.phone].filter(Boolean).join(' · ')}</p>
+                {STUDIO.phone && (
+                  <p className="mt-1 text-sm text-muted">
+                    Contact {STUDIO.contactName ? `${STUDIO.contactName}: ` : ''}
+                    <a href={STUDIO.phoneHref} className="font-semibold text-brand-700">{STUDIO.phone}</a>
+                    {STUDIO.email && <> · <a href={`mailto:${STUDIO.email}`} className="font-semibold text-brand-700">{STUDIO.email}</a></>}
+                  </p>
+                )}
               </div>
             </div>
             {STUDIO.mapsUrl && <a href={STUDIO.mapsUrl} target="_blank" rel="noreferrer" className="btn-outline">Get directions</a>}
