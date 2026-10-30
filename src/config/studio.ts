@@ -8,7 +8,7 @@ export const STUDIO = {
   contactName: 'Jorge dos Santos',
   phone: '083 890 4489',
   phoneHref: 'tel:+353838904489',
-  email: '',
+  email: 'dropstudioie@gmail.com',
   instagram: '',
   website: 'https://dropstudios.ie',
   mapsUrl: 'https://www.google.com/maps/search/?api=1&query=13+Sackville+Place%2C+Dublin+1%2C+Ireland',

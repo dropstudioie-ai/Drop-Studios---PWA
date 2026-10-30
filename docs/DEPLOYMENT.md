@@ -32,12 +32,11 @@ Further admins can be promoted from Admin → Customers.
 
 ## 3. Check the timetable
 
-`db push` installs the weekly Drop Studios timetable imported from the studio
-calendars (migration `20261030000003_drop_timetable.sql`): 11 weekly classes
-across the Big and Small Studio, with Monday Heels ending on 14 December 2026.
-In Admin → Timetable, check the **spots** per class (20 by default) and add the
-**instructors** that the calendars didn’t name, then press **Publish next 5 weeks**
-after any change. Room rentals and private sessions were not imported.
+`db push` installs the confirmed weekly timetable (migration
+`20261030000003_drop_timetable.sql`): 11 classes in the Ground Floor Studio,
+30 spots each, with their instructors. Monday Heels ends on 14 December 2026.
+Private sessions and room rentals are not part of the app. After any change in
+Admin → Timetable, press **Publish next 5 weeks**.
 
 ## 4. Stripe (real payments)
 
@@ -152,6 +151,6 @@ subscription are marked done.
 ## 8. Still to do
 
 - **Studio details.** Fill in `src/config/studio.ts` (address, email, phone, Instagram).
-- **Timetable details.** Confirm spots per class and missing instructors (see section 3); the home-page wording is a placeholder.
+- **Home-page wording.** The headline and intro text are placeholders; replace them with your own.
 - **Live verification.** Run a Stripe test-mode payment (membership and ticket) and a
   reminder email end-to-end against your Supabase project before launch.

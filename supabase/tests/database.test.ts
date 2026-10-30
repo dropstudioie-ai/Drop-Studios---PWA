@@ -101,25 +101,35 @@ run('database: plans, booking, allowances, pauses, security', () => {
 
   // ---------------------------------------------------------------- timetable
   describe('studio timetable', () => {
-    it('imports the weekly Drop Studios classes from the studio calendars', async () => {
+    it('installs the confirmed weekly timetable: one studio, 30 spots, named instructors', async () => {
       const { rows } = await db.query(
-        `select t.weekday, to_char(t.start_time, 'HH24:MI') as at, t.title, s.name as style, t.room, i.full_name as instructor
+        `select t.weekday, to_char(t.start_time, 'HH24:MI') as at, t.title, s.name as style, t.room, i.full_name as instructor, t.capacity
          from class_templates t join dance_styles s on s.id = t.style_id left join instructors i on i.id = t.instructor_id
          where t.valid_from = '2026-10-26' order by t.weekday, t.start_time`,
       );
-      expect(rows.map((r) => `${r.weekday} ${r.at} ${r.title} (${r.style}, ${r.room}${r.instructor ? `, ${r.instructor}` : ''})`)).toEqual([
-        '1 18:00 K-Pop (K-Pop, Small Studio)',
-        '1 19:00 Jazz Funk (Jazz Funk, Small Studio)',
-        '1 20:00 Heels (Heels, Small Studio)',
-        '2 18:30 FitDance Special (FitDance, Big Studio, Jorge dos Santos)',
-        '2 19:30 Reggaeton (Reggaeton, Big Studio)',
-        '3 18:30 FitDance (FitDance, Small Studio, Jorge dos Santos)',
-        '3 19:30 Hip Hop (Hip Hop, Big Studio, Ana Souto)',
-        '4 18:00 FitDance (FitDance, Small Studio, Jorge dos Santos)',
-        '4 19:00 Commercial (Commercial, Small Studio)',
-        '6 12:30 FitDance (FitDance, Small Studio, Jorge dos Santos)',
-        '6 13:30 Commercial (Commercial, Small Studio)',
+      expect(rows.map((r) => `${r.weekday} ${r.at} ${r.title} (${r.style}, ${r.room}, ${r.instructor}, ${r.capacity})`)).toEqual([
+        '1 18:00 Choreography (Choreography, Ground Floor Studio, Vini Martins, 30)',
+        '1 19:00 Jazz Funk (Jazz Funk, Ground Floor Studio, Vini Martins, 30)',
+        '1 20:00 Heels (Heels, Ground Floor Studio, Talita Lima, 30)',
+        '2 18:30 FitDance Special (FitDance, Ground Floor Studio, João Zublin, 30)',
+        '2 19:30 Reggaeton (Reggaeton, Ground Floor Studio, Humberto, 30)',
+        '3 18:30 FitDance (FitDance, Ground Floor Studio, Jorginho, 30)',
+        '3 19:30 Hip Hop (Hip Hop, Ground Floor Studio, Ana Souto, 30)',
+        '4 18:30 FitDance (FitDance, Ground Floor Studio, João Zublin, 30)',
+        '4 19:30 Commercial (Commercial, Ground Floor Studio, Alex Oliveira, 30)',
+        '6 12:30 FitDance (FitDance, Ground Floor Studio, João Zublin, 30)',
+        '6 13:30 Commercial (Commercial, Ground Floor Studio, Alex Oliveira, 30)',
       ]);
+    });
+
+    it('has no overlapping classes in the single studio', async () => {
+      const { rows } = await db.query(
+        `select a.title || ' / ' || b.title as clash from class_templates a join class_templates b
+           on a.id < b.id and a.weekday = b.weekday and a.valid_from = '2026-10-26' and b.valid_from = '2026-10-26'
+          and a.start_time < b.start_time + make_interval(mins => b.duration_minutes)
+          and b.start_time < a.start_time + make_interval(mins => a.duration_minutes)`,
+      );
+      expect(rows).toEqual([]);
     });
 
     it('publishes classes in Dublin time and stops Heels after 14 December', async () => {
