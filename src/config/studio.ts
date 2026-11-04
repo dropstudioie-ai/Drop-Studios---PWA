@@ -2,6 +2,8 @@
 // Empty values are simply hidden.
 export const STUDIO = {
   name: 'Drop Studios',
+  // Registered business name (and CRO number, if a company) for the legal pages.
+  legalName: '',
   tagline: 'Dance & Fitness Studio',
   city: 'Dublin, Ireland',
   address: '13 Sackville Place, Dublin 1, D01',
@@ -13,3 +15,17 @@ export const STUDIO = {
   website: 'https://dropstudios.ie',
   mapsUrl: 'https://www.google.com/maps/search/?api=1&query=13+Sackville+Place%2C+Dublin+1%2C+Ireland',
 } as const;
+
+/** Date shown on the Terms and Privacy pages. Update it whenever they change. */
+export const POLICIES_UPDATED = '2026-11-04';
+
+/**
+ * Third parties that process customer data, as listed in the Privacy Policy.
+ * Keep this in line with the services you actually deploy (docs/DEPLOYMENT.md).
+ */
+export const DATA_PROCESSORS = [
+  { name: 'Supabase', purpose: 'Database, accounts and login', location: 'EU (Ireland region)' },
+  { name: 'Stripe', purpose: 'Card payments', location: 'EU and USA' },
+  { name: 'Vercel', purpose: 'Hosting the app', location: 'EU and USA' },
+  { name: 'Resend', purpose: 'Sending emails (reminders, class changes)', location: 'USA' },
+] as const;

@@ -16,6 +16,8 @@ export default defineConfig({
       includeAssets: ['offline.html', 'icons/*.png', 'icons/*.svg', 'favicon.svg'],
       injectManifest: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        // Only Latin font subsets are stored offline; others load on demand.
+        globIgnores: ['**/*-{cyrillic,cyrillic-ext,greek,greek-ext,vietnamese}-*.woff2'],
       },
       manifest: {
         id: '/',

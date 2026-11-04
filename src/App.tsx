@@ -9,6 +9,7 @@ import Home from './pages/Home';
 import Timetable from './pages/Timetable';
 import Memberships from './pages/Memberships';
 import { ForgotPassword, Login, Register, ResetPassword } from './pages/Auth';
+import { Privacy, Terms } from './pages/Legal';
 
 const Checkout = lazy(() => import('./pages/Checkout'));
 const CheckoutSuccess = lazy(() => import('./pages/CheckoutResult').then((m) => ({ default: m.CheckoutSuccess })));
@@ -59,6 +60,8 @@ export default function App() {
                 <Route path="register" element={<Register />} />
                 <Route path="forgot-password" element={<ForgotPassword />} />
                 <Route path="reset-password" element={<ResetPassword />} />
+                <Route path="terms" element={<Terms />} />
+                <Route path="privacy" element={<Privacy />} />
                 <Route path="checkout/success" element={<RequireAuth><CheckoutSuccess /></RequireAuth>} />
                 <Route path="checkout/cancelled" element={<CheckoutCancelled />} />
                 <Route path="checkout/:code" element={<RequireAuth><Checkout /></RequireAuth>} />

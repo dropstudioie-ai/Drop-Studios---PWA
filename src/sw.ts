@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 import { cleanupOutdatedCaches, createHandlerBoundToURL, precacheAndRoute, matchPrecache } from 'workbox-precaching';
 import { NavigationRoute, registerRoute, setCatchHandler } from 'workbox-routing';
-import { CacheFirst, NetworkFirst, NetworkOnly, StaleWhileRevalidate } from 'workbox-strategies';
+import { NetworkFirst, NetworkOnly } from 'workbox-strategies';
 import { ExpirationPlugin } from 'workbox-expiration';
 import { clientsClaim } from 'workbox-core';
 
@@ -35,15 +35,6 @@ registerRoute(
 // Never cache personal data, auth, RPCs (bookings) or payment functions.
 registerRoute(({ url }) => /\/(auth|functions)\/v1\/|\/rest\/v1\/rpc\//.test(url.pathname), new NetworkOnly(), 'POST');
 registerRoute(({ url }) => /\/(auth|functions)\/v1\//.test(url.pathname), new NetworkOnly());
-
-registerRoute(
-  ({ url }) => url.origin === 'https://fonts.googleapis.com',
-  new StaleWhileRevalidate({ cacheName: 'google-fonts-css' }),
-);
-registerRoute(
-  ({ url }) => url.origin === 'https://fonts.gstatic.com',
-  new CacheFirst({ cacheName: 'google-fonts', plugins: [new ExpirationPlugin({ maxEntries: 20, maxAgeSeconds: 365 * 24 * 3600 })] }),
-);
 
 setCatchHandler(async ({ request }) => {
   if (request.destination === 'document') {

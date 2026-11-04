@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useAsync } from '../lib/useAsync';
 import { useAuth } from '../auth/AuthProvider';
@@ -41,6 +41,7 @@ export default function Memberships() {
         <section className="card mx-auto mt-10 max-w-3xl p-6" aria-labelledby="good-to-know">
           <h2 id="good-to-know" className="text-lg font-extrabold">Good to know</h2>
           <div className="mt-3"><MembershipTerms settings={settings.data} /></div>
+          <p className="mt-4 text-sm text-muted">You can cancel a membership within 14 days of buying it. See the full <Link to="/terms" className="font-semibold text-brand-700 underline">Terms &amp; Conditions</Link>.</p>
         </section>
       )}
     </div>

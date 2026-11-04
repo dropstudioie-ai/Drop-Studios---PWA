@@ -1,9 +1,11 @@
-@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap');
+/* Fonts are bundled with the app (no requests to Google). */
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/archivo';
 @import 'tailwindcss';
 
 @theme {
-  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --font-display: 'Archivo', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Archivo Variable', 'Archivo', 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
 
   /* Drop Studios brand: vibrant blue + orange on white, dark neutral text. */
   --color-brand-50: #eef3ff;

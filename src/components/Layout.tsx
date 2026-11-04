@@ -35,11 +35,11 @@ export function Layout() {
         </div>
       </header>
 
-      <main className="flex-1 pb-24 md:pb-0">
+      <main className="flex-1">
         <Outlet />
       </main>
 
-      <footer className="hidden border-t border-line bg-white md:block">
+      <footer className="mt-12 border-t border-line bg-white pb-20 md:pb-0">
         <div className="container-page flex flex-wrap items-center justify-between gap-4 py-8 text-sm text-muted">
           <div>
             <Logo />
@@ -51,6 +51,8 @@ export function Layout() {
             {STUDIO.instagram && <a href={STUDIO.instagram} className="hover:text-ink" rel="noreferrer" target="_blank">Instagram</a>}
             <Link to="/memberships" className="hover:text-ink">Memberships</Link>
             <Link to="/timetable" className="hover:text-ink">Timetable</Link>
+            <Link to="/terms" className="hover:text-ink">Terms</Link>
+            <Link to="/privacy" className="hover:text-ink">Privacy</Link>
           </div>
         </div>
       </footer>

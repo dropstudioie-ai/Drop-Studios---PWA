@@ -151,6 +151,11 @@ subscription are marked done.
 ## 8. Still to do
 
 - **Studio details.** Fill in `src/config/studio.ts` (address, email, phone, Instagram).
+- **Legal pages.** `/terms` and `/privacy` are drafts written to match how the app works.
+  Have a solicitor review them before launch, add your registered business name
+  (`legalName` in `src/config/studio.ts`), keep `DATA_PROCESSORS` in line with the
+  services you actually use, and update `POLICIES_UPDATED` whenever the text changes.
+  Account deletion requests are handled by email for now.
 - **Home-page wording.** The headline and intro text are placeholders; replace them with your own.
 - **Live verification.** Run a Stripe test-mode payment (membership and ticket) and a
   reminder email end-to-end against your Supabase project before launch.

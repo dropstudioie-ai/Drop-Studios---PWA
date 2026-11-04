@@ -112,7 +112,10 @@ export default function Checkout() {
         <div className="mt-3"><MembershipTerms settings={settings} compact /></div>
         <label className="mt-4 flex cursor-pointer items-start gap-3 text-sm">
           <input type="checkbox" className="mt-0.5 h-5 w-5 accent-brand-600" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
-          <span>I understand the expiry and cancellation rules above.</span>
+          <span>
+            I agree to the <Link to="/terms" target="_blank" className="font-semibold text-brand-700 underline">Terms &amp; Conditions</Link>, understand
+            the expiry and cancellation rules above, and ask for my membership to be available straight away.
+          </span>
         </label>
       </section>
 

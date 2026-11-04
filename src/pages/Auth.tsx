@@ -103,7 +103,10 @@ export function Register() {
         <Field label="Password" hint="At least 8 characters."><input className="input" type="password" autoComplete="new-password" required minLength={8} value={form.password} onChange={set('password')} /></Field>
         <label className="flex items-start gap-3 text-sm">
           <input type="checkbox" required className="mt-0.5 h-5 w-5 accent-brand-600" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
-          <span>I agree to the studio’s terms and to my data being used to manage my bookings.</span>
+          <span>
+            I agree to the <Link to="/terms" target="_blank" className="font-semibold text-brand-700 underline">Terms &amp; Conditions</Link> and
+            have read the <Link to="/privacy" target="_blank" className="font-semibold text-brand-700 underline">Privacy Policy</Link>. I’m 16 or over.
+          </span>
         </label>
         {error && <ErrorNotice error={error} />}
         <button className="btn-primary w-full" disabled={busy || !consent}>{busy && <Spinner />}Create account</button>
