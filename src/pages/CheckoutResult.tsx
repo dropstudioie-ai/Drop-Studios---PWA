@@ -6,7 +6,7 @@ import { Notice, Spinner } from '../components/ui';
 type View = 'waiting' | 'succeeded' | 'failed' | 'timeout';
 
 /**
- * Stripe redirects here after checkout. The membership is only activated once
+ * Square redirects here after checkout. The membership is only activated once
  * the server has confirmed payment via the webhook, so we poll for that.
  */
 export function CheckoutSuccess() {

@@ -132,7 +132,7 @@ export default function Checkout() {
             ? 'Complete TEST purchase'
             : `Pay ${formatPrice(plan.price_cents, plan.currency, { forceDecimals: true })} securely`}
         </button>
-        {paymentsMode === 'stripe' && <p className="mt-2 text-center text-xs text-muted">You’ll be taken to Stripe to pay. Card details never touch our servers.</p>}
+        {paymentsMode === 'live' && <p className="mt-2 text-center text-xs text-muted">You’ll be taken to Square’s secure checkout to pay. Card details never touch our servers.</p>}
       </section>
     </div>
   );

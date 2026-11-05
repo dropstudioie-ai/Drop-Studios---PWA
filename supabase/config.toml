@@ -19,7 +19,7 @@ minimum_password_length = 8
 enable_signup = true
 enable_confirmations = false
 
-[functions.stripe-webhook]
+[functions.square-webhook]
 verify_jwt = false
 
 [functions.create-checkout]

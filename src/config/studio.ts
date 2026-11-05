@@ -25,7 +25,7 @@ export const POLICIES_UPDATED = '2026-11-04';
  */
 export const DATA_PROCESSORS = [
   { name: 'Supabase', purpose: 'Database, accounts and login', location: 'EU (Ireland region)' },
-  { name: 'Stripe', purpose: 'Card payments', location: 'EU and USA' },
+  { name: 'Square', purpose: 'Card payments (online and in the studio)', location: 'EU and USA' },
   { name: 'Vercel', purpose: 'Hosting the app', location: 'EU and USA' },
   { name: 'Resend', purpose: 'Sending emails (reminders, class changes)', location: 'USA' },
 ] as const;

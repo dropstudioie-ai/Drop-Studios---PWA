@@ -1,7 +1,8 @@
 import { supabase } from './supabase';
 
-export type PaymentsMode = 'stripe' | 'test';
-export const paymentsMode: PaymentsMode = import.meta.env.VITE_PAYMENTS_MODE === 'test' ? 'test' : 'stripe';
+// 'live' = real payments through Square. Anything other than 'test' counts as live.
+export type PaymentsMode = 'live' | 'test';
+export const paymentsMode: PaymentsMode = import.meta.env.VITE_PAYMENTS_MODE === 'test' ? 'test' : 'live';
 
 /** A membership plan, or a ticket for a special event (session_id). */
 export type CheckoutRequest =
@@ -22,8 +23,8 @@ async function invoke<T>(fn: string, body: Record<string, unknown>): Promise<T> 
   return data as T;
 }
 
-/** Real payment: returns a Stripe Checkout URL to redirect to. */
-export const startStripeCheckout = (req: CheckoutRequest) =>
+/** Real payment: returns a Square checkout URL to redirect to. */
+export const startSquareCheckout = (req: CheckoutRequest) =>
   invoke<{ url?: string; payment_id: string; status?: string }>('create-checkout', { ...req });
 
 /** Development only. The server refuses unless ALLOW_TEST_PAYMENTS=true. */
@@ -36,6 +37,6 @@ export async function checkout(req: CheckoutRequest): Promise<{ redirect: string
     const res = await completeTestCheckout(req);
     return { navigate: `/checkout/success?payment_id=${res.payment_id}` };
   }
-  const res = await startStripeCheckout(req);
+  const res = await startSquareCheckout(req);
   return res.url ? { redirect: res.url } : { navigate: `/checkout/success?payment_id=${res.payment_id}` };
 }

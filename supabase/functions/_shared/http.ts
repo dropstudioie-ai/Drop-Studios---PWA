@@ -61,7 +61,7 @@ export async function readCheckoutBody(req: Request): Promise<CheckoutBody | nul
 }
 
 /** Creates the pending payment server-side (price from the database). */
-export function startCheckout(supa: SupabaseClient, body: CheckoutBody, provider: 'stripe' | 'dev_test') {
+export function startCheckout(supa: SupabaseClient, body: CheckoutBody, provider: 'square' | 'dev_test') {
   return body.kind === 'ticket'
     ? supa.rpc('create_ticket_checkout', {
       p_session_id: body.session_id,

@@ -1,6 +1,6 @@
 // DEVELOPMENT ONLY — completes a checkout without taking money.
-// Refuses to run unless ALLOW_TEST_PAYMENTS=true, and never alongside a live
-// Stripe key. Everything it creates is flagged is_test / provider 'dev_test',
+// Refuses to run unless ALLOW_TEST_PAYMENTS=true, and never when Square is set
+// to production. Everything it creates is flagged is_test / provider 'dev_test',
 // labelled TEST in the app and excluded from revenue reporting.
 import { adminClient, corsHeaders, dbErrorCode, json, readCheckoutBody, startCheckout, userClient } from '../_shared/http.ts';
 
@@ -9,8 +9,8 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return json(req, { error: 'method_not_allowed' }, 405);
 
   const enabled = Deno.env.get('ALLOW_TEST_PAYMENTS') === 'true';
-  const liveKey = (Deno.env.get('STRIPE_SECRET_KEY') ?? '').startsWith('sk_live');
-  if (!enabled || liveKey) return json(req, { error: 'test_payments_disabled' }, 403);
+  const liveSquare = Deno.env.get('SQUARE_ENVIRONMENT') === 'production';
+  if (!enabled || liveSquare) return json(req, { error: 'test_payments_disabled' }, 403);
 
   const body = await readCheckoutBody(req);
   if (!body) return json(req, { error: 'invalid_request' }, 400);

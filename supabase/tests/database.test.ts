@@ -41,7 +41,7 @@ run('database: plans, booking, allowances, pauses, security', () => {
     return rows[0].id as string;
   }
 
-  async function buy(uid: string, code: string, style?: string, provider: 'stripe' | 'dev_test' = 'stripe') {
+  async function buy(uid: string, code: string, style?: string, provider: 'square' | 'dev_test' = 'square') {
     const [checkout] = await as<{ r: { payment_id: string; amount_cents: number; currency: string } }>(
       db,
       user(uid),
@@ -161,7 +161,7 @@ run('database: plans, booking, allowances, pauses, security', () => {
       const c = await createUser(db, 'DoubleWebhook');
       const [checkout] = await as<{ r: { payment_id: string } }>(db, user(c), `select create_checkout($1, null, $2) as r`, [await planId('multi-8'), randomUUID()]);
       const call = () =>
-        as<{ r: { membership_id: string; duplicate: boolean } }>(db, service, `select fulfill_payment($1, 'stripe', 'pi_x', $2, 7900, 'eur') as r`, [checkout.r.payment_id, `evt_${randomUUID()}`]);
+        as<{ r: { membership_id: string; duplicate: boolean } }>(db, service, `select fulfill_payment($1, 'square', 'pi_x', $2, 7900, 'eur') as r`, [checkout.r.payment_id, `evt_${randomUUID()}`]);
       const first = (await call())[0].r;
       const second = (await call())[0].r;
       expect(second.duplicate).toBe(true);
@@ -182,7 +182,7 @@ run('database: plans, booking, allowances, pauses, security', () => {
     it('rejects payments whose amount does not match', async () => {
       const c = await createUser(db, 'Mismatch');
       const [checkout] = await as<{ r: { payment_id: string } }>(db, user(c), `select create_checkout($1, null, $2) as r`, [await planId('multi-12'), randomUUID()]);
-      const [res] = await as<{ r: { ok: boolean; error: string } }>(db, service, `select fulfill_payment($1, 'stripe', 'pi', 'evt_mm', 100, 'EUR') as r`, [checkout.r.payment_id]);
+      const [res] = await as<{ r: { ok: boolean; error: string } }>(db, service, `select fulfill_payment($1, 'square', 'pi', 'evt_mm', 100, 'EUR') as r`, [checkout.r.payment_id]);
       expect(res.r).toEqual({ ok: false, error: 'amount_mismatch' });
       const { rows } = await db.query(`select count(*)::int n from memberships where user_id = $1`, [c]);
       expect(rows[0].n).toBe(0);
@@ -191,7 +191,7 @@ run('database: plans, booking, allowances, pauses, security', () => {
     it('customers cannot fulfil payments or write memberships directly', async () => {
       const c = await createUser(db, 'Sneaky');
       const [checkout] = await as<{ r: { payment_id: string } }>(db, user(c), `select create_checkout($1, null, $2) as r`, [await planId('multi-12'), randomUUID()]);
-      await expect(as(db, user(c), `select fulfill_payment($1, 'stripe', 'x', 'y', 9900, 'EUR')`, [checkout.r.payment_id])).rejects.toThrow(/permission denied/);
+      await expect(as(db, user(c), `select fulfill_payment($1, 'square', 'x', 'y', 9900, 'EUR')`, [checkout.r.payment_id])).rejects.toThrow(/permission denied/);
       await expect(as(db, user(c), `update memberships set classes_remaining = 99`)).rejects.toThrow(/permission denied/);
       await expect(as(db, user(c), `update profiles set role = 'admin' where id = $1`, [c])).rejects.toThrow(/permission denied/);
       await expect(as(db, user(c), `insert into bookings (user_id, session_id) values ($1, $1)`, [c])).rejects.toThrow(/permission denied/);
@@ -525,11 +525,11 @@ run('database: plans, booking, allowances, pauses, security', () => {
     }
     const startTicket = async (uid: string, sessionId: string, key = randomUUID()) =>
       (await as<{ r: { payment_id: string; amount_cents: number; currency: string } }>(
-        db, user(uid), `select create_ticket_checkout($1, $2, 'stripe') as r`, [sessionId, key],
+        db, user(uid), `select create_ticket_checkout($1, $2, 'square') as r`, [sessionId, key],
       ))[0].r;
     const pay = async (paymentId: string, amount: number) =>
       (await as<{ r: { ok: boolean; booking_id: string | null; refund_required?: boolean; duplicate: boolean } }>(
-        db, service, `select fulfill_payment($1, 'stripe', 'pi_t', $2, $3, 'EUR') as r`, [paymentId, `evt_${randomUUID()}`, amount],
+        db, service, `select fulfill_payment($1, 'square', 'pi_t', $2, $3, 'EUR') as r`, [paymentId, `evt_${randomUUID()}`, amount],
       ))[0].r;
 
     it('sells a ticket at the database price and books the spot after payment', async () => {
@@ -578,7 +578,7 @@ run('database: plans, booking, allowances, pauses, security', () => {
         return cl;
       }));
       const results = await Promise.allSettled(users.map((u, i) =>
-        as(clients[i], user(u), `select create_ticket_checkout($1, $2, 'stripe')`, [s, randomUUID()])));
+        as(clients[i], user(u), `select create_ticket_checkout($1, $2, 'square')`, [s, randomUUID()])));
       await Promise.all(clients.map((cl) => cl.end()));
       expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(2);
       const { rows } = await db.query(`select booked_count from class_sessions where id = $1`, [s]);
@@ -612,7 +612,7 @@ run('database: plans, booking, allowances, pauses, security', () => {
       expect(rows[0].n).toBe(1);
     });
 
-    it('an expired Stripe checkout frees the spot', async () => {
+    it('an expired checkout frees the spot', async () => {
       const c = await createUser(db, 'Abandoner');
       const s = await workshop(1);
       const t = await startTicket(c, s);

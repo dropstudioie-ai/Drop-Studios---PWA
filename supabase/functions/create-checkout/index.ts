@@ -1,15 +1,17 @@
-// Starts a real Stripe Checkout for a membership plan or a workshop ticket.
-// The price comes from the database (create_checkout RPC), never from the client.
-import Stripe from 'npm:stripe@17.7.0';
+// Starts a real Square checkout (payment link) for a membership plan or a
+// workshop ticket. The price comes from the database (create_checkout /
+// create_ticket_checkout RPC), never from the client.
 import { adminClient, corsHeaders, dbErrorCode, json, readCheckoutBody, startCheckout, userClient } from '../_shared/http.ts';
+import { paymentLinkRequest, SQUARE_VERSION, squareBaseUrl } from '../_shared/square.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(req) });
   if (req.method !== 'POST') return json(req, { error: 'method_not_allowed' }, 405);
 
-  const stripeKey = Deno.env.get('STRIPE_SECRET_KEY');
+  const accessToken = Deno.env.get('SQUARE_ACCESS_TOKEN');
+  const locationId = Deno.env.get('SQUARE_LOCATION_ID');
   const siteUrl = Deno.env.get('SITE_URL');
-  if (!stripeKey || !siteUrl) return json(req, { error: 'payments_not_configured' }, 503);
+  if (!accessToken || !locationId || !siteUrl) return json(req, { error: 'payments_not_configured' }, 503);
 
   const body = await readCheckoutBody(req);
   if (!body) return json(req, { error: 'invalid_request' }, 400);
@@ -18,59 +20,47 @@ Deno.serve(async (req) => {
   const { data: auth } = await supa.auth.getUser();
   if (!auth.user) return json(req, { error: 'not_authenticated' }, 401);
 
-  const { data: payment, error } = await startCheckout(supa, body, 'stripe');
+  const { data: payment, error } = await startCheckout(supa, body, 'square');
   if (error) return json(req, { error: dbErrorCode(error) }, 400);
   if (payment.status === 'succeeded') return json(req, { payment_id: payment.payment_id, status: 'succeeded' });
   if (payment.status !== 'pending') return json(req, { error: 'payment_not_pending' }, 409);
 
-  const stripe = new Stripe(stripeKey, { apiVersion: '2025-02-24.acacia' });
-
-  // Retry of the same checkout: reuse the open Stripe session, or expire the
-  // old one first so the customer can never pay twice for one payment record.
-  if (payment.provider_session_id) {
-    const existing = await stripe.checkout.sessions.retrieve(payment.provider_session_id);
-    if (existing.status === 'open' && existing.url) return json(req, { url: existing.url, payment_id: payment.payment_id });
-    if (existing.status === 'complete') return json(req, { payment_id: payment.payment_id, status: 'processing' });
-  }
-
-  const session = await stripe.checkout.sessions.create(
-    {
-      mode: 'payment',
-      currency: payment.currency.toLowerCase(),
-      line_items: [{
-        quantity: 1,
-        price_data: {
-          currency: payment.currency.toLowerCase(),
-          unit_amount: payment.amount_cents,
-          product_data: {
-            name: `Drop Studios — ${payment.plan_name}`,
-            description: body.kind === 'ticket'
-              ? 'Workshop ticket. Your spot is held for 30 minutes while you pay.'
-              : `${payment.class_count} classes. Prepaid pack, no subscription.`,
-          },
-        },
-      }],
-      client_reference_id: payment.payment_id,
-      customer_email: auth.user.email ?? undefined,
-      metadata: { payment_id: payment.payment_id, user_id: auth.user.id },
-      payment_intent_data: { metadata: { payment_id: payment.payment_id, user_id: auth.user.id } },
-      success_url: `${siteUrl}/checkout/success?payment_id=${payment.payment_id}`,
-      cancel_url: `${siteUrl}/checkout/cancelled?payment_id=${payment.payment_id}`,
-      expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
-      locale: 'en',
+  // The idempotency key is derived from our payment id, so a retry gets the
+  // same Square link back: one payment record can never be paid twice.
+  const res = await fetch(`${squareBaseUrl(Deno.env.get('SQUARE_ENVIRONMENT'))}/v2/online-checkout/payment-links`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Square-Version': SQUARE_VERSION,
+      'Content-Type': 'application/json',
     },
-    { idempotencyKey: `checkout-${payment.payment_id}-${payment.provider_session_id ?? 'first'}` },
-  );
-
-  const { error: saveError } = await adminClient()
-    .from('payments')
-    .update({ provider_session_id: session.id })
-    .eq('id', payment.payment_id)
-    .eq('status', 'pending');
-  if (saveError) {
-    await stripe.checkout.sessions.expire(session.id).catch(() => {});
-    return json(req, { error: 'server_error' }, 500);
+    body: JSON.stringify(paymentLinkRequest(payment, {
+      locationId,
+      siteUrl,
+      buyerEmail: auth.user.email,
+      isTicket: body.kind === 'ticket',
+      supportEmail: Deno.env.get('SUPPORT_EMAIL'),
+    })),
+  });
+  const result = await res.json().catch(() => null);
+  const link = result?.payment_link;
+  if (!res.ok || !link?.url || !link?.order_id) {
+    console.error('Square payment link failed', res.status, JSON.stringify(result?.errors ?? result).slice(0, 500));
+    return json(req, { error: 'payment_provider_error' }, 502);
   }
 
-  return json(req, { url: session.url, payment_id: payment.payment_id });
+  // The webhook finds this payment again through the Square order id.
+  if (payment.provider_session_id !== link.order_id) {
+    const { error: saveError } = await adminClient()
+      .from('payments')
+      .update({ provider_session_id: link.order_id })
+      .eq('id', payment.payment_id)
+      .eq('status', 'pending');
+    if (saveError) {
+      console.error('could not save Square order id', saveError.message);
+      return json(req, { error: 'server_error' }, 500);
+    }
+  }
+
+  return json(req, { url: link.url, payment_id: payment.payment_id });
 });

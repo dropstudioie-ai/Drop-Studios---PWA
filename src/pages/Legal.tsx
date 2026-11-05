@@ -126,7 +126,7 @@ export function TermsContent({ rules }: { rules: Rules }) {
       <section>
         <h2>7. Payments</h2>
         <p>
-          Online payments are processed securely by Stripe. We never see or store your full card details.
+          Online payments are processed securely by Square. We never see or store your full card details.
           The final amount is shown before you pay. Payments made in the studio are recorded in your account in the same way.
         </p>
       </section>
@@ -211,7 +211,7 @@ export function PrivacyContent() {
         <ul>
           <li><strong>Account details:</strong> your name, email address and, if you give it, your mobile number. Your password is stored by our login provider in a protected (hashed) form; we can’t see it.</li>
           <li><strong>Membership and booking records:</strong> what you bought, classes remaining, activation and expiry dates, pauses, bookings, cancellations and attendance.</li>
-          <li><strong>Payment records:</strong> amount, date, status and the payment reference. Card details are handled by Stripe and never reach us.</li>
+          <li><strong>Payment records:</strong> amount, date, status and the payment reference. Card details are handled by Square and never reach us.</li>
           <li><strong>Preferences:</strong> whether you want news by email and, if you turn them on, the technical address your device uses for app notifications.</li>
           <li><strong>Staff records:</strong> notes of changes our staff make to your account (for example classes granted or a pause added), kept for accountability.</li>
         </ul>
@@ -237,7 +237,7 @@ export function PrivacyContent() {
           ))}
         </ul>
         <p className="mt-3">
-          Stripe also uses payment data for its own fraud-prevention and legal obligations. We may share data with authorities where the law requires it.
+          Square also uses payment data for its own fraud-prevention and legal obligations. We may share data with authorities where the law requires it.
         </p>
       </section>
 

@@ -38,39 +38,59 @@ Further admins can be promoted from Admin → Customers.
 Private sessions and room rentals are not part of the app. After any change in
 Admin → Timetable, press **Publish next 5 weeks**.
 
-## 4. Stripe (real payments)
+## 4. Square (real payments)
 
-1. In Stripe, create a webhook endpoint
-   `https://<project-ref>.supabase.co/functions/v1/stripe-webhook` for events:
-   `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
-   `checkout.session.async_payment_failed`, `checkout.session.expired`, `charge.refunded`.
-2. Set secrets (never put these in the frontend `.env`):
+Online payments use **Square**, the same account as the studio's card reader, so
+online and in-studio sales share one dashboard and payout. Test in Square's
+**sandbox** first.
+
+1. At developer.squareup.com sign in with the studio's Square account and create
+   an application (e.g. "Drop Studios app").
+2. Under **Credentials** copy the access token (Sandbox while testing, Production
+   when live). Under **Locations** copy the location ID of the studio.
+3. Under **Webhooks → Subscriptions** add an endpoint
+   `https://<project-ref>.supabase.co/functions/v1/square-webhook` for events
+   `payment.created`, `payment.updated`, `refund.created`, `refund.updated`, and
+   copy its **signature key**.
+4. Save them as Supabase secrets (never in Vercel or the frontend):
    ```bash
-   npx supabase secrets set STRIPE_SECRET_KEY=sk_live_... STRIPE_WEBHOOK_SECRET=whsec_... \
-     SITE_URL=https://app.dropstudios.ie ALLOWED_ORIGINS=https://app.dropstudios.ie
+   npx supabase secrets set SQUARE_ENVIRONMENT=sandbox SQUARE_ACCESS_TOKEN=... \
+     SQUARE_LOCATION_ID=... SQUARE_WEBHOOK_SIGNATURE_KEY=... \
+     SQUARE_WEBHOOK_URL=https://<project-ref>.supabase.co/functions/v1/square-webhook \
+     SITE_URL=https://www.dropstudios.ie ALLOWED_ORIGINS=https://www.dropstudios.ie,https://drop-studios-pwa.vercel.app \
+     SUPPORT_EMAIL=dropstudioie@gmail.com
    ```
-3. Deploy functions:
+   `SQUARE_WEBHOOK_URL` must match the URL registered in step 3 exactly, or every
+   notification is rejected.
+5. Deploy the functions:
    ```bash
    npx supabase functions deploy create-checkout
-   npx supabase functions deploy stripe-webhook --no-verify-jwt
+   npx supabase functions deploy square-webhook --no-verify-jwt
    ```
-   Do **not** deploy `dev-checkout` to production (it also refuses to run with a
-   live key or without `ALLOW_TEST_PAYMENTS=true`).
-4. Test with `sk_test_` keys and the Stripe CLI first:
-   `stripe listen --forward-to https://<project-ref>.supabase.co/functions/v1/stripe-webhook`.
+   Do **not** deploy `dev-checkout` to production (it also refuses to run when
+   `SQUARE_ENVIRONMENT=production` or without `ALLOW_TEST_PAYMENTS=true`).
+6. Buy the Intro Offer in the app and pay with a Square sandbox test card. The
+   membership should appear in My Membership within seconds.
+7. To go live, repeat steps 2–4 with the **Production** token, location ID and a
+   production webhook subscription, and set `SQUARE_ENVIRONMENT=production`.
 
-Refunds: Stripe refunds mark the payment `refunded` and write an audit entry.
-Whether to remove any remaining classes is a studio decision. Use Admin →
-Customers → *Grant / revoke classes* with a reason.
+How it works: the app creates a Square payment link priced from the database;
+Square's signed `payment.*` webhook activates the membership once the payment is
+`COMPLETED`. Square sends webhooks for every payment on the account, including
+card-reader sales; those are ignored. Tipping is turned off on app checkouts.
+
+Refunds: issue them in the Square Dashboard. Each refund is written to the audit
+log; a full refund also marks the payment `refunded`. Whether to remove any
+remaining classes is a studio decision: Admin → Customers → *Grant / revoke
+classes* with a reason.
 
 ### Workshop tickets
 
 In Admin → Timetable, tick **Special event** on a recurring or one-off class and
 enter a **Ticket price**. Customers then see *Buy ticket* instead of booking with
 a membership. Starting checkout holds their spot for about 30 minutes; the
-webhook confirms it, and an expired checkout releases it (a cron job also
-clears stale holds every 10 minutes). Paid tickets can’t be cancelled in the
-app. Refunds are issued by the studio in Stripe. If a payment ever arrives after
+webhook confirms it, and a cron job releases unpaid holds after about 35 minutes. Paid tickets can’t be cancelled in the
+app. Refunds are issued by the studio in Square. If a payment ever arrives after
 its spot was lost, or the studio cancels the event, the Admin overview shows
 “tickets need a refund” and the audit log lists them as `ticket_refund_required`.
 
@@ -82,7 +102,7 @@ Build command `npm run build`, output `dist`. Environment variables:
 |---|---|
 | `VITE_SUPABASE_URL` | `https://<project-ref>.supabase.co` |
 | `VITE_SUPABASE_ANON_KEY` | the project’s anon/public key |
-| `VITE_PAYMENTS_MODE` | `stripe` |
+| `VITE_PAYMENTS_MODE` | `live` |
 | `VITE_VAPID_PUBLIC_KEY` | optional, for push |
 
 `vercel.json` in the repository sets this up on Vercel: every app link (such as
@@ -158,5 +178,5 @@ subscription are marked done.
   services you actually use, and update `POLICIES_UPDATED` whenever the text changes.
   Account deletion requests are handled by email for now.
 - **Home-page wording.** The headline and intro text are placeholders; replace them with your own.
-- **Live verification.** Run a Stripe test-mode payment (membership and ticket) and a
+- **Live verification.** Run a Square sandbox payment (membership and ticket) and a
   reminder email end-to-end against your Supabase project before launch.

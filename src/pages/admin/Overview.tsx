@@ -55,7 +55,7 @@ export default function Overview() {
       </div>
       {a.loading && !d ? <PageSpinner /> : a.error ? <ErrorNotice error={a.error} onRetry={a.reload} /> : d && (
         <>
-          {t && t.refunds_to_review > 0 && <div className="mb-4"><Notice tone="warn">{t.refunds_to_review} workshop ticket{t.refunds_to_review === 1 ? '' : 's'} need a refund in Stripe. See the Audit log (“ticket refund required”).</Notice></div>}
+          {t && t.refunds_to_review > 0 && <div className="mb-4"><Notice tone="warn">{t.refunds_to_review} workshop ticket{t.refunds_to_review === 1 ? '' : 's'} need a refund in Square. See the Audit log (“ticket refund required”).</Notice></div>}
           {d.test_payments_excluded > 0 && <div className="mb-4"><Notice tone="test">{d.test_payments_excluded} TEST payment(s) in this period are excluded from all revenue figures.</Notice></div>}
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Stat label="Revenue" value={formatPrice(d.revenue_cents, 'EUR', { forceDecimals: true })}

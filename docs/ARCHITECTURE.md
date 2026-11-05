@@ -15,8 +15,8 @@
 └────────────┬─────────────┘        │  └─────────────────▲───────────────────┘  │
              │ redirect             │  ┌─────────────────┴───────────────────┐  │
              ▼                      │  │ Edge Functions (Deno)               │  │
-      ┌──────────────┐  webhook     │  │ create-checkout · stripe-webhook ·  │  │
-      │ Stripe       ├─────────────►│  │ dev-checkout (dev only)             │  │
+      ┌──────────────┐  webhook     │  │ create-checkout · square-webhook ·  │  │
+      │ Square       ├─────────────►│  │ dev-checkout (dev only)             │  │
       │ Checkout     │              │  └─────────────────────────────────────┘  │
       └──────────────┘              └───────────────────────────────────────────┘
 ```
@@ -58,7 +58,7 @@ Times are evaluated in `Europe/Dublin` (`app_settings.timezone`), including DST.
 | `membership_plans` | Configurable products: price (cents), classes, validity days, single/multi, first-time-only, active, “Most Popular” opt-in |
 | `plan_styles` | Eligible styles when a plan isn’t “all styles” |
 | `plan_exclusions` | Recurring class or single session excluded from a plan |
-| `payments` | One row per checkout attempt; `kind` membership or ticket; server-side amount, `plan_snapshot`, provider (`stripe` / `manual` / `dev_test`), `is_test`, idempotency key, Stripe references |
+| `payments` | One row per checkout attempt; `kind` membership or ticket; server-side amount, `plan_snapshot`, provider (`square` / `manual` / `dev_test`; `stripe` kept for history), `is_test`, idempotency key, Stripe references |
 | `membership_purchases` | **Immutable** snapshot of the terms bought: price, classes, validity, allowed styles, excluded classes, activation policy |
 | `memberships` | The live instance: classes remaining, activation, base expiry, effective expiry |
 | `membership_pauses` | Pause windows (inclusive dates); expiry = base + paused days |
@@ -77,16 +77,20 @@ customers always see “classes”.
 2. `create_checkout` RPC validates the plan, first-time eligibility and style
    choice, snapshots the terms and inserts a `pending` payment priced from the
    database. Re-sending the same idempotency key returns the same payment.
-3. Edge function creates a Stripe Checkout Session for exactly that amount,
-   expiring old sessions first so a payment can never be paid twice.
-4. Stripe → `stripe-webhook` (signature verified) → `fulfill_payment`
-   (service role only). It locks the payment, verifies the amount and currency,
-   marks it succeeded and creates purchase + membership + ledger grant once.
-   Repeated webhooks are no-ops.
+3. Edge function creates a Square payment link for exactly that amount
+   (tipping off). Its idempotency key comes from our payment id, so retries get
+   the same link and a payment record can never be paid twice. The Square order
+   id is stored on the payment.
+4. Square → `square-webhook` (HMAC signature over URL + body verified) →
+   `fulfill_payment` (service role only) once the payment is `COMPLETED`. It
+   locks the payment, verifies the amount and currency, marks it succeeded and
+   creates purchase + membership + ledger grant once. Repeated events are
+   no-ops; payments that don't belong to an app checkout (e.g. card-reader
+   sales) are ignored.
 5. The success page polls the payment status; nothing is activated client-side.
 
 `dev-checkout` follows the same path with provider `dev_test`. It only runs
-when the server has `ALLOW_TEST_PAYMENTS=true` and no live Stripe key. Its
+when the server has `ALLOW_TEST_PAYMENTS=true` and Square isn't set to production. Its
 records are flagged `is_test`, badged **TEST** in the UI and excluded from
 revenue analytics.
 
@@ -94,11 +98,10 @@ revenue analytics.
 
 `create_ticket_checkout` locks the session, releases expired holds, and inserts a
 `pending_payment` booking that counts towards capacity for 35 minutes (the
-Stripe session expires after 30). Returning to the same workshop resumes that
+customer is told about 30). Returning to the same workshop resumes that
 checkout. `fulfill_payment` confirms the hold. If the hold lapsed, it re-books
 when a spot is free; otherwise it records `ticket_refund_required`.
-`expire_payment` (from the webhook) and the `drop-release-holds` cron job free
-abandoned spots.
+The `drop-release-holds` cron job frees abandoned spots.
 
 ## Frontend structure
 
