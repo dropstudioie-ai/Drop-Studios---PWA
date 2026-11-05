@@ -85,9 +85,10 @@ Build command `npm run build`, output `dist`. Environment variables:
 | `VITE_PAYMENTS_MODE` | `stripe` |
 | `VITE_VAPID_PUBLIC_KEY` | optional, for push |
 
-SPA fallback: route all paths to `/index.html` (Vercel: a rewrite
-`{"source": "/(.*)", "destination": "/index.html"}`; Netlify: `/* /index.html 200`).
-Serve `sw.js` with `Cache-Control: no-cache` so updates roll out. HTTPS is
+`vercel.json` in the repository sets this up on Vercel: every app link (such as
+`/terms` or `/timetable`) falls back to `index.html`, `sw.js` is served with
+`Cache-Control: no-cache` so updates roll out, and basic security headers are
+added. On Netlify, add `/* /index.html 200` to a `_redirects` file instead. HTTPS is
 required for the service worker and install prompts.
 
 ## 6. Local development
