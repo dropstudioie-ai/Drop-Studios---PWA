@@ -1,6 +1,6 @@
-// Starts a real Square checkout (payment link) for a membership plan or a
-// workshop ticket. The price comes from the database (create_checkout /
-// create_ticket_checkout RPC), never from the client.
+// Starts a real Square checkout (payment link) for a membership plan, a
+// workshop ticket or a Drop In class. The price comes from the database
+// (create_checkout / create_ticket_checkout RPC), never from the client.
 import { adminClient, corsHeaders, dbErrorCode, json, readCheckoutBody, startCheckout, userClient } from '../_shared/http.ts';
 import { paymentLinkRequest, SQUARE_VERSION, squareBaseUrl } from '../_shared/square.ts';
 
@@ -38,7 +38,7 @@ Deno.serve(async (req) => {
       locationId,
       siteUrl,
       buyerEmail: auth.user.email,
-      isTicket: body.kind === 'ticket',
+      kind: body.kind === 'ticket' ? (payment.kind === 'drop_in' ? 'drop_in' : 'ticket') : 'membership',
       supportEmail: Deno.env.get('SUPPORT_EMAIL'),
     })),
   });

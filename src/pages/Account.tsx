@@ -9,6 +9,7 @@ import { useAuth } from '../auth/AuthProvider';
 import { cancellationOutcome, cutoffLabel, DEFAULT_POLICY } from '../domain/booking';
 import { fmt } from '../domain/time';
 import { MembershipCard } from '../components/MembershipCard';
+import { ProfilePhotoCard } from '../components/ProfilePhotoCard';
 import { PauseSheet } from '../components/PauseSheet';
 import { EmptyState, ErrorNotice, Field, Notice, PageSpinner, Sheet, Spinner, useToast } from '../components/ui';
 
@@ -69,6 +70,8 @@ export default function Account() {
         {current.length > 0 && <p className="font-display text-lg font-extrabold text-brand-700">{totalRemaining} {totalRemaining === 1 ? 'class' : 'classes'} available</p>}
       </div>
 
+      <div className="mt-6"><ProfilePhotoCard /></div>
+
       <section className="mt-6 space-y-4" aria-labelledby="current-h">
         <h2 id="current-h" className="sr-only">Current memberships</h2>
         {current.length === 0 ? (
@@ -92,7 +95,7 @@ export default function Account() {
           {upcoming.map((b) => (
             <div key={b.id} className="card flex items-center justify-between gap-3 p-4">
               <div>
-                <p className="font-bold">{b.session!.title}{b.payment_id && <span className="chip ml-2 bg-accent-500 align-middle text-ink">Ticket</span>}</p>
+                <p className="font-bold">{b.session!.title}{b.payment_id && <span className="chip ml-2 bg-accent-500 align-middle text-ink">{b.payment?.kind === 'drop_in' ? 'Drop In' : 'Ticket'}</span>}</p>
                 <p className="text-sm text-muted">{fmt.dateTime(b.session!.starts_at)}{b.session!.instructor ? ` · ${b.session!.instructor.full_name}` : ''}</p>
               </div>
               {b.payment_id

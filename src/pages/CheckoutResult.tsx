@@ -15,6 +15,7 @@ export function CheckoutSuccess() {
   const [view, setView] = useState<View>('waiting');
   const [isTest, setIsTest] = useState(false);
   const [isTicket, setIsTicket] = useState(false);
+  const [isDropIn, setIsDropIn] = useState(false);
 
   useEffect(() => {
     if (!paymentId) return;
@@ -27,7 +28,8 @@ export function CheckoutSuccess() {
         if (cancelled) return;
         if (p?.status === 'succeeded') {
           setIsTest(p.is_test);
-          setIsTicket(p.kind === 'ticket');
+          setIsTicket(p.kind === 'ticket' || p.kind === 'drop_in');
+          setIsDropIn(p.kind === 'drop_in');
           setView('succeeded');
           return;
         }
@@ -56,7 +58,7 @@ export function CheckoutSuccess() {
         <>
           <p className="text-5xl" aria-hidden="true">🎉</p>
           <h1 className="mt-4 text-3xl font-black">You’re in!</h1>
-          <p className="mt-2 text-ink-soft">{isTicket ? 'Your ticket is confirmed. It’s in your upcoming bookings.' : 'Your membership is ready. Time to book your first class.'}</p>
+          <p className="mt-2 text-ink-soft">{isDropIn ? 'Your Drop In class is booked. It’s in your upcoming bookings.' : isTicket ? 'Your ticket is confirmed. It’s in your upcoming bookings.' : 'Your membership is ready. Time to book your first class.'}</p>
           {isTest && <div className="mt-4 text-left"><Notice tone="test"><strong>TEST purchase.</strong> No real payment was taken.</Notice></div>}
           <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
             <Link to="/timetable" className="btn-primary">Book a class</Link>

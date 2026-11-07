@@ -74,7 +74,12 @@ export async function as<T = Record<string, unknown>>(
   }
 }
 
-export async function createUser(db: pg.Client, name: string, role: 'customer' | 'admin' | 'instructor' = 'customer') {
+export async function createUser(
+  db: pg.Client,
+  name: string,
+  role: 'customer' | 'admin' | 'instructor' = 'customer',
+  opts: { photo?: boolean } = {},
+) {
   const id = randomUUID();
   await db.query(`insert into auth.users (id, email, raw_user_meta_data) values ($1, $2, $3)`, [
     id,
@@ -82,6 +87,11 @@ export async function createUser(db: pg.Client, name: string, role: 'customer' |
     { full_name: name },
   ]);
   if (role !== 'customer') await db.query(`update public.profiles set role = $2 where id = $1`, [id, role]);
+  // Booking requires a profile photo; most tests start from a customer who has one.
+  if (opts.photo !== false) {
+    await db.query(`insert into storage.objects (bucket_id, name, owner) values ('avatars', $1 || '/photo.jpg', $1::uuid)`, [id]);
+    await db.query(`update public.profiles set avatar_path = $1 || '/photo.jpg' where id = $1::uuid`, [id]);
+  }
   return id;
 }
 

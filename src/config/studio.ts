@@ -17,14 +17,14 @@ export const STUDIO = {
 } as const;
 
 /** Date shown on the Terms and Privacy pages. Update it whenever they change. */
-export const POLICIES_UPDATED = '2026-11-04';
+export const POLICIES_UPDATED = '2026-11-07';
 
 /**
  * Third parties that process customer data, as listed in the Privacy Policy.
  * Keep this in line with the services you actually deploy (docs/DEPLOYMENT.md).
  */
 export const DATA_PROCESSORS = [
-  { name: 'Supabase', purpose: 'Database, accounts and login', location: 'EU (Ireland region)' },
+  { name: 'Supabase', purpose: 'Database, accounts, login and profile photos', location: 'EU (Ireland region)' },
   { name: 'Square', purpose: 'Card payments (online and in the studio)', location: 'EU and USA' },
   { name: 'Vercel', purpose: 'Hosting the app', location: 'EU and USA' },
   { name: 'Resend', purpose: 'Sending emails (reminders, class changes)', location: 'USA' },

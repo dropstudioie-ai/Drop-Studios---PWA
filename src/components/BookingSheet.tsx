@@ -64,6 +64,10 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
   const cancelInfo = cancellationOutcome(start, new Date(), policy);
   const scheduled = session.status === 'scheduled';
   const free = Boolean(opts?.authenticated && !opts.my_booking_id && !opts.pending_hold_booking_id);
+  const dropInPrice = session.is_special ? null : (opts?.drop_in_price_cents ?? null);
+  // Booking needs a profile photo (enforced by the server too).
+  const needsPhoto = Boolean(free && opts?.has_profile_photo === false);
+  const canAct = free && !needsPhoto;
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -142,7 +146,9 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
         {opts && !opts.authenticated && scheduled && (
           <div className="space-y-2">
             <p className="text-sm text-ink-soft">
-              {ticketPrice != null ? `Tickets are ${formatPrice(ticketPrice)}. ` : ''}Log in or create an account to {ticketPrice != null ? 'buy a ticket' : 'book this class'}.
+              {ticketPrice != null ? `Tickets are ${formatPrice(ticketPrice)}. ` : ''}
+              {dropInPrice != null ? `Drop In ${formatPrice(dropInPrice)}, or use a membership. ` : ''}
+              Log in or create an account to {ticketPrice != null ? 'buy a ticket' : 'book this class'}.
             </p>
             <Link to={`/login?next=${encodeURIComponent('/timetable')}`} className="btn-primary w-full">Log in</Link>
             <Link to="/register" className="btn-outline w-full">Create an account</Link>
@@ -152,9 +158,9 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
         {/* Already booked */}
         {opts?.authenticated && opts.my_booking_id && (
           <div className="space-y-3">
-            <Notice tone="success"><strong>{opts.my_booking_is_ticket ? 'You have a ticket.' : 'You’re booked in.'}</strong> See you on the floor!</Notice>
+            <Notice tone="success"><strong>{opts.my_booking_is_ticket ? (session.is_special ? 'You have a ticket.' : 'You’re booked in (Drop In).') : 'You’re booked in.'}</strong> See you on the floor!</Notice>
             {opts.my_booking_is_ticket ? (
-              <p className="text-sm text-muted">Can’t make it? Contact the studio about your ticket.</p>
+              <p className="text-sm text-muted">Can’t make it? Contact the studio about your booking.</p>
             ) : (
               <>
                 {cancelInfo.allowed && !confirmCancel && (
@@ -190,8 +196,15 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
           </div>
         )}
 
+        {needsPhoto && scheduled && !opts?.session_issue && (
+          <div className="space-y-3">
+            <Notice tone="warn">{messageFor('profile_photo_required')}</Notice>
+            <Link to="/account#photo" className="btn-accent w-full">Add profile photo</Link>
+          </div>
+        )}
+
         {/* Special event: buy a ticket */}
-        {opts && free && scheduled && session.is_special && (
+        {opts && canAct && scheduled && session.is_special && (
           ticketPrice != null && !opts.session_issue ? (
             <div className="space-y-3">
               {paymentsMode === 'test' && <Notice tone="test"><strong>TEST MODE</strong> — no real payment will be taken.</Notice>}
@@ -212,7 +225,7 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
         {/* Regular class */}
         {opts && free && !session.is_special && opts.session_issue && scheduled && <Notice tone="warn">{messageFor(opts.session_issue)}</Notice>}
 
-        {opts && free && !session.is_special && !opts.session_issue && eligible.length > 0 && (
+        {opts && canAct && !session.is_special && !opts.session_issue && eligible.length > 0 && (
           <div className="space-y-3">
             {eligible.length > 1 ? (
               <label className="block">
@@ -229,11 +242,27 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
           </div>
         )}
 
-        {opts && free && !session.is_special && !opts.session_issue && eligible.length === 0 && (
-          <div className="space-y-3">
-            <Notice tone="warn">{blocking ? messageFor(blocking.issue) : 'You need a membership to book classes.'}</Notice>
-            <Link to="/memberships" className="btn-accent w-full">Explore memberships</Link>
-          </div>
+        {opts && canAct && !session.is_special && !opts.session_issue && eligible.length === 0 && (
+          dropInPrice != null ? (
+            <div className="space-y-3">
+              {blocking && <Notice tone="info">{messageFor(blocking.issue)} You can still come as a Drop In.</Notice>}
+              {paymentsMode === 'test' && <Notice tone="test"><strong>TEST MODE</strong> — no real payment will be taken.</Notice>}
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-ink-soft"><strong className="text-ink">Drop In</strong> · this class only</span>
+                <span className="font-display text-2xl font-black">{formatPrice(dropInPrice, 'EUR', { forceDecimals: true })}</span>
+              </div>
+              <button className="btn-accent w-full text-lg" disabled={busy} onClick={buyTicket}>
+                {busy && <Spinner />}{paymentsMode === 'test' ? 'Book TEST Drop In' : 'Book Drop In'}
+              </button>
+              <Link to="/memberships" className="btn-outline w-full">Save with a membership</Link>
+              <p className="text-center text-xs text-muted">Drop Ins aren’t refundable in the app. Contact the studio if you can’t make it.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <Notice tone="warn">{blocking ? messageFor(blocking.issue) : 'You need a membership to book classes.'}</Notice>
+              <Link to="/memberships" className="btn-accent w-full">Explore memberships</Link>
+            </div>
+          )
         )}
 
         {opts && free && (opts.alternatives?.length ?? 0) > 0 && (

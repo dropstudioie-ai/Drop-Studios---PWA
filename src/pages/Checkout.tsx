@@ -10,10 +10,12 @@ import { computeExpiry, lastValidDay } from '../domain/membership';
 import { formatKey } from '../domain/time';
 import { MembershipTerms } from '../components/Terms';
 import { EmptyState, ErrorNotice, Notice, PageSpinner, Spinner } from '../components/ui';
+import { useAuth } from '../auth/AuthProvider';
 
 export default function Checkout() {
   const { code = '' } = useParams();
   const navigate = useNavigate();
+  const { profile } = useAuth();
   const data = useAsync(async () => {
     const [plan, settings, styles, firstTime] = await Promise.all([
       api.planByCode(code), api.settings(), api.styles(), api.isFirstTimeCustomer(),
@@ -47,7 +49,8 @@ export default function Checkout() {
     ? formatKey(lastValidDay(computeExpiry(new Date(), plan.validity_days, 0, settings.timezone), settings.timezone), { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' })
     : null;
 
-  const canPay = !busy && agreed && !introBlocked && (!needsStyle || styleId);
+  const needsPhoto = !profile?.avatar_path;
+  const canPay = !busy && agreed && !introBlocked && !needsPhoto && (!needsStyle || styleId);
 
   async function pay() {
     setBusy(true);
@@ -87,6 +90,7 @@ export default function Checkout() {
         </div>
       </section>
 
+      {needsPhoto && <div className="mt-4"><Notice tone="warn">{messageFor('profile_photo_required')} <Link className="font-semibold underline" to="/account#photo">Add your photo</Link></Notice></div>}
       {introBlocked && <div className="mt-4"><Notice tone="warn">The Intro Offer is for first-time customers only. <Link className="font-semibold underline" to="/memberships">See other memberships</Link></Notice></div>}
 
       {needsStyle && (

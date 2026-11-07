@@ -20,6 +20,8 @@ describe('Terms & Conditions', () => {
     expect(text).toContain('at least 7 days');
     expect(text).toContain('activated when your payment is confirmed');
     expect(text).toContain('14 days');
+    expect(text).toContain('Drop In');
+    expect(text).toContain('photo of yourself');
   });
 
   it('follows the studio settings when they change', () => {
@@ -36,6 +38,7 @@ describe('Privacy Policy', () => {
     render(<MemoryRouter><PrivacyContent /></MemoryRouter>);
     for (const p of DATA_PROCESSORS) expect(screen.getByText(p.name)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'dataprotection.ie' })).toHaveAttribute('href', 'https://www.dataprotection.ie');
+    expect(screen.getByText('Profile photo:')).toBeInTheDocument();
   });
 
   it('matches reality: the app loads nothing from Google Fonts or trackers', () => {

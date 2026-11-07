@@ -54,7 +54,7 @@ export const api = {
 
   myBookings: async (userId: string) =>
     unwrap(
-      await supabase.from('bookings').select(`*, session:class_sessions(${SESSION_SELECT})`)
+      await supabase.from('bookings').select(`*, session:class_sessions(${SESSION_SELECT}), payment:payments!bookings_payment_id_fkey(kind)`)
         .eq('user_id', userId).order('booked_at', { ascending: false }).limit(200),
     ) as Booking[],
 
@@ -100,7 +100,7 @@ export const api = {
 
   paymentStatus: async (paymentId: string) =>
     unwrap(await supabase.from('payments').select('id, kind, status, is_test, amount_cents, currency, failure_reason').eq('id', paymentId).maybeSingle()) as {
-      id: string; kind: 'membership' | 'ticket'; status: string; is_test: boolean; amount_cents: number; currency: string; failure_reason: string | null;
+      id: string; kind: 'membership' | 'ticket' | 'drop_in'; status: string; is_test: boolean; amount_cents: number; currency: string; failure_reason: string | null;
     } | null,
 };
 

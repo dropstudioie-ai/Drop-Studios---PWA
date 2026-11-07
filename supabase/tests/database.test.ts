@@ -563,9 +563,8 @@ run('database: plans, booking, allowances, pauses, security', () => {
       await expectError(book(c, await workshop()), 'special_event');
     });
 
-    it('refuses tickets for normal classes or workshops without a price', async () => {
+    it('refuses tickets for workshops without a price', async () => {
       const c = await createUser(db, 'NoTicket');
-      await expectError(startTicket(c, await makeSession({ style: 'heels', startsInMinutes: 600 })), 'tickets_not_available');
       await expectError(startTicket(c, await workshop(10, null)), 'tickets_not_available');
     });
 
@@ -642,6 +641,104 @@ run('database: plans, booking, allowances, pauses, security', () => {
       const [r] = await as<{ r: { tickets_sold: number; ticket_revenue_cents: number } }>(db, user(admin), `select admin_ticket_sales(current_date, current_date) as r`);
       expect(r.r.tickets_sold).toBeGreaterThanOrEqual(1);
       expect(r.r.ticket_revenue_cents).toBe(r.r.tickets_sold * 2500);
+    });
+  });
+
+  // ---------------------------------------------------------------- drop in
+  describe('Drop In (single class without a membership)', () => {
+    const dropIn = async (uid: string, sessionId: string) =>
+      (await as<{ r: { payment_id: string; kind: string; amount_cents: number; plan_name: string } }>(
+        db, user(uid), `select create_ticket_checkout($1, $2, 'square') as r`, [sessionId, randomUUID()],
+      ))[0].r;
+
+    it('charges €15 for FitDance, Reggaeton, Commercial and Hip Hop and €17 for other styles', async () => {
+      const { rows } = await db.query(`select slug, drop_in_price_cents as p from dance_styles order by sort_order`);
+      expect(Object.fromEntries(rows.map((r) => [r.slug, r.p]))).toEqual({
+        fitdance: 1500, commercial: 1500, 'hip-hop': 1500, heels: 1700, 'jazz-funk': 1700, reggaeton: 1500, choreography: 1700,
+      });
+      const c = await createUser(db, 'DropInPrices');
+      const fit = await dropIn(c, await makeSession({ style: 'fitdance', startsInMinutes: 600 }));
+      expect(fit).toMatchObject({ kind: 'drop_in', amount_cents: 1500, plan_name: 'Drop In: fitdance class' });
+      const heels = await dropIn(c, await makeSession({ style: 'heels', startsInMinutes: 700 }));
+      expect(heels).toMatchObject({ kind: 'drop_in', amount_cents: 1700 });
+    });
+
+    it('books the class once Square confirms the payment, without touching any membership', async () => {
+      const c = await createUser(db, 'DropInBooker');
+      const s = await makeSession({ style: 'commercial', startsInMinutes: 800 });
+      const t = await dropIn(c, s);
+      const [r] = await as<{ r: { ok: boolean; booking_id: string } }>(db, service,
+        `select fulfill_payment($1, 'square', 'sq_pay', $2, 1500, 'EUR') as r`, [t.payment_id, `evt_${randomUUID()}`]);
+      expect(r.r.ok).toBe(true);
+      const [b] = (await db.query(`select status, membership_id, payment_id from bookings where id = $1`, [r.r.booking_id])).rows;
+      expect(b).toEqual({ status: 'booked', membership_id: null, payment_id: t.payment_id });
+      await expectError(as(db, user(c), `select cancel_booking($1)`, [r.r.booking_id]), 'ticket_contact_studio');
+    });
+
+    it('follows the 3-week booking window and refuses styles without a Drop In price', async () => {
+      const c = await createUser(db, 'DropInRules');
+      await expectError(dropIn(c, await makeSession({ style: 'hip-hop', startsInMinutes: 22 * 24 * 60 })), 'outside_booking_window');
+      await db.query(`update dance_styles set drop_in_price_cents = null where slug = 'reggaeton'`);
+      try {
+        await expectError(dropIn(c, await makeSession({ style: 'reggaeton', startsInMinutes: 900 })), 'drop_in_not_available');
+      } finally {
+        await db.query(`update dance_styles set drop_in_price_cents = 1500 where slug = 'reggaeton'`);
+      }
+    });
+
+    it('booking options show the Drop In price, also to visitors who are not logged in', async () => {
+      const s = await makeSession({ style: 'jazz-funk', startsInMinutes: 950 });
+      const [o] = await as<{ r: { drop_in_price_cents: number } }>(db, anon, `select booking_options($1) as r`, [s]);
+      expect(o.r.drop_in_price_cents).toBe(1700);
+    });
+
+    it('keeps the booking → payment link name the app relies on', async () => {
+      // src/api: bookings ... payment:payments!bookings_payment_id_fkey(kind)
+      const { rows } = await db.query(
+        `select conname from pg_constraint where conrelid = 'public.bookings'::regclass and contype = 'f' and conname = 'bookings_payment_id_fkey'`,
+      );
+      expect(rows).toHaveLength(1);
+    });
+
+    it('reports Drop In sales separately', async () => {
+      const [r] = await as<{ r: { drop_ins_sold: number; drop_in_revenue_cents: number } }>(db, user(admin), `select admin_ticket_sales(current_date, current_date) as r`);
+      expect(r.r.drop_ins_sold).toBeGreaterThanOrEqual(1);
+      expect(r.r.drop_in_revenue_cents).toBeGreaterThanOrEqual(1500);
+    });
+  });
+
+  // ---------------------------------------------------------------- photos
+  describe('profile photo', () => {
+    it('is required before booking, buying a membership or a Drop In', async () => {
+      const c = await createUser(db, 'NoPhoto', 'customer', { photo: false });
+      const s = await makeSession({ style: 'heels', startsInMinutes: 1000 });
+      await expectError(as(db, user(c), `select create_checkout($1, null, $2)`, [await planId('multi-5'), randomUUID()]), 'profile_photo_required');
+      await expectError(as(db, user(c), `select create_ticket_checkout($1, $2)`, [s, randomUUID()]), 'profile_photo_required');
+      const [o] = await as<{ r: { has_profile_photo: boolean } }>(db, user(c), `select booking_options($1) as r`, [s]);
+      expect(o.r.has_profile_photo).toBe(false);
+
+      // Upload into their own folder, then everything works.
+      await as(db, user(c), `insert into storage.objects (bucket_id, name, owner) values ('avatars', $1 || '/me.jpg', $1::uuid)`, [c]);
+      await as(db, user(c), `update profiles set avatar_path = $1 || '/me.jpg' where id = $1::uuid`, [c]);
+      const [o2] = await as<{ r: { has_profile_photo: boolean } }>(db, user(c), `select booking_options($1) as r`, [s]);
+      expect(o2.r.has_profile_photo).toBe(true);
+      await as(db, user(c), `select create_checkout($1, null, $2)`, [await planId('multi-5'), randomUUID()]);
+    });
+
+    it("customers can't upload into, or point at, someone else's folder", async () => {
+      const a = await createUser(db, 'PhotoOwner');
+      const b = await createUser(db, 'PhotoIntruder', 'customer', { photo: false });
+      await expect(as(db, user(b), `insert into storage.objects (bucket_id, name, owner) values ('avatars', $1 || '/x.jpg', $2::uuid)`, [a, b]))
+        .rejects.toThrow(/row-level security/);
+      await expect(as(db, user(b), `update profiles set avatar_path = $1 || '/photo.jpg' where id = $2::uuid`, [a, b]))
+        .rejects.toThrow(/invalid_avatar_path/);
+      expect(await as(db, user(b), `select name from storage.objects where bucket_id = 'avatars' and name like $1 || '/%'`, [a])).toHaveLength(0);
+    });
+
+    it('staff can see customer photos for check-in', async () => {
+      const c = await createUser(db, 'PhotoVisible');
+      const rows = await as(db, user(admin), `select name from storage.objects where bucket_id = 'avatars' and name like $1 || '/%'`, [c]);
+      expect(rows).toHaveLength(1);
     });
   });
 

@@ -40,7 +40,7 @@ export default function Overview() {
   const [to, setTo] = useState(today);
   const a = useAsync(async () => unwrap(await supabase.rpc('admin_analytics', { p_from: from, p_to: to })) as Analytics, [from, to]);
   const tickets = useAsync(async () => unwrap(await supabase.rpc('admin_ticket_sales', { p_from: from, p_to: to })) as {
-    tickets_sold: number; ticket_revenue_cents: number; refunds_to_review: number;
+    tickets_sold: number; ticket_revenue_cents: number; drop_ins_sold: number; drop_in_revenue_cents: number; refunds_to_review: number;
   }, [from, to]);
   const t = tickets.data;
 
@@ -55,11 +55,13 @@ export default function Overview() {
       </div>
       {a.loading && !d ? <PageSpinner /> : a.error ? <ErrorNotice error={a.error} onRetry={a.reload} /> : d && (
         <>
-          {t && t.refunds_to_review > 0 && <div className="mb-4"><Notice tone="warn">{t.refunds_to_review} workshop ticket{t.refunds_to_review === 1 ? '' : 's'} need a refund in Square. See the Audit log (“ticket refund required”).</Notice></div>}
+          {t && t.refunds_to_review > 0 && <div className="mb-4"><Notice tone="warn">{t.refunds_to_review} paid class{t.refunds_to_review === 1 ? '' : 'es'} (tickets or Drop Ins) need a refund in Square. See the Audit log (“ticket refund required”).</Notice></div>}
           {d.test_payments_excluded > 0 && <div className="mb-4"><Notice tone="test">{d.test_payments_excluded} TEST payment(s) in this period are excluded from all revenue figures.</Notice></div>}
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Stat label="Revenue" value={formatPrice(d.revenue_cents, 'EUR', { forceDecimals: true })}
-              note={t && t.tickets_sold > 0 ? `${d.sales - t.tickets_sold} memberships + ${t.tickets_sold} tickets` : `${d.sales} membership sales`} />
+              note={t && (t.tickets_sold + t.drop_ins_sold) > 0
+                ? `${d.sales - t.tickets_sold - t.drop_ins_sold} memberships · ${t.drop_ins_sold} Drop Ins · ${t.tickets_sold} tickets`
+                : `${d.sales} membership sales`} />
             <Stat label="Revenue / attended class" value={d.revenue_per_attended_class_cents === null ? null : formatPrice(d.revenue_per_attended_class_cents, 'EUR', { forceDecimals: true })}
               note={d.unmarked_past_bookings ? `${d.unmarked_past_bookings} past bookings not marked attended yet` : `${d.attended_classes} attended`} />
             <Stat label="Class occupancy" value={d.classes ? pct(d.classes.occupancy_rate) : null} note={d.classes ? `${d.classes.booked} of ${d.classes.capacity} spots, ${d.classes.sessions} classes` : 'No past classes in range'} />
@@ -73,8 +75,9 @@ export default function Overview() {
               note={d.classes ? `${d.classes.late_cancellations} late · ${d.classes.no_shows} no-shows · ${d.classes.cancelled_by_studio} ${d.classes.cancelled_by_studio === 1 ? 'class' : 'classes'} cancelled by studio` : undefined} />
           </div>
 
-          {t && t.tickets_sold > 0 && (
+          {t && (t.tickets_sold > 0 || t.drop_ins_sold > 0) && (
             <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <Stat label="Drop Ins" value={String(t.drop_ins_sold)} note={`${formatPrice(t.drop_in_revenue_cents, 'EUR', { forceDecimals: true })} revenue`} />
               <Stat label="Workshop tickets" value={String(t.tickets_sold)} note={`${formatPrice(t.ticket_revenue_cents, 'EUR', { forceDecimals: true })} revenue`} />
             </div>
           )}

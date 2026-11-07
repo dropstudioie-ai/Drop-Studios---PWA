@@ -19,6 +19,8 @@ const MESSAGES: Record<string, string> = {
   class_in_pause: 'This class falls within your membership pause.',
   special_event: 'This is a special event with its own ticket — it isn’t included in memberships.',
   tickets_not_available: 'Tickets for this event aren’t on sale online. Please contact the studio.',
+  profile_photo_required: 'Please add a profile photo to your account before booking. It helps us welcome you at the door.',
+  drop_in_not_available: 'This class can’t be booked as a Drop In. Please choose a membership.',
   ticket_contact_studio: 'Paid tickets can’t be cancelled in the app. Please contact the studio about a refund.',
   style_not_included: 'This dance style isn’t included in your membership.',
   class_excluded: 'This class isn’t included in your membership.',

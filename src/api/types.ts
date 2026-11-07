@@ -24,6 +24,7 @@ export interface DanceStyle {
   color: string;
   is_active: boolean;
   sort_order: number;
+  drop_in_price_cents: number | null;
 }
 
 export interface Instructor {
@@ -87,6 +88,7 @@ export interface Booking {
   cancelled_at: string | null;
   cancel_reason: string | null;
   session?: ClassSession;
+  payment?: { kind: 'membership' | 'ticket' | 'drop_in' } | null;
 }
 
 export interface MembershipPurchase {
@@ -139,6 +141,7 @@ export interface Profile {
   phone: string | null;
   role: 'customer' | 'instructor' | 'admin';
   marketing_opt_in: boolean;
+  avatar_path: string | null;
   created_at: string;
 }
 
@@ -149,6 +152,8 @@ export interface BookingOptions {
   my_booking_is_ticket?: boolean | null;
   pending_hold_booking_id?: string | null;
   ticket_price_cents?: number | null;
+  drop_in_price_cents?: number | null;
+  has_profile_photo?: boolean;
   eligible_membership_id?: string | null;
   memberships?: { membership_id: string; plan_name: string; state: MembershipState; classes_remaining: number; issue: string | null }[];
   alternatives?: { id: string; title: string; starts_at: string; spots_left: number }[];

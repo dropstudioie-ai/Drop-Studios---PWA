@@ -65,6 +65,7 @@ export function TermsContent({ rules }: { rules: Rules }) {
           <li>You must be at least 16 to create an account. Younger dancers must be registered by a parent or guardian, who accepts these terms on their behalf.</li>
           <li>Your account is personal. Keep your password private and don’t share your account or memberships.</li>
           <li>Please keep your details accurate so we can reach you about your classes.</li>
+          <li>You need to add a clear photo of yourself to your profile before booking, so our staff can recognise you at the door.</li>
         </ul>
       </section>
 
@@ -116,10 +117,12 @@ export function TermsContent({ rules }: { rules: Rules }) {
       </section>
 
       <section>
-        <h2>6. Workshop and event tickets</h2>
+        <h2>6. Drop In classes and event tickets</h2>
         <ul>
-          <li>Tickets are a one-off payment for a specific event. Your spot is held for about 30 minutes while you pay and is released if payment isn’t completed.</li>
-          <li>Tickets can’t be cancelled in the app and are not refundable, unless we cancel or reschedule the event, in which case we refund you.</li>
+          <li>A <strong>Drop In</strong> is a one-off payment for a single class, at the price shown for that class. You don’t need a membership.</li>
+          <li>Workshop and event <strong>tickets</strong> are a one-off payment for a specific event.</li>
+          <li>Your spot is held for about 30 minutes while you pay and is released if payment isn’t completed.</li>
+          <li>Drop Ins and tickets can’t be cancelled in the app and are not refundable, unless we cancel or reschedule the class or event, in which case we refund you.</li>
         </ul>
       </section>
 
@@ -137,7 +140,7 @@ export function TermsContent({ rules }: { rules: Rules }) {
           <li>You can cancel a membership bought online within <strong>14 days</strong> of buying it by emailing {STUDIO.email}.</li>
           <li>By buying, you ask us to make your membership available straight away. If you have already used classes when you cancel, we deduct their value (the price divided by the number of classes, for each class used) and refund the rest.</li>
           <li>Refunds are made to your original payment method within 14 days of your request.</li>
-          <li>This right does not apply to tickets for an event on a specific date.</li>
+          <li>This right does not apply to Drop Ins or tickets, which are for a class or event on a specific date.</li>
         </ul>
       </section>
 
@@ -210,6 +213,7 @@ export function PrivacyContent() {
         <h2>2. What we collect</h2>
         <ul>
           <li><strong>Account details:</strong> your name, email address and, if you give it, your mobile number. Your password is stored by our login provider in a protected (hashed) form; we can’t see it.</li>
+          <li><strong>Profile photo:</strong> the photo you add to your account, so staff can recognise you at check-in. Only you and studio staff can see it, and replacing it deletes the old one.</li>
           <li><strong>Membership and booking records:</strong> what you bought, classes remaining, activation and expiry dates, pauses, bookings, cancellations and attendance.</li>
           <li><strong>Payment records:</strong> amount, date, status and the payment reference. Card details are handled by Square and never reach us.</li>
           <li><strong>Preferences:</strong> whether you want news by email and, if you turn them on, the technical address your device uses for app notifications.</li>
@@ -221,6 +225,7 @@ export function PrivacyContent() {
         <h2>3. Why we use it</h2>
         <ul>
           <li><strong>To run your account, memberships and bookings</strong>, and to tell you about changes to your classes: necessary for our contract with you.</li>
+          <li><strong>To check you in with your profile photo</strong>: our legitimate interest in making sure bookings are used by the person who made them.</li>
           <li><strong>To process payments and keep accounting records</strong>: contract and legal obligation (tax law).</li>
           <li><strong>To keep the service secure, prevent misuse and understand how classes are used</strong> (for example attendance totals): our legitimate interests in running the studio.</li>
           <li><strong>To send you news and offers</strong>: only with your consent, which you can withdraw at any time in My Membership.</li>
@@ -252,7 +257,7 @@ export function PrivacyContent() {
       <section>
         <h2>6. How long we keep it</h2>
         <ul>
-          <li>Account, membership and booking data: while your account is open. If you ask us to delete your account, we delete or anonymise it within 30 days.</li>
+          <li>Account, profile photo, membership and booking data: while your account is open. If you ask us to delete your account, we delete or anonymise it within 30 days.</li>
           <li>Payment and accounting records: 6 years, as required by Irish tax law.</li>
           <li>Email preferences: until you change them or close your account.</li>
         </ul>

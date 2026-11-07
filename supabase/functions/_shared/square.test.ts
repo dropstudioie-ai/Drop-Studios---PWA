@@ -19,7 +19,7 @@ Deno.test('signature matches the HMAC-SHA256(url + body) scheme used by Square',
 Deno.test('payment link: database price, no tipping, our payment id as reference', () => {
   const req = paymentLinkRequest(
     { payment_id: 'pay-123', amount_cents: 5500, currency: 'eur', plan_name: '5-Class Multi-Style', class_count: 5 },
-    { locationId: 'LOC1', siteUrl: 'https://www.dropstudios.ie', buyerEmail: 'a@b.ie', isTicket: false },
+    { locationId: 'LOC1', siteUrl: 'https://www.dropstudios.ie', buyerEmail: 'a@b.ie', kind: 'membership' },
   );
   assertEquals(req.idempotency_key, 'drop-link-pay-123');
   assertEquals(req.order.location_id, 'LOC1');
@@ -29,6 +29,14 @@ Deno.test('payment link: database price, no tipping, our payment id as reference
   assertEquals(req.checkout_options.allow_tipping, false);
   assertEquals(req.checkout_options.redirect_url, 'https://www.dropstudios.ie/checkout/success?payment_id=pay-123');
   assertEquals(req.pre_populated_data, { buyer_email: 'a@b.ie' });
+});
+
+Deno.test('payment link labels Drop Ins and tickets', () => {
+  const p = { payment_id: 'pay-9', amount_cents: 1500, currency: 'EUR', plan_name: 'Drop In: FitDance', class_count: null };
+  const base = { locationId: 'LOC1', siteUrl: 'https://x.ie' };
+  assertEquals(paymentLinkRequest(p, { ...base, kind: 'drop_in' }).order.line_items[0].note, 'Drop In: single class');
+  assertEquals(paymentLinkRequest(p, { ...base, kind: 'ticket' }).order.line_items[0].note, 'Workshop ticket');
+  assertEquals(paymentLinkRequest(p, { ...base, kind: 'drop_in' }).order.line_items[0].name, 'Drop Studios — Drop In: FitDance');
 });
 
 Deno.test('only COMPLETED payments activate anything', () => {

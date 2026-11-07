@@ -9,6 +9,7 @@ import { MembershipCard } from '../../components/MembershipCard';
 import { PauseSheet } from '../../components/PauseSheet';
 import { ErrorNotice, Field, Notice, PageSpinner, Sheet, Spinner, TestBadge, useToast } from '../../components/ui';
 import { Section, Table, Td } from './shared';
+import { Avatar } from '../../components/Avatar';
 
 export default function AdminCustomers() {
   const [q, setQ] = useState('');
@@ -34,7 +35,7 @@ export default function AdminCustomers() {
               .reduce((s, m) => s + m.classes_remaining, 0);
             return (
               <tr key={p.id}>
-                <Td className="font-semibold">{p.full_name || '—'}</Td>
+                <Td className="font-semibold"><span className="flex items-center gap-2"><Avatar path={p.avatar_path} name={p.full_name} size={28} />{p.full_name || '—'}{!p.avatar_path && <span className="chip bg-accent-50 text-xs font-medium">No photo</span>}</span></Td>
                 <Td>{p.email}</Td>
                 <Td className="capitalize">{p.role}</Td>
                 <Td className="tabular-nums">{available}</Td>
@@ -104,7 +105,10 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
       <button className="mb-4 text-sm font-semibold text-brand-700" onClick={onBack}>← All customers</button>
       <div className="card mb-6 flex flex-wrap items-start justify-between gap-4 p-5">
         <div>
-          <h2 className="text-xl font-black">{d.profile.full_name || d.profile.email}</h2>
+          <div className="flex items-center gap-3">
+            <Avatar path={d.profile.avatar_path} name={d.profile.full_name} size={56} />
+            <h2 className="text-xl font-black">{d.profile.full_name || d.profile.email}</h2>
+          </div>
           <p className="text-sm text-muted">{d.profile.email}{d.profile.phone ? ` · ${d.profile.phone}` : ''} · joined {fmt.date(d.profile.created_at)}</p>
           <p className="mt-1 text-sm">Pause days used in {d.allowance.year}: {d.allowance.used_days} / {d.allowance.max_days}</p>
         </div>

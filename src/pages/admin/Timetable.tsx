@@ -7,6 +7,7 @@ import { addDaysToKey, fmt, localDateKey, weekStartKey, zonedTime } from '../../
 import { formatPrice, parseEurosToCents } from '../../domain/money';
 import { ErrorNotice, Field, Notice, PageSpinner, Sheet, Spinner, useToast } from '../../components/ui';
 import { Section, Table, Td, WEEKDAYS } from './shared';
+import { Avatar } from '../../components/Avatar';
 
 type TemplateForm = Omit<ClassTemplate, 'id'> & { id?: string };
 
@@ -208,12 +209,12 @@ function SessionSheet({ styles, instructors, onClose, onSaved }: { styles: Dance
   );
 }
 
-type RosterRow = Booking & { profile: { full_name: string; email: string | null } | null };
+type RosterRow = Booking & { profile: { full_name: string; email: string | null; avatar_path: string | null } | null };
 
 function RosterSheet({ session, onClose, onChanged }: { session: ClassSession; onClose: () => void; onChanged: () => void }) {
   const toast = useToast();
   const rows = useAsync(async () =>
-    unwrap(await supabase.from('bookings').select('*, profile:profiles(full_name,email)').eq('session_id', session.id).order('booked_at')) as RosterRow[], [session.id]);
+    unwrap(await supabase.from('bookings').select('*, profile:profiles(full_name,email,avatar_path)').eq('session_id', session.id).order('booked_at')) as RosterRow[], [session.id]);
 
   async function mark(b: RosterRow, status: 'attended' | 'no_show' | 'booked') {
     try {
@@ -248,9 +249,12 @@ function RosterSheet({ session, onClose, onChanged }: { session: ClassSession; o
         {rows.data?.map((b) => (
           <li key={b.id} className="py-3">
             <div className="flex items-center justify-between gap-2">
-              <div>
-                <p className="font-semibold">{b.profile?.full_name || b.profile?.email}</p>
+              <div className="flex items-center gap-3">
+                <Avatar path={b.profile?.avatar_path} name={b.profile?.full_name} size={44} />
+                <div>
+                <p className="font-semibold">{b.profile?.full_name || b.profile?.email}{b.payment_id && <span className="chip ml-1 bg-accent-50 align-middle">Paid</span>}</p>
                 <p className="text-xs text-muted">{b.status.replace('_', ' ')}{b.class_restored ? ' · class returned' : ''}</p>
+                </div>
               </div>
               {['booked', 'attended', 'no_show'].includes(b.status) && (
                 <div className="flex flex-wrap justify-end gap-1">
