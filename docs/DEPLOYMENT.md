@@ -22,6 +22,13 @@
    `https://<domain>/reset-password` to the redirect URLs. Keep email
    confirmations on in production. Configure custom SMTP for branded emails.
 
+> **Production status (7 Nov 2026):** all migrations up to
+> `20261105000002_square_checkout.sql` were applied to the live project through
+> the Supabase Management API. Supabase recorded them under that day's
+> timestamps (same names, different version numbers). Before using
+> `supabase db push` from the CLI for the first time, align the history with
+> `npx supabase migration list` and `npx supabase migration repair`.
+
 ## 2. First admin
 
 Register through the app, then in the SQL editor:
