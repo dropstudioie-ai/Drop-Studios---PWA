@@ -10,6 +10,7 @@ import { cancellationOutcome, cutoffLabel, DEFAULT_POLICY } from '../domain/book
 import { fmt, localDateKey } from '../domain/time';
 import { validDob } from '../domain/profile';
 import { MembershipCard } from '../components/MembershipCard';
+import { BirthdayCard } from '../components/BirthdayCard';
 import { ProfilePhotoCard } from '../components/ProfilePhotoCard';
 import { PauseSheet } from '../components/PauseSheet';
 import { EmptyState, ErrorNotice, Field, Notice, PageSpinner, Sheet, Spinner, useToast } from '../components/ui';
@@ -71,7 +72,7 @@ export default function Account() {
         {current.length > 0 && <p className="font-display text-lg font-extrabold text-brand-700">{totalRemaining} {totalRemaining === 1 ? 'class' : 'classes'} available</p>}
       </div>
 
-      <div className="mt-6 space-y-3"><ProfilePhotoCard />{!profile?.date_of_birth && <BirthdayCard uid={uid} onSaved={refreshProfile} />}</div>
+      <div className="mt-6 space-y-3"><ProfilePhotoCard />{!profile?.date_of_birth && <BirthdayCard onSaved={refreshProfile} />}</div>
 
       <section className="mt-6 space-y-4" aria-labelledby="current-h">
         <h2 id="current-h" className="sr-only">Current memberships</h2>
@@ -241,29 +242,3 @@ function ProfileSection({ uid, onSaved }: { uid: string; onSaved: () => Promise<
 }
 
 /** Asks existing members (who joined before it was required) for their date of birth, once. */
-function BirthdayCard({ uid, onSaved }: { uid: string; onSaved: () => Promise<void> }) {
-  const toast = useToast();
-  const [dob, setDob] = useState('');
-  const [busy, setBusy] = useState(false);
-  return (
-    <section className="card flex flex-wrap items-end gap-3 border-2 border-brand-200 p-4" aria-labelledby="dob-h">
-      <div className="min-w-0 flex-1 basis-56">
-        <h2 id="dob-h" className="font-bold">🎂 When’s your birthday?</h2>
-        <p className="text-sm text-ink-soft">Add your date of birth so your teacher can celebrate with you. Only studio staff see it.</p>
-        <input className="input mt-2" type="date" min="1900-01-01" max={localDateKey(new Date())} value={dob} onChange={(e) => setDob(e.target.value)} aria-label="Date of birth" />
-      </div>
-      <button className="btn-primary btn-sm w-full sm:w-auto" disabled={busy || !validDob(dob)} onClick={async () => {
-        setBusy(true);
-        try {
-          await api.updateProfile(uid, { date_of_birth: dob });
-          await onSaved();
-          toast('Thanks! Saved.');
-        } catch {
-          toast('Please enter a valid date of birth.', 'error');
-        } finally {
-          setBusy(false);
-        }
-      }}>{busy && <Spinner />}Save</button>
-    </section>
-  );
-}

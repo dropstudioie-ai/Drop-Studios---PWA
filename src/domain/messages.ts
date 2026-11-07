@@ -22,6 +22,7 @@ const MESSAGES: Record<string, string> = {
   profile_photo_required: 'Please add a profile photo to your account before booking. It helps us welcome you at the door.',
   drop_in_not_available: 'This class can’t be booked as a Drop In. Please choose a membership.',
   invalid_date_of_birth: 'Please enter a valid date of birth.',
+  dob_required: 'Please add your date of birth to see your classes.',
   user_not_found: 'We couldn’t find that person.',
   instructor_not_found: 'Instructor not found.',
   ticket_contact_studio: 'Paid tickets can’t be cancelled in the app. Please contact the studio about a refund.',

@@ -54,7 +54,10 @@ with how many are booked, each class list (photos, **New** for someone's first
 class at Drop, 🎂 birthdays), attendance, and **Add a member** (booked with the
 member's own membership). Teachers only see their own classes; members never
 see booking numbers, only "Class almost full" (10 or fewer spots left) and
-"Class fully booked".
+"Class fully booked". The first time a teacher opens My classes they must add
+their date of birth. Admin → Instructors shows each teacher's birthday (or
+"Not added yet"), and every admin gets a reminder a week before and on the day
+(from 09:00, `drop-instructor-birthdays` cron job, every 15 minutes).
 
 ## 4. Square (real payments)
 
@@ -156,7 +159,8 @@ Messages are queued in `notification_outbox`: expiry reminders when enabled in
 Admin → Settings; a message to each booked customer when the studio cancels a
 class; and, every 5 minutes (`drop-birthday-alerts` cron job), a note to the
 teacher the day before and 10 minutes before a class that a birthday member is
-booked into. Teachers get these by email and, if they tap *Enable
+booked into; and, a week before and on the day, a note to each admin about an
+instructor's birthday. Teachers and admins get these by email and, if they tap *Enable
 notifications* in My Membership, as phone notifications and delivered by the `send-notifications` edge function. Email and push
 are independent; configure one or both.
 

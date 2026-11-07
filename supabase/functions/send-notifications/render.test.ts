@@ -32,3 +32,14 @@ Deno.test('teacher birthday alerts: day before and 10 minutes before', () => {
   assertStringIncludes(soon.text, 'class at 20:00');
   assertEquals(soon.url, '/teach');
 });
+
+Deno.test('admin alerts for instructor birthdays: a week before and on the day', () => {
+  const base = { instructor_name: 'Vini Martins', birthday: '2026-11-16', turning: 31 };
+  const week = render({ kind: 'instructor_birthday', full_name: 'Jorge dos Santos', payload: { ...base, phase: 'week_before' } })!;
+  assertEquals(week.subject, "🎂 Vini Martins's birthday is in a week");
+  assertStringIncludes(week.text, 'Hi Jorge,');
+  assertStringIncludes(week.text, 'next Monday, 16 November (turning 31)');
+  const today = render({ kind: 'instructor_birthday', full_name: 'Jorge dos Santos', payload: { ...base, phase: 'on_day' } })!;
+  assertEquals(today.subject, "🎂 It's Vini Martins's birthday today");
+  assertEquals(today.url, '/admin/instructors');
+});

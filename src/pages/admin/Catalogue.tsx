@@ -1,3 +1,4 @@
+import { formatKey, localDateKey } from '../../domain/time';
 import { useState } from 'react';
 import { supabase, AppError } from '../../lib/supabase';
 import { unwrap } from '../../api';
@@ -68,10 +69,22 @@ export function AdminStyles() {
 
 type InstructorRow = Instructor & { profile: { email: string | null; full_name: string } | null };
 
+function BirthdayCell({ b, linked }: { b?: { date_of_birth: string | null; next_birthday: string | null }; linked: boolean }) {
+  if (!linked) return <span className="text-muted">—</span>;
+  if (!b?.date_of_birth) return <span className="chip bg-accent-100 text-ink">Not added yet</span>;
+  const day = formatKey(b.date_of_birth, { day: 'numeric', month: 'long' });
+  const days = b.next_birthday ? Math.round((Date.parse(b.next_birthday) - Date.parse(localDateKey(new Date()))) / 86_400_000) : null;
+  return <span>🎂 {day}{days === 0 ? ' · today!' : days !== null && days <= 7 ? ` · in ${days} day${days === 1 ? '' : 's'}` : ''}</span>;
+}
+
 export function AdminInstructors() {
   const toast = useToast();
   const list = useAsync(async () =>
     unwrap(await supabase.from('instructors').select('*, profile:profiles(email,full_name)').order('full_name')) as InstructorRow[], []);
+  // Birthdays are private, so they come from an admin-only function, not the public instructors table.
+  const birthdays = useAsync(async () =>
+    unwrap(await supabase.rpc('admin_instructor_birthdays')) as { instructor_id: string; date_of_birth: string | null; next_birthday: string | null }[], []);
+  const birthdayOf = (id: string) => birthdays.data?.find((b) => b.instructor_id === id);
   const [edit, setEdit] = useState<Partial<InstructorRow> | null>(null);
   const [loginEmail, setLoginEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -110,11 +123,13 @@ export function AdminInstructors() {
   return (
     <Section title="Instructors" actions={<button className="btn-sm btn-primary" onClick={() => open({ is_active: true })}>Add instructor</button>}>
       <p className="mb-3 text-sm text-muted">Link an instructor to the email they log in with, and they get the “My classes” view with the lists for their own classes.</p>
-      <Table head={['Name', 'App login', 'Instagram', 'Status', '']} empty={!list.data?.length}>
+      <p className="mb-3 text-sm text-muted">You get a reminder a week before each instructor’s birthday and on the day. Instructors add their birthday themselves the first time they open “My classes”.</p>
+      <Table head={['Name', 'App login', 'Birthday', 'Instagram', 'Status', '']} empty={!list.data?.length}>
         {list.data?.map((i) => (
           <tr key={i.id} className={i.is_active ? '' : 'opacity-50'}>
             <Td className="font-semibold">{i.full_name}</Td>
             <Td>{i.profile?.email ?? <span className="text-muted">Not linked</span>}</Td>
+            <Td><BirthdayCell b={birthdayOf(i.id)} linked={!!i.profile} /></Td>
             <Td>{i.instagram ?? '—'}</Td>
             <Td>{i.is_active ? 'Active' : 'Inactive'}</Td>
             <Td><button className="btn-sm btn-ghost" onClick={() => open(i)}>Edit</button></Td>

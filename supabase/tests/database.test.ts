@@ -784,8 +784,44 @@ run('database: plans, booking, allowances, pauses, security', () => {
       const uid = await createUser(db, name);
       const { rows: [i] } = await db.query(`insert into instructors (full_name) values ($1) returning id`, [name]);
       await as(db, user(admin), `select admin_link_instructor($1, $2)`, [i.id, `${name.toLowerCase()}@example.com`]);
+      await db.query(`update profiles set date_of_birth = '1990-03-10' where id = $1`, [uid]);
       return { uid, instructorId: i.id as string };
     }
+
+    it('instructors must add their birthday before using the teacher view', async () => {
+      const t = await teacher('Zublin');
+      const s = await taughtBy(t.instructorId, 600);
+      await db.query(`update profiles set date_of_birth = null where id = $1`, [t.uid]);
+      await expectError(as(db, user(t.uid), `select staff_sessions(now(), now() + interval '14 days')`), 'dob_required');
+      await expectError(as(db, user(t.uid), `select staff_roster($1)`, [s]), 'dob_required');
+      await as(db, user(t.uid), `update profiles set date_of_birth = '1988-01-02' where id = $1`, [t.uid]);
+      const [r] = await as<{ r: unknown[] }>(db, user(t.uid), `select staff_sessions(now(), now() + interval '14 days') r`);
+      expect(r.r.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('admins are told about instructor birthdays a week before and on the day', async () => {
+      const t = await teacher('Humberto');
+      const { rows: [{ tz }] } = await db.query(`select timezone tz from app_settings`);
+      const { rows: [{ late }] } = await db.query(`select (now() at time zone $1)::time >= '09:00' late`, [tz]);
+      const setDob = (days: number) => db.query(
+        `update profiles set date_of_birth = ((now() at time zone $2)::date + $3::int) - interval '30 years' where id = $1`, [t.uid, tz, days]);
+      const mine = async () => (await db.query(
+        `select payload->>'phase' phase from notification_outbox where user_id = $1 and kind = 'instructor_birthday' and payload->>'instructor_name' = 'Humberto' order by id`, [admin])).rows.map((r) => r.phase);
+
+      await setDob(7);
+      await as(db, service, `select queue_instructor_birthday_alerts()`);
+      await as(db, service, `select queue_instructor_birthday_alerts()`);
+      expect(await mine()).toEqual(late ? ['week_before'] : []);
+      await setDob(0);
+      await as(db, service, `select queue_instructor_birthday_alerts()`);
+      expect(await mine()).toEqual(late ? ['week_before', 'on_day'] : []);
+      // The instructor isn't told about their own birthday, and members can't run the job or see the list.
+      expect((await db.query(`select count(*)::int n from notification_outbox where user_id = $1 and kind = 'instructor_birthday'`, [t.uid])).rows[0].n).toBe(0);
+      await expect(as(db, user(t.uid), `select queue_instructor_birthday_alerts()`)).rejects.toThrow(/permission denied/);
+      await expectError(as(db, user(t.uid), `select admin_instructor_birthdays()`), 'forbidden');
+      const [list] = await as<{ r: { instructor_id: string; next_birthday: string }[] }>(db, user(admin), `select admin_instructor_birthdays() r`);
+      expect(list.r.find((x) => x.instructor_id === t.instructorId)?.next_birthday).toBeTruthy();
+    });
     async function taughtBy(instructorId: string, startsInMinutes: number, style = 'heels') {
       const s = await makeSession({ style, startsInMinutes });
       await db.query(`update class_sessions set instructor_id = $2 where id = $1`, [s, instructorId]);

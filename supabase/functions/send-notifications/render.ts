@@ -64,6 +64,23 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
           url: '/teach',
         };
     }
+    case 'instructor_birthday': {
+      // birthday is a plain date (YYYY-MM-DD); format it at noon UTC so no time zone shifts the day.
+      const date = new Intl.DateTimeFormat('en-IE', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long' })
+        .format(new Date(`${String(p.birthday)}T12:00:00Z`));
+      const turning = Number(p.turning) > 0 ? ` (turning ${p.turning})` : '';
+      return p.phase === 'on_day'
+        ? {
+          subject: `🎂 It's ${p.instructor_name}'s birthday today`,
+          text: `${hi}\n\nIt's ${p.instructor_name}'s birthday today${turning}. Don't forget to wish them a happy birthday!\n\nDrop Studios`,
+          url: '/admin/instructors',
+        }
+        : {
+          subject: `🎂 ${p.instructor_name}'s birthday is in a week`,
+          text: `${hi}\n\n${p.instructor_name}'s birthday is next ${date}${turning}. You have a week to plan something.\n\nDrop Studios`,
+          url: '/admin/instructors',
+        };
+    }
     default:
       return null;
   }

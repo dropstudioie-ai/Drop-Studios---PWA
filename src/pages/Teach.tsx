@@ -5,10 +5,25 @@ import { useAsync } from '../lib/useAsync';
 import { useAuth } from '../auth/AuthProvider';
 import { addDaysToKey, fmt, formatKey, localDateKey, zonedTime } from '../domain/time';
 import { StaffRoster } from '../components/StaffRoster';
+import { BirthdayCard } from '../components/BirthdayCard';
 import { EmptyState, ErrorNotice, PageSpinner } from '../components/ui';
 
 /** Instructor view: the classes I teach in the next two weeks, with numbers and highlights. */
 export default function Teach() {
+  const { profile, isAdmin, refreshProfile } = useAuth();
+  if (profile && !isAdmin && !profile.date_of_birth) {
+    return (
+      <div className="container-page max-w-3xl py-8">
+        <h1 className="text-3xl font-black">My classes</h1>
+        <p className="mt-1 mb-6 text-ink-soft">One quick thing before you see your classes.</p>
+        <BirthdayCard forTeacher onSaved={refreshProfile} />
+      </div>
+    );
+  }
+  return <TeachClasses />;
+}
+
+function TeachClasses() {
   const { profile, isAdmin } = useAuth();
   const today = localDateKey(new Date());
   const range = useMemo(() => ({ from: zonedTime(today).toISOString(), to: zonedTime(addDaysToKey(today, 14)).toISOString() }), [today]);

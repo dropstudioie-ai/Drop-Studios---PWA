@@ -114,7 +114,9 @@ or teaching that class), and bookings RLS lets an instructor read only the
 bookings of their own classes. Members and staff bookings share `_book_for`, so
 every booking follows the same membership rules. `queue_birthday_alerts`
 (cron, every 5 min) writes one teacher notification per class, member and phase
-(`dedupe_key`).
+(`dedupe_key`). Instructors without a date of birth get `dob_required` from the
+staff functions until they add it; `queue_instructor_birthday_alerts` (cron,
+every 15 min, from 09:00 Dublin) tells every admin a week before and on the day.
 
 ## Frontend structure
 
