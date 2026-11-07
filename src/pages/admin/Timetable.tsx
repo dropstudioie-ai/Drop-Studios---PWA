@@ -1,13 +1,13 @@
 import { useState } from 'react';
-import { supabase, AppError } from '../../lib/supabase';
+import { supabase } from '../../lib/supabase';
 import { api, unwrap } from '../../api';
-import type { Booking, ClassSession, ClassTemplate, DanceStyle, Instructor } from '../../api/types';
+import type { ClassTemplate, DanceStyle, Instructor, StaffSession } from '../../api/types';
 import { useAsync } from '../../lib/useAsync';
 import { addDaysToKey, fmt, localDateKey, weekStartKey, zonedTime } from '../../domain/time';
 import { formatPrice, parseEurosToCents } from '../../domain/money';
 import { ErrorNotice, Field, Notice, PageSpinner, Sheet, Spinner, useToast } from '../../components/ui';
 import { Section, Table, Td, WEEKDAYS } from './shared';
-import { Avatar } from '../../components/Avatar';
+import { StaffRoster } from '../../components/StaffRoster';
 
 type TemplateForm = Omit<ClassTemplate, 'id'> & { id?: string };
 
@@ -31,11 +31,11 @@ export default function AdminTimetable() {
 
   const today = localDateKey(new Date());
   const [weekKey, setWeekKey] = useState(weekStartKey(today));
-  const sessions = useAsync(() => api.sessions(zonedTime(weekKey).toISOString(), zonedTime(addDaysToKey(weekKey, 7)).toISOString()), [weekKey]);
+  const sessions = useAsync(() => api.staffSessions(zonedTime(weekKey).toISOString(), zonedTime(addDaysToKey(weekKey, 7)).toISOString()), [weekKey]);
 
   const [editing, setEditing] = useState<TemplateForm | null>(null);
-  const [roster, setRoster] = useState<ClassSession | null>(null);
-  const [cancelling, setCancelling] = useState<ClassSession | null>(null);
+  const [roster, setRoster] = useState<StaffSession | null>(null);
+  const [cancelling, setCancelling] = useState<StaffSession | null>(null);
   const [newSession, setNewSession] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -121,7 +121,7 @@ export default function AdminTimetable() {
 
       {editing && <TemplateSheet value={editing} styles={styles} instructors={instructors} onClose={() => setEditing(null)} onSaved={() => { toast('Saved.'); void templates.reload(); }} />}
       {newSession && <SessionSheet styles={styles} instructors={instructors} onClose={() => setNewSession(false)} onSaved={() => { toast('Class added.'); void sessions.reload(); }} />}
-      {roster && <RosterSheet session={roster} onClose={() => setRoster(null)} onChanged={() => void sessions.reload()} />}
+      {roster && <StaffRoster sessionId={roster.id} isAdmin onClose={() => setRoster(null)} onChanged={() => void sessions.reload()} />}
       {cancelling && <CancelSessionSheet session={cancelling} onClose={() => setCancelling(null)} onDone={(n) => { toast(`Class cancelled. ${n} booking(s) refunded.`); void sessions.reload(); }} />}
     </>
   );
@@ -209,69 +209,7 @@ function SessionSheet({ styles, instructors, onClose, onSaved }: { styles: Dance
   );
 }
 
-type RosterRow = Booking & { profile: { full_name: string; email: string | null; avatar_path: string | null } | null };
-
-function RosterSheet({ session, onClose, onChanged }: { session: ClassSession; onClose: () => void; onChanged: () => void }) {
-  const toast = useToast();
-  const rows = useAsync(async () =>
-    unwrap(await supabase.from('bookings').select('*, profile:profiles(full_name,email,avatar_path)').eq('session_id', session.id).order('booked_at')) as RosterRow[], [session.id]);
-
-  async function mark(b: RosterRow, status: 'attended' | 'no_show' | 'booked') {
-    try {
-      unwrap(await supabase.rpc('admin_set_attendance', { p_booking_id: b.id, p_status: status }));
-      await rows.reload();
-    } catch (e) {
-      toast(e instanceof AppError ? e.message : (e as Error).message, 'error');
-    }
-  }
-  async function cancel(b: RosterRow) {
-    const reason = window.prompt('Reason for cancelling this booking (recorded in the audit log):');
-    if (!reason?.trim()) return;
-    const restore = window.confirm('Return the class to the customer’s membership?');
-    try {
-      unwrap(await supabase.rpc('admin_cancel_booking', { p_booking_id: b.id, p_reason: reason, p_restore: restore }));
-      toast('Booking cancelled.');
-      await rows.reload();
-      onChanged();
-    } catch (e) {
-      toast((e as Error).message, 'error');
-    }
-  }
-
-  const started = new Date(session.starts_at).getTime() - 3_600_000 <= Date.now();
-  return (
-    <Sheet open onClose={onClose} title={`${session.title} — roster`}>
-      <p className="text-sm text-muted">{fmt.dateTime(session.starts_at)} · {session.booked_count}/{session.capacity} booked</p>
-      {!started && <div className="mt-3"><Notice tone="info">Attendance can be marked from 1 hour before class.</Notice></div>}
-      <ul className="mt-4 divide-y divide-line">
-        {rows.loading && <PageSpinner />}
-        {rows.data?.length === 0 && <p className="py-4 text-sm text-muted">No bookings yet.</p>}
-        {rows.data?.map((b) => (
-          <li key={b.id} className="py-3">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-3">
-                <Avatar path={b.profile?.avatar_path} name={b.profile?.full_name} size={44} />
-                <div>
-                <p className="font-semibold">{b.profile?.full_name || b.profile?.email}{b.payment_id && <span className="chip ml-1 bg-accent-50 align-middle">Paid</span>}</p>
-                <p className="text-xs text-muted">{b.status.replace('_', ' ')}{b.class_restored ? ' · class returned' : ''}</p>
-                </div>
-              </div>
-              {['booked', 'attended', 'no_show'].includes(b.status) && (
-                <div className="flex flex-wrap justify-end gap-1">
-                  {started && <button className={`btn-sm btn ${b.status === 'attended' ? 'bg-success text-white' : 'btn-ghost'}`} onClick={() => mark(b, 'attended')}>Attended</button>}
-                  {started && <button className={`btn-sm btn ${b.status === 'no_show' ? 'bg-ink text-white' : 'btn-ghost'}`} onClick={() => mark(b, 'no_show')}>No-show</button>}
-                  {b.status === 'booked' && <button className="btn-sm btn-ghost text-danger" onClick={() => cancel(b)}>Cancel</button>}
-                </div>
-              )}
-            </div>
-          </li>
-        ))}
-      </ul>
-    </Sheet>
-  );
-}
-
-function CancelSessionSheet({ session, onClose, onDone }: { session: ClassSession; onClose: () => void; onDone: (n: number) => void }) {
+function CancelSessionSheet({ session, onClose, onDone }: { session: StaffSession; onClose: () => void; onDone: (n: number) => void }) {
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

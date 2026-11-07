@@ -24,7 +24,7 @@ registerRoute(
   ({ url, request }) =>
     request.method === 'GET' &&
     url.pathname.startsWith('/rest/v1/') &&
-    /\/rest\/v1\/(class_sessions|dance_styles|instructors|membership_plans|app_settings)/.test(url.pathname),
+    /\/rest\/v1\/(rpc\/timetable|dance_styles|instructors|membership_plans|app_settings)/.test(url.pathname),
   new NetworkFirst({
     cacheName: 'drop-catalogue',
     networkTimeoutSeconds: 5,

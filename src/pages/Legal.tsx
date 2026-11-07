@@ -213,6 +213,7 @@ export function PrivacyContent() {
         <h2>2. What we collect</h2>
         <ul>
           <li><strong>Account details:</strong> your name, email address and, if you give it, your mobile number. Your password is stored by our login provider in a protected (hashed) form; we can’t see it.</li>
+          <li><strong>Date of birth:</strong> so your teacher can wish you a happy birthday, and to confirm you’re old enough to have an account. Studio staff see it; your teacher sees only that it’s your birthday (and your age that day).</li>
           <li><strong>Profile photo:</strong> the photo you add to your account, so staff can recognise you at check-in. Only you and studio staff can see it, and replacing it deletes the old one.</li>
           <li><strong>Membership and booking records:</strong> what you bought, classes remaining, activation and expiry dates, pauses, bookings, cancellations and attendance.</li>
           <li><strong>Payment records:</strong> amount, date, status and the payment reference. Card details are handled by Square and never reach us.</li>
@@ -226,6 +227,7 @@ export function PrivacyContent() {
         <ul>
           <li><strong>To run your account, memberships and bookings</strong>, and to tell you about changes to your classes: necessary for our contract with you.</li>
           <li><strong>To check you in with your profile photo</strong>: our legitimate interest in making sure bookings are used by the person who made them.</li>
+          <li><strong>To let teachers see who is booked into their class</strong> (name, photo, whether it’s your first class, birthdays): our legitimate interest in running safe, welcoming classes. Teachers only see the lists for the classes they teach.</li>
           <li><strong>To process payments and keep accounting records</strong>: contract and legal obligation (tax law).</li>
           <li><strong>To keep the service secure, prevent misuse and understand how classes are used</strong> (for example attendance totals): our legitimate interests in running the studio.</li>
           <li><strong>To send you news and offers</strong>: only with your consent, which you can withdraw at any time in My Membership.</li>
@@ -257,7 +259,7 @@ export function PrivacyContent() {
       <section>
         <h2>6. How long we keep it</h2>
         <ul>
-          <li>Account, profile photo, membership and booking data: while your account is open. If you ask us to delete your account, we delete or anonymise it within 30 days.</li>
+          <li>Account, date of birth, profile photo, membership and booking data: while your account is open. If you ask us to delete your account, we delete or anonymise it within 30 days.</li>
           <li>Payment and accounting records: 6 years, as required by Irish tax law.</li>
           <li>Email preferences: until you change them or close your account.</li>
         </ul>

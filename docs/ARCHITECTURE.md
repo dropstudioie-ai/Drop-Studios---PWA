@@ -103,6 +103,19 @@ checkout. `fulfill_payment` confirms the hold. If the hold lapsed, it re-books
 when a spot is free; otherwise it records `ticket_refund_required`.
 The `drop-release-holds` cron job frees abandoned spots.
 
+## Staff views and hidden numbers
+
+`class_sessions.booked_count` and `capacity` aren't readable by the public
+(column privileges). Members get the timetable from `timetable()`, which only
+reports `available` / `almost_full` (≤10 left) / `full`. Instructors are linked
+to a login through `instructors.profile_id`; `staff_sessions`, `staff_roster`,
+`staff_find_members` and `staff_book_member` check `can_staff_session` (admin,
+or teaching that class), and bookings RLS lets an instructor read only the
+bookings of their own classes. Members and staff bookings share `_book_for`, so
+every booking follows the same membership rules. `queue_birthday_alerts`
+(cron, every 5 min) writes one teacher notification per class, member and phase
+(`dedupe_key`).
+
 ## Frontend structure
 
 ```

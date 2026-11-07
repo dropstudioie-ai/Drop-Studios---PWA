@@ -7,7 +7,8 @@ import { AppError } from '../lib/supabase';
 import { pushSupported, subscribeToPush } from '../lib/push';
 import { useAuth } from '../auth/AuthProvider';
 import { cancellationOutcome, cutoffLabel, DEFAULT_POLICY } from '../domain/booking';
-import { fmt } from '../domain/time';
+import { fmt, localDateKey } from '../domain/time';
+import { validDob } from '../domain/profile';
 import { MembershipCard } from '../components/MembershipCard';
 import { ProfilePhotoCard } from '../components/ProfilePhotoCard';
 import { PauseSheet } from '../components/PauseSheet';
@@ -70,7 +71,7 @@ export default function Account() {
         {current.length > 0 && <p className="font-display text-lg font-extrabold text-brand-700">{totalRemaining} {totalRemaining === 1 ? 'class' : 'classes'} available</p>}
       </div>
 
-      <div className="mt-6"><ProfilePhotoCard /></div>
+      <div className="mt-6 space-y-3"><ProfilePhotoCard />{!profile?.date_of_birth && <BirthdayCard uid={uid} onSaved={refreshProfile} />}</div>
 
       <section className="mt-6 space-y-4" aria-labelledby="current-h">
         <h2 id="current-h" className="sr-only">Current memberships</h2>
@@ -195,14 +196,15 @@ function CancelSheet({ booking, policy, onClose, onDone }: {
 function ProfileSection({ uid, onSaved }: { uid: string; onSaved: () => Promise<void> }) {
   const { profile } = useAuth();
   const toast = useToast();
-  const [form, setForm] = useState({ full_name: profile?.full_name ?? '', phone: profile?.phone ?? '', marketing_opt_in: profile?.marketing_opt_in ?? false });
+  const [form, setForm] = useState({ full_name: profile?.full_name ?? '', phone: profile?.phone ?? '', marketing_opt_in: profile?.marketing_opt_in ?? false, date_of_birth: profile?.date_of_birth ?? '' });
   const [busy, setBusy] = useState(false);
 
   async function save(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
     try {
-      await api.updateProfile(uid, { full_name: form.full_name.trim(), phone: form.phone.trim() || null, marketing_opt_in: form.marketing_opt_in });
+      if (form.date_of_birth && !validDob(form.date_of_birth)) throw new Error('dob');
+      await api.updateProfile(uid, { full_name: form.full_name.trim(), phone: form.phone.trim() || null, marketing_opt_in: form.marketing_opt_in, date_of_birth: form.date_of_birth || null });
       await onSaved();
       toast('Details saved.');
     } catch {
@@ -218,6 +220,7 @@ function ProfileSection({ uid, onSaved }: { uid: string; onSaved: () => Promise<
       <form onSubmit={save} className="card mt-3 grid gap-4 p-5 sm:grid-cols-2">
         <Field label="Full name"><input className="input" value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} required /></Field>
         <Field label="Mobile"><input className="input" type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field>
+        <Field label="Date of birth" hint="Only studio staff see it."><input className="input" type="date" min="1900-01-01" max={localDateKey(new Date())} value={form.date_of_birth} onChange={(e) => setForm({ ...form, date_of_birth: e.target.value })} /></Field>
         <Field label="Email"><input className="input bg-canvas" value={profile?.email ?? ''} disabled /></Field>
         <label className="flex items-center gap-3 self-end text-sm sm:pb-3">
           <input type="checkbox" className="h-5 w-5 accent-brand-600" checked={form.marketing_opt_in} onChange={(e) => setForm({ ...form, marketing_opt_in: e.target.checked })} />
@@ -233,6 +236,34 @@ function ProfileSection({ uid, onSaved }: { uid: string; onSaved: () => Promise<
         </div>
       </form>
       {profile?.role !== 'customer' && <p className="mt-2 text-xs text-muted">Account role: {profile?.role}</p>}
+    </section>
+  );
+}
+
+/** Asks existing members (who joined before it was required) for their date of birth, once. */
+function BirthdayCard({ uid, onSaved }: { uid: string; onSaved: () => Promise<void> }) {
+  const toast = useToast();
+  const [dob, setDob] = useState('');
+  const [busy, setBusy] = useState(false);
+  return (
+    <section className="card flex flex-wrap items-end gap-3 border-2 border-brand-200 p-4" aria-labelledby="dob-h">
+      <div className="min-w-0 flex-1 basis-56">
+        <h2 id="dob-h" className="font-bold">🎂 When’s your birthday?</h2>
+        <p className="text-sm text-ink-soft">Add your date of birth so your teacher can celebrate with you. Only studio staff see it.</p>
+        <input className="input mt-2" type="date" min="1900-01-01" max={localDateKey(new Date())} value={dob} onChange={(e) => setDob(e.target.value)} aria-label="Date of birth" />
+      </div>
+      <button className="btn-primary btn-sm w-full sm:w-auto" disabled={busy || !validDob(dob)} onClick={async () => {
+        setBusy(true);
+        try {
+          await api.updateProfile(uid, { date_of_birth: dob });
+          await onSaved();
+          toast('Thanks! Saved.');
+        } catch {
+          toast('Please enter a valid date of birth.', 'error');
+        } finally {
+          setBusy(false);
+        }
+      }}>{busy && <Spinner />}Save</button>
     </section>
   );
 }

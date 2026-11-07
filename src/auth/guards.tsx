@@ -19,3 +19,12 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
   if (!isAdmin) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
+
+// Instructors and admins. The database decides which classes each can see.
+export function RequireStaff({ children }: { children: ReactNode }) {
+  const { session, profile, loading, isStaff } = useAuth();
+  if (loading || (session && !profile)) return <PageSpinner />;
+  if (!session) return <Navigate to="/login?next=/teach" replace />;
+  if (!isStaff) return <Navigate to="/" replace />;
+  return <>{children}</>;
+}

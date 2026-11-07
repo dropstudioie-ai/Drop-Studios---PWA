@@ -1,11 +1,27 @@
-export function Logo({ light = false, className = '' }: { light?: boolean; className?: string }) {
+import { useId } from 'react';
+import { CUTS, LETTERS, LOGO_VIEWBOX, PLAY } from '../brand/logoData';
+
+const ORANGE = '#FF7A00';
+
+/**
+ * The Drop wordmark: DROP in the studio's stencil letters, with an orange
+ * play button inside the D. The stencil cuts are transparent, so it sits on
+ * any background.
+ */
+export function Logo({ light = false, height = 24, className = '' }: { light?: boolean; height?: number; className?: string }) {
+  const id = useId().replace(/:/g, '');
   return (
-    <span className={`inline-flex items-center gap-2 font-display font-black tracking-tight ${className}`}>
-      <svg width="30" height="30" viewBox="0 0 64 64" aria-hidden="true">
-        <rect width="64" height="64" rx="16" fill="#1F43E6" />
-        <path d="M32 12c7 10 14 18 14 27a14 14 0 0 1-28 0c0-9 7-17 14-27z" fill="#FF7A00" />
-      </svg>
-      <span className={light ? 'text-white' : 'text-ink'}>DROP<span className="text-accent-500"> STUDIOS</span></span>
-    </span>
+    <svg viewBox={LOGO_VIEWBOX} height={height} className={`block ${className}`} role="img" aria-label="Drop Studios">
+      <defs>
+        <mask id={`cut${id}`} maskUnits="userSpaceOnUse" x="40" y="135" width="300" height="80">
+          <rect x="40" y="135" width="300" height="80" fill="#fff" />
+          {CUTS.map((c) => <rect key={c.x} x={c.x} y={c.y} width={c.w} height={c.h} fill="#000" />)}
+        </mask>
+      </defs>
+      <g fill={light ? '#FFFFFF' : '#0B0B0D'} mask={`url(#cut${id})`}>
+        {LETTERS.map((g) => <path key={g.x} transform={`translate(${g.x} ${g.y})`} d={g.d} />)}
+      </g>
+      <path d={PLAY} fill={ORANGE} stroke={ORANGE} strokeWidth={2.4} strokeLinejoin="round" />
+    </svg>
   );
 }

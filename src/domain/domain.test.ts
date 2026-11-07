@@ -3,8 +3,10 @@ import { formatPrice, parseEurosToCents } from './money';
 import { classesLabel, durationLabel, planBadges, pricePerClass, sortPlans, styleAccessLabel, validityLabel } from './plans';
 import { computeExpiry, isExpiringSoon, lastValidDay, membershipState, progressLabel, totalPauseDays, validatePause } from './membership';
 import { cancellationOutcome, cutoffLabel, isWithinBookingWindow, spotsLeft } from './booking';
-import { addDaysToKey, daysInclusive, fmt, isoWeekday, localDateKey, weekStartKey, zonedTime } from './time';
+import { addDaysToKey, daysInclusive, fmt, isoWeekday, localDateKey, ordinal, weekStartKey, zonedTime } from './time';
 import { messageFor } from './messages';
+import { validDob } from './profile';
+import { availabilityLabel } from './booking';
 
 const PLANS = [
   { code: 'multi-12', price_cents: 9900, class_count: 12, validity_days: 56, sort_order: 50, currency: 'EUR' },
@@ -74,6 +76,7 @@ describe('studio time', () => {
     expect(addDaysToKey('2026-12-30', 3)).toBe('2027-01-02');
     expect(daysInclusive('2026-11-01', '2026-11-14')).toBe(14);
     expect(fmt.weekdayShort('2026-10-29T18:00:00Z')).toBe('Thu');
+    expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 30, 101, 112].map(ordinal)).toEqual(['1st', '2nd', '3rd', '4th', '11th', '12th', '13th', '21st', '22nd', '30th', '101st', '112th']);
   });
 });
 
@@ -160,5 +163,20 @@ describe('booking rules', () => {
     expect(messageFor('style_not_included')).toMatch(/style isn’t included/);
     expect(messageFor('class_excluded')).toMatch(/isn’t included/);
     expect(messageFor('totally_unknown')).toMatch(/Something went wrong/);
+  });
+});
+
+describe('member details', () => {
+  it('accepts real dates of birth only', () => {
+    expect(validDob('1995-06-15', '2026-11-08')).toBe(true);
+    expect(validDob('2026-11-09', '2026-11-08')).toBe(false);
+    expect(validDob('1899-12-31', '2026-11-08')).toBe(false);
+    expect(validDob('15/06/1995', '2026-11-08')).toBe(false);
+  });
+
+  it('describes availability without numbers', () => {
+    expect(availabilityLabel('available')).toBeNull();
+    expect(availabilityLabel('almost_full')).toBe('Class almost full');
+    expect(availabilityLabel('full')).toBe('Class fully booked');
   });
 });

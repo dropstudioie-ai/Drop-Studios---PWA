@@ -62,8 +62,8 @@ export interface ClassSession {
   instructor_id: string | null;
   starts_at: string;
   ends_at: string;
-  capacity: number;
-  booked_count: number;
+  /** Members only ever see this, never the numbers. */
+  availability: Availability;
   level: string | null;
   room: string | null;
   is_special: boolean;
@@ -72,6 +72,49 @@ export interface ClassSession {
   cancel_reason: string | null;
   style?: Pick<DanceStyle, 'id' | 'name' | 'color' | 'slug'> | null;
   instructor?: Pick<Instructor, 'id' | 'full_name'> | null;
+}
+
+export type Availability = 'available' | 'almost_full' | 'full';
+
+/** What instructors and admins see: the numbers and roster highlights. */
+export interface StaffSession extends ClassSession {
+  capacity: number;
+  booked_count: number;
+  birthdays: number;
+  new_members: number;
+}
+
+export interface RosterEntry {
+  booking_id: string;
+  user_id: string;
+  full_name: string;
+  avatar_path: string | null;
+  status: BookingStatus;
+  class_restored: boolean;
+  booked_at: string;
+  kind: 'membership' | 'ticket' | 'drop_in';
+  plan_name: string | null;
+  is_new: boolean;
+  is_birthday: boolean;
+  turning: number | null;
+}
+
+export interface Roster {
+  session_id: string;
+  title: string;
+  starts_at: string;
+  ends_at: string;
+  capacity: number;
+  booked_count: number;
+  status: 'scheduled' | 'cancelled';
+  bookings: RosterEntry[];
+}
+
+export interface MemberMatch {
+  id: string;
+  full_name: string;
+  email: string | null;
+  avatar_path: string | null;
 }
 
 export type BookingStatus = 'booked' | 'cancelled' | 'late_cancelled' | 'attended' | 'no_show' | 'pending_payment';
@@ -142,6 +185,7 @@ export interface Profile {
   role: 'customer' | 'instructor' | 'admin';
   marketing_opt_in: boolean;
   avatar_path: string | null;
+  date_of_birth: string | null;
   created_at: string;
 }
 
@@ -156,7 +200,7 @@ export interface BookingOptions {
   has_profile_photo?: boolean;
   eligible_membership_id?: string | null;
   memberships?: { membership_id: string; plan_name: string; state: MembershipState; classes_remaining: number; issue: string | null }[];
-  alternatives?: { id: string; title: string; starts_at: string; spots_left: number }[];
+  alternatives?: { id: string; title: string; starts_at: string; availability: Availability }[];
   cancellation_cutoff_minutes?: number;
   late_cancel_restores_class?: boolean;
 }

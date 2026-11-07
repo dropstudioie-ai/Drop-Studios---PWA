@@ -2,7 +2,7 @@ import { supabase, AppError, errorCode } from '../lib/supabase';
 import { messageFor } from '../domain/messages';
 import type {
   AppSettings, Booking, BookingOptions, ClassSession, DanceStyle, Instructor, Membership,
-  MembershipPlan, PauseAllowance, Profile,
+  MembershipPlan, MemberMatch, PauseAllowance, Profile, Roster, StaffSession,
 } from './types';
 
 // Thin typed wrappers over Supabase. Anything that changes bookings,
@@ -17,7 +17,8 @@ function unwrap<T>(res: { data: T | null; error: unknown }): T {
   return res.data as T;
 }
 
-const SESSION_SELECT = '*, style:dance_styles(id,name,color,slug), instructor:instructors(id,full_name)';
+// Columns members may read (the booking numbers are staff-only).
+const SESSION_SELECT = 'id,template_id,title,style_id,instructor_id,starts_at,ends_at,level,room,is_special,ticket_price_cents,status,cancel_reason,style:dance_styles(id,name,color,slug),instructor:instructors(id,full_name)';
 
 export const api = {
   settings: async () => unwrap(await supabase.from('app_settings').select('*').single()) as AppSettings,
@@ -37,14 +38,27 @@ export const api = {
   planStyles: async (planId: string) =>
     (unwrap(await supabase.from('plan_styles').select('style_id').eq('plan_id', planId)) as { style_id: string }[]).map((r) => r.style_id),
 
+  // GET, so the service worker can keep a copy for offline viewing.
   sessions: async (fromIso: string, toIso: string) =>
-    unwrap(
-      await supabase.from('class_sessions').select(SESSION_SELECT)
-        .gte('starts_at', fromIso).lt('starts_at', toIso).order('starts_at'),
-    ) as ClassSession[],
+    unwrap(await supabase.rpc('timetable', { p_from: fromIso, p_to: toIso }, { get: true })) as ClassSession[],
 
-  session: async (id: string) =>
-    unwrap(await supabase.from('class_sessions').select(SESSION_SELECT).eq('id', id).single()) as ClassSession,
+  session: async (id: string) => {
+    const list = unwrap(await supabase.rpc('timetable', { p_session_id: id }, { get: true })) as ClassSession[];
+    if (!list[0]) throw new AppError('session_not_found', messageFor('session_not_found'));
+    return list[0];
+  },
+
+  // ---- Staff (instructors see only the classes they teach) ----
+  staffSessions: async (fromIso: string, toIso: string) =>
+    unwrap(await supabase.rpc('staff_sessions', { p_from: fromIso, p_to: toIso })) as StaffSession[],
+  roster: async (sessionId: string) =>
+    unwrap(await supabase.rpc('staff_roster', { p_session_id: sessionId })) as Roster,
+  findMembers: async (query: string) =>
+    unwrap(await supabase.rpc('staff_find_members', { p_query: query })) as MemberMatch[],
+  staffBook: async (sessionId: string, userId: string) =>
+    unwrap(await supabase.rpc('staff_book_member', { p_session_id: sessionId, p_user_id: userId })) as { booking_id: string; classes_remaining: number },
+  setAttendance: async (bookingId: string, status: 'attended' | 'no_show' | 'booked') =>
+    unwrap(await supabase.rpc('admin_set_attendance', { p_booking_id: bookingId, p_status: status })),
 
   myBookingsBetween: async (fromIso: string, toIso: string) =>
     unwrap(
@@ -95,7 +109,7 @@ export const api = {
   profile: async (userId: string) =>
     unwrap(await supabase.from('profiles').select('*').eq('id', userId).single()) as Profile,
 
-  updateProfile: async (userId: string, patch: Pick<Profile, 'full_name' | 'phone' | 'marketing_opt_in'>) =>
+  updateProfile: async (userId: string, patch: Partial<Pick<Profile, 'full_name' | 'phone' | 'marketing_opt_in' | 'date_of_birth'>>) =>
     unwrap(await supabase.from('profiles').update(patch).eq('id', userId).select().single()) as Profile,
 
   paymentStatus: async (paymentId: string) =>

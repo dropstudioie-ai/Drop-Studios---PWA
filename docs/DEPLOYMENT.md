@@ -45,6 +45,17 @@ Further admins can be promoted from Admin → Customers.
 Private sessions and room rentals are not part of the app. After any change in
 Admin → Timetable, press **Publish next 5 weeks**.
 
+### Instructors
+
+Each teacher registers on the website like a member. Then in Admin → Instructors,
+open their instructor profile and enter that **App login email**. They become an
+instructor and get **My classes**: the next two weeks of the classes they teach,
+with how many are booked, each class list (photos, **New** for someone's first
+class at Drop, 🎂 birthdays), attendance, and **Add a member** (booked with the
+member's own membership). Teachers only see their own classes; members never
+see booking numbers, only "Class almost full" (10 or fewer spots left) and
+"Class fully booked".
+
 ## 4. Square (real payments)
 
 Online payments use **Square**, the same account as the studio's card reader, so
@@ -141,9 +152,12 @@ over a small Supabase shim (`auth.uid()`, roles) and runs as
 
 ## 7. Notifications (expiry reminders, class cancellations)
 
-Messages are queued in `notification_outbox` (expiry reminders when enabled in
+Messages are queued in `notification_outbox`: expiry reminders when enabled in
 Admin → Settings; a message to each booked customer when the studio cancels a
-class) and delivered by the `send-notifications` edge function. Email and push
+class; and, every 5 minutes (`drop-birthday-alerts` cron job), a note to the
+teacher the day before and 10 minutes before a class that a birthday member is
+booked into. Teachers get these by email and, if they tap *Enable
+notifications* in My Membership, as phone notifications and delivered by the `send-notifications` edge function. Email and push
 are independent; configure one or both.
 
 1. **Email** via [Resend](https://resend.com): verify your sending domain, then
@@ -176,7 +190,13 @@ Failed deliveries are retried up to 5 times; the last error is kept on the
 outbox row. Messages for customers with neither an email nor a push
 subscription are marked done.
 
-## 8. Still to do
+## 8. Logo files
+
+`design/logo/` holds the original stencil letters. `npm run icons` rebuilds the
+logo (`public/brand/*.svg`: colour, white, one-colour wordmark and app icons),
+the favicon, the in-app logo data and the PWA icons.
+
+## 9. Still to do
 
 - **Studio details.** Fill in `src/config/studio.ts` (address, email, phone, Instagram).
 - **Legal pages.** `/terms` and `/privacy` are drafts written to match how the app works.

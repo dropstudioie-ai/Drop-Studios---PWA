@@ -39,6 +39,7 @@ describe('Privacy Policy', () => {
     for (const p of DATA_PROCESSORS) expect(screen.getByText(p.name)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'dataprotection.ie' })).toHaveAttribute('href', 'https://www.dataprotection.ie');
     expect(screen.getByText('Profile photo:')).toBeInTheDocument();
+    expect(screen.getByText('Date of birth:')).toBeInTheDocument();
   });
 
   it('matches reality: the app loads nothing from Google Fonts or trackers', () => {

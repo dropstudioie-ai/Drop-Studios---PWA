@@ -7,24 +7,27 @@ import type { ClassSession } from '../api/types';
 const inDays = (d: number) => new Date(Date.now() + d * 86_400_000).toISOString();
 const session = (over: Partial<ClassSession> = {}): ClassSession => ({
   id: 's', template_id: null, title: 'Heels Beginners', style_id: 'h', instructor_id: null,
-  starts_at: inDays(2), ends_at: inDays(2.04), capacity: 20, booked_count: 5, level: null, room: null,
+  starts_at: inDays(2), ends_at: inDays(2.04), availability: 'available', level: null, room: null,
   is_special: false, ticket_price_cents: null, status: 'scheduled', cancel_reason: null,
   style: { id: 'h', name: 'Heels', color: '#DB2777', slug: 'heels' }, ...over,
 });
 
 describe('ClassCard', () => {
-  it('shows spots left for an open class', () => {
-    render(<ClassCard session={session()} booked={false} onOpen={() => {}} />);
-    expect(screen.getByText('15 spots left')).toBeInTheDocument();
+  it('never shows how many people are booked or how many spots are left', () => {
+    const { container } = render(<ClassCard session={session()} booked={false} onOpen={() => {}} />);
+    expect(container.textContent).not.toMatch(/spot|left|\d+\s*\/\s*\d+/i);
   });
 
-  it('marks booked, full, nearly full and cancelled classes', () => {
+  it('says "Almost full" and "Fully booked" instead of numbers', () => {
+    const { rerender } = render(<ClassCard session={session({ availability: 'almost_full' })} booked={false} onOpen={() => {}} />);
+    expect(screen.getByText('Almost full')).toBeInTheDocument();
+    rerender(<ClassCard session={session({ availability: 'full' })} booked={false} onOpen={() => {}} />);
+    expect(screen.getByText('Fully booked')).toBeInTheDocument();
+  });
+
+  it('marks booked and cancelled classes', () => {
     const { rerender } = render(<ClassCard session={session()} booked onOpen={() => {}} />);
     expect(screen.getByText('Booked')).toBeInTheDocument();
-    rerender(<ClassCard session={session({ booked_count: 20 })} booked={false} onOpen={() => {}} />);
-    expect(screen.getByText('Full')).toBeInTheDocument();
-    rerender(<ClassCard session={session({ booked_count: 18 })} booked={false} onOpen={() => {}} />);
-    expect(screen.getByText('2 left')).toBeInTheDocument();
     rerender(<ClassCard session={session({ status: 'cancelled' })} booked={false} onOpen={() => {}} />);
     expect(screen.getByText('Cancelled')).toBeInTheDocument();
   });

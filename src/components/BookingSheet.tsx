@@ -4,7 +4,7 @@ import { api } from '../api';
 import type { BookingOptions, ClassSession } from '../api/types';
 import { AppError } from '../lib/supabase';
 import { checkout, paymentsMode } from '../lib/payments';
-import { cancellationOutcome, cutoffLabel, spotsLeft } from '../domain/booking';
+import { availabilityLabel, cancellationOutcome, cutoffLabel } from '../domain/booking';
 import { formatPrice } from '../domain/money';
 import { messageFor } from '../domain/messages';
 import { fmt } from '../domain/time';
@@ -52,7 +52,6 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
 
   if (!session) return null;
   const start = new Date(session.starts_at);
-  const left = spotsLeft(session);
   const ticketPrice = session.is_special ? (opts?.ticket_price_cents ?? session.ticket_price_cents) : null;
   const eligible = opts?.memberships?.filter((m) => !m.issue) ?? [];
   const blocking = opts?.memberships?.find((m) => m.issue && !DEAD_ISSUES.has(m.issue)) ?? opts?.memberships?.find((m) => m.issue);
@@ -127,14 +126,10 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
             <UserIcon width={18} height={18} className="shrink-0 text-muted" />with {session.instructor.full_name}{session.room ? ` · ${session.room}` : ''}
           </p>
         )}
-        {scheduled && (
-          <div className="mt-3">
-            <div className="h-1.5 overflow-hidden rounded-full bg-white" aria-hidden="true">
-              <div className={`h-full rounded-full ${left === 0 ? 'bg-muted' : left <= 3 ? 'bg-accent-500' : 'bg-brand-500'}`}
-                style={{ width: `${Math.min(100, (session.booked_count / session.capacity) * 100)}%` }} />
-            </div>
-            <p className="mt-1 text-xs font-semibold text-ink-soft">{left > 0 ? `${left} of ${session.capacity} spots left` : 'Class full'}</p>
-          </div>
+        {scheduled && availabilityLabel(session.availability) && (
+          <p className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-bold ${session.availability === 'full' ? 'bg-ink/10 text-ink-soft' : 'bg-accent-100 text-ink'}`}>
+            {availabilityLabel(session.availability)}
+          </p>
         )}
       </div>
 
@@ -273,7 +268,7 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
                 <li key={a.id}>
                   <button className="flex w-full items-center justify-between rounded-xl border border-line px-4 py-3 text-left text-sm hover:border-brand-400" onClick={() => onOpenSession(a.id)}>
                     <span><span className="font-semibold">{a.title}</span><br /><span className="text-muted">{fmt.dateTime(a.starts_at)}</span></span>
-                    <span className="text-xs text-muted">{a.spots_left} spots</span>
+                    {availabilityLabel(a.availability) && <span className="text-xs text-muted">{availabilityLabel(a.availability)}</span>}
                   </button>
                 </li>
               ))}

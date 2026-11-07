@@ -48,6 +48,22 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
         url: '/account',
       };
     }
+    case 'member_birthday': {
+      const first = String(p.member_name ?? 'A member').split(' ')[0];
+      const turning = Number(p.turning) > 0 ? ` (turning ${p.turning})` : '';
+      const time = new Intl.DateTimeFormat('en-IE', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(String(p.starts_at)));
+      return p.phase === 'ten_min'
+        ? {
+          subject: `🎂 ${first}'s birthday: ${p.title} starts in 10 minutes`,
+          text: `${hi}\n\n${p.member_name}${turning} has a birthday today and is in your ${p.title} class at ${time}.\n\nDrop Studios`,
+          url: '/teach',
+        }
+        : {
+          subject: `🎂 ${first}'s birthday is at your ${p.title} class`,
+          text: `${hi}\n\n${p.member_name}${turning} is booked into your ${p.title} class on ${when(p.starts_at)}, and it's their birthday that day.\n\nDrop Studios`,
+          url: '/teach',
+        };
+    }
     default:
       return null;
   }

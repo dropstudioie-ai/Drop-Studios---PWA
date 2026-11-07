@@ -19,3 +19,16 @@ Deno.test('class cancellation explains what happens to the class or ticket', () 
   assertStringIncludes(render({ kind: 'class_cancelled', full_name: null, payload: { ...base, ticket_refund: true } })!.text, 'refund your ticket');
   assertEquals(render({ kind: 'nope', full_name: null, payload: {} }), null);
 });
+
+Deno.test('teacher birthday alerts: day before and 10 minutes before', () => {
+  const base = { member_name: 'Aoife Byrne', title: 'Heels', starts_at: '2026-11-09T20:00:00Z', turning: 30 };
+  const before = render({ kind: 'member_birthday', full_name: 'Talita Lima', payload: { ...base, phase: 'day_before' } })!;
+  assertEquals(before.subject, "🎂 Aoife's birthday is at your Heels class");
+  assertStringIncludes(before.text, 'Hi Talita,');
+  assertStringIncludes(before.text, 'Aoife Byrne (turning 30)');
+  assertStringIncludes(before.text, 'Heels class on Monday, 9 November at 20:00, and it\'s their birthday that day');
+  const soon = render({ kind: 'member_birthday', full_name: 'Talita Lima', payload: { ...base, phase: 'ten_min' } })!;
+  assertEquals(soon.subject, "🎂 Aoife's birthday: Heels starts in 10 minutes");
+  assertStringIncludes(soon.text, 'class at 20:00');
+  assertEquals(soon.url, '/teach');
+});

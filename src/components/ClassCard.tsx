@@ -1,5 +1,4 @@
 import type { ClassSession } from '../api/types';
-import { spotsLeft } from '../domain/booking';
 import { formatPrice } from '../domain/money';
 import { fmt } from '../domain/time';
 import { CheckIcon } from './icons';
@@ -12,17 +11,16 @@ export function ClassCard({ session, booked, onOpen, compact = false }: {
 }) {
   const past = new Date(session.starts_at) <= new Date();
   const cancelled = session.status === 'cancelled';
-  const left = spotsLeft(session);
-  const full = !cancelled && !past && left === 0;
+  const full = !cancelled && !past && session.availability === 'full';
   const color = session.style?.color ?? '#2f5bff';
 
   let status: { text: string; cls: string } | null = null;
   if (cancelled) status = { text: 'Cancelled', cls: 'bg-red-50 text-danger' };
   else if (booked) status = { text: 'Booked', cls: 'bg-success text-white' };
   else if (past) status = null;
-  else if (full) status = { text: 'Full', cls: 'bg-ink/10 text-ink-soft' };
+  else if (full) status = { text: 'Fully booked', cls: 'bg-ink/10 text-ink-soft' };
   else if (session.is_special) status = { text: session.ticket_price_cents != null ? formatPrice(session.ticket_price_cents) : 'Event', cls: 'bg-accent-500 text-ink' };
-  else if (left <= 3) status = { text: `${left} left`, cls: 'bg-accent-100 text-ink' };
+  else if (session.availability === 'almost_full') status = { text: 'Almost full', cls: 'bg-accent-100 text-ink' };
 
   const surface = booked ? 'border-success/60 bg-green-50/60' : full ? 'border-line bg-canvas' : 'border-line bg-white';
 
@@ -49,9 +47,6 @@ export function ClassCard({ session, booked, onOpen, compact = false }: {
         <span className="font-semibold" style={{ color }}>{session.style?.name}</span>
         {session.instructor ? ` · ${session.instructor.full_name}` : ''}{session.level && !compact ? ` · ${session.level}` : ''}
       </p>
-      {!compact && !past && !cancelled && !booked && !full && left > 3 && (
-        <p className="mt-2 text-xs text-muted">{left} spots left</p>
-      )}
     </button>
   );
 }

@@ -4,7 +4,7 @@ import { useAsync } from '../lib/useAsync';
 import { formatPrice } from '../domain/money';
 import { classesLabel, sortPlans } from '../domain/plans';
 import { addDaysToKey, fmt, localDateKey, zonedTime } from '../domain/time';
-import { spotsLeft } from '../domain/booking';
+import { availabilityLabel } from '../domain/booking';
 import { STUDIO } from '../config/studio';
 import { CalendarIcon, PinIcon, TicketIcon, UserIcon } from '../components/icons';
 
@@ -52,7 +52,7 @@ export default function Home() {
                   <span className="h-2.5 w-2.5 rounded-full" style={{ background: next.style?.color }} />
                   {next.style?.name}{next.instructor ? ` · ${next.instructor.full_name}` : ''}
                 </span>
-                <span className="font-semibold text-accent-400">{spotsLeft(next) > 0 ? `${spotsLeft(next)} spots left` : 'Full'}</span>
+                {availabilityLabel(next.availability) && <span className="font-semibold text-accent-400">{availabilityLabel(next.availability)}</span>}
               </div>
             </Link>
           )}

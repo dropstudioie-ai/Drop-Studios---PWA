@@ -28,6 +28,13 @@ export function cancellationOutcome(startsAt: Date, now: Date, policy: BookingPo
 
 export const spotsLeft = (s: { capacity: number; booked_count: number }) => Math.max(s.capacity - s.booked_count, 0);
 
+/** The only availability members see: no numbers. */
+export function availabilityLabel(a: 'available' | 'almost_full' | 'full' | undefined): string | null {
+  if (a === 'full') return 'Class fully booked';
+  if (a === 'almost_full') return 'Class almost full';
+  return null;
+}
+
 export function cutoffLabel(minutes: number): string {
   if (minutes % 60 === 0 && minutes >= 60) {
     const h = minutes / 60;

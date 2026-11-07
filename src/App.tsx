@@ -1,7 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { BrowserRouter, Link, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from './auth/AuthProvider';
-import { RequireAdmin, RequireAuth } from './auth/guards';
+import { RequireAdmin, RequireAuth, RequireStaff } from './auth/guards';
 import { Layout } from './components/Layout';
 import { PageSpinner, ToastProvider } from './components/ui';
 import { isSupabaseConfigured } from './lib/supabase';
@@ -15,6 +15,7 @@ const Checkout = lazy(() => import('./pages/Checkout'));
 const CheckoutSuccess = lazy(() => import('./pages/CheckoutResult').then((m) => ({ default: m.CheckoutSuccess })));
 const CheckoutCancelled = lazy(() => import('./pages/CheckoutResult').then((m) => ({ default: m.CheckoutCancelled })));
 const Account = lazy(() => import('./pages/Account'));
+const Teach = lazy(() => import('./pages/Teach'));
 const AdminLayout = lazy(() => import('./pages/admin/AdminLayout'));
 const AdminOverview = lazy(() => import('./pages/admin/Overview'));
 const AdminTimetable = lazy(() => import('./pages/admin/Timetable'));
@@ -66,6 +67,7 @@ export default function App() {
                 <Route path="checkout/cancelled" element={<CheckoutCancelled />} />
                 <Route path="checkout/:code" element={<RequireAuth><Checkout /></RequireAuth>} />
                 <Route path="account" element={<RequireAuth><Account /></RequireAuth>} />
+                <Route path="teach" element={<RequireStaff><Teach /></RequireStaff>} />
                 <Route path="admin" element={<RequireAdmin><AdminLayout /></RequireAdmin>}>
                   <Route index element={<AdminOverview />} />
                   <Route path="timetable" element={<AdminTimetable />} />

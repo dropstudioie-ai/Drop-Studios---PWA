@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabase, AppError } from '../../lib/supabase';
 import { unwrap } from '../../api';
 import type { DanceStyle, Instructor } from '../../api/types';
 import { useAsync } from '../../lib/useAsync';
 import { formatPrice, parseEurosToCents } from '../../domain/money';
-import { ErrorNotice, Field, PageSpinner, Sheet, useToast } from '../../components/ui';
+import { ErrorNotice, Field, PageSpinner, Sheet, Spinner, useToast } from '../../components/ui';
 import { Section, Table, Td } from './shared';
 
 const slugify = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -66,32 +66,58 @@ export function AdminStyles() {
   );
 }
 
+type InstructorRow = Instructor & { profile: { email: string | null; full_name: string } | null };
+
 export function AdminInstructors() {
   const toast = useToast();
-  const list = useAsync(async () => unwrap(await supabase.from('instructors').select('*').order('full_name')) as Instructor[], []);
-  const [edit, setEdit] = useState<Partial<Instructor> | null>(null);
+  const list = useAsync(async () =>
+    unwrap(await supabase.from('instructors').select('*, profile:profiles(email,full_name)').order('full_name')) as InstructorRow[], []);
+  const [edit, setEdit] = useState<Partial<InstructorRow> | null>(null);
+  const [loginEmail, setLoginEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const open = (i: Partial<InstructorRow>) => {
+    setError(null);
+    setLoginEmail(i.profile?.email ?? '');
+    setEdit(i);
+  };
 
   async function save() {
     if (!edit?.full_name?.trim()) return;
-    const row = { full_name: edit.full_name.trim(), bio: edit.bio || null, photo_url: edit.photo_url || null, instagram: edit.instagram || null, is_active: edit.is_active ?? true };
-    const res = edit.id ? await supabase.from('instructors').update(row).eq('id', edit.id) : await supabase.from('instructors').insert(row);
-    if (res.error) return setError(res.error.message);
-    toast('Instructor saved.');
-    setEdit(null);
-    void list.reload();
+    setBusy(true);
+    setError(null);
+    try {
+      const row = { full_name: edit.full_name.trim(), bio: edit.bio || null, photo_url: edit.photo_url || null, instagram: edit.instagram || null, is_active: edit.is_active ?? true };
+      const saved = unwrap(edit.id
+        ? await supabase.from('instructors').update(row).eq('id', edit.id).select('id').single()
+        : await supabase.from('instructors').insert(row).select('id').single()) as { id: string };
+      // Linking a login gives that person the instructor view for these classes.
+      if ((edit.profile?.email ?? '') !== loginEmail.trim()) {
+        unwrap(await supabase.rpc('admin_link_instructor', { p_instructor_id: saved.id, p_email: loginEmail.trim() || null }));
+      }
+      toast('Instructor saved.');
+      setEdit(null);
+      void list.reload();
+    } catch (e) {
+      setError(e instanceof AppError ? e.message : (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
   }
 
   if (list.loading) return <PageSpinner />;
   return (
-    <Section title="Instructors" actions={<button className="btn-sm btn-primary" onClick={() => { setError(null); setEdit({ is_active: true }); }}>Add instructor</button>}>
-      <Table head={['Name', 'Instagram', 'Status', '']} empty={!list.data?.length}>
+    <Section title="Instructors" actions={<button className="btn-sm btn-primary" onClick={() => open({ is_active: true })}>Add instructor</button>}>
+      <p className="mb-3 text-sm text-muted">Link an instructor to the email they log in with, and they get the “My classes” view with the lists for their own classes.</p>
+      <Table head={['Name', 'App login', 'Instagram', 'Status', '']} empty={!list.data?.length}>
         {list.data?.map((i) => (
           <tr key={i.id} className={i.is_active ? '' : 'opacity-50'}>
             <Td className="font-semibold">{i.full_name}</Td>
+            <Td>{i.profile?.email ?? <span className="text-muted">Not linked</span>}</Td>
             <Td>{i.instagram ?? '—'}</Td>
             <Td>{i.is_active ? 'Active' : 'Inactive'}</Td>
-            <Td><button className="btn-sm btn-ghost" onClick={() => { setError(null); setEdit(i); }}>Edit</button></Td>
+            <Td><button className="btn-sm btn-ghost" onClick={() => open(i)}>Edit</button></Td>
           </tr>
         ))}
       </Table>
@@ -99,12 +125,15 @@ export function AdminInstructors() {
         <Sheet open onClose={() => setEdit(null)} title={edit.id ? 'Edit instructor' : 'Add instructor'}>
           <div className="space-y-3">
             <Field label="Full name"><input className="input" value={edit.full_name ?? ''} onChange={(e) => setEdit({ ...edit, full_name: e.target.value })} /></Field>
+            <Field label="App login email" hint="The email they registered with on the website. Leave empty to unlink.">
+              <input className="input" type="email" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} placeholder="name@example.com" />
+            </Field>
             <Field label="Instagram handle"><input className="input" value={edit.instagram ?? ''} onChange={(e) => setEdit({ ...edit, instagram: e.target.value })} /></Field>
             <Field label="Photo URL"><input className="input" value={edit.photo_url ?? ''} onChange={(e) => setEdit({ ...edit, photo_url: e.target.value })} /></Field>
             <Field label="Bio"><textarea className="input min-h-24 py-2" value={edit.bio ?? ''} onChange={(e) => setEdit({ ...edit, bio: e.target.value })} /></Field>
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-5 w-5" checked={edit.is_active ?? true} onChange={(e) => setEdit({ ...edit, is_active: e.target.checked })} />Active</label>
             {error && <ErrorNotice error={error} />}
-            <button className="btn-primary w-full" onClick={save}>Save</button>
+            <button className="btn-primary w-full" disabled={busy} onClick={save}>{busy && <Spinner />}Save</button>
           </div>
         </Sheet>
       )}

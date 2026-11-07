@@ -742,6 +742,187 @@ run('database: plans, booking, allowances, pauses, security', () => {
     });
   });
 
+  // ---------------------------------------------------------------- staff
+  describe('class numbers are for staff only', () => {
+    it("the public can't read how many are booked; the timetable only says almost full / fully booked", async () => {
+      await expect(as(db, anon, `select booked_count from class_sessions limit 1`)).rejects.toThrow(/permission denied/);
+      await expect(as(db, user(await createUser(db, 'Curious')), `select capacity from class_sessions limit 1`)).rejects.toThrow(/permission denied/);
+      const s = await makeSession({ style: 'heels', startsInMinutes: 400, capacity: 30 });
+      const avail = async () => {
+        const [r] = await as<{ t: { availability: string; booked_count?: number; capacity?: number }[] }>(
+          db, anon, `select timetable(null, null, $1) as t`, [s]);
+        expect(r.t[0].booked_count).toBeUndefined();
+        expect(r.t[0].capacity).toBeUndefined();
+        return r.t[0].availability;
+      };
+      await db.query(`update class_sessions set booked_count = 19 where id = $1`, [s]);
+      expect(await avail()).toBe('available');
+      await db.query(`update class_sessions set booked_count = 20 where id = $1`, [s]);
+      expect(await avail()).toBe('almost_full'); // 10 spots left
+      await db.query(`update class_sessions set booked_count = 30 where id = $1`, [s]);
+      expect(await avail()).toBe('full');
+    });
+
+    it('timetable ranges are capped and alternatives carry no numbers', async () => {
+      const [r] = await as<{ t: unknown[] }>(db, anon, `select timetable(now(), now() + interval '90 days') as t`);
+      expect(r.t).toEqual([]);
+      const c = await createUser(db, 'AltNumbers');
+      await buy(c, 'single-4', 'heels');
+      const hiphop = await makeSession({ style: 'hip-hop', startsInMinutes: 500 });
+      await makeSession({ style: 'heels', startsInMinutes: 520 });
+      const [o] = await as<{ r: { alternatives: Record<string, unknown>[] } }>(db, user(c), `select booking_options($1) as r`, [hiphop]);
+      expect(o.r.alternatives.length).toBeGreaterThan(0);
+      for (const a of o.r.alternatives) {
+        expect(a).not.toHaveProperty('spots_left');
+        expect(['available', 'almost_full', 'full']).toContain(a.availability);
+      }
+    });
+  });
+
+  describe('instructor view', () => {
+    async function teacher(name: string) {
+      const uid = await createUser(db, name);
+      const { rows: [i] } = await db.query(`insert into instructors (full_name) values ($1) returning id`, [name]);
+      await as(db, user(admin), `select admin_link_instructor($1, $2)`, [i.id, `${name.toLowerCase()}@example.com`]);
+      return { uid, instructorId: i.id as string };
+    }
+    async function taughtBy(instructorId: string, startsInMinutes: number, style = 'heels') {
+      const s = await makeSession({ style, startsInMinutes });
+      await db.query(`update class_sessions set instructor_id = $2 where id = $1`, [s, instructorId]);
+      return s;
+    }
+
+    it('linking an account makes that person an instructor', async () => {
+      const t = await teacher('Talita');
+      const { rows } = await db.query(`select role from profiles where id = $1`, [t.uid]);
+      expect(rows[0].role).toBe('instructor');
+    });
+
+    it('instructors see the roster of their own classes only', async () => {
+      const t = await teacher('Vini');
+      const other = await teacher('Alex');
+      const mine = await taughtBy(t.instructorId, 600);
+      const theirs = await taughtBy(other.instructorId, 600);
+      const m = await createUser(db, 'RosterMember');
+      await buy(m, 'multi-8');
+      await book(m, mine);
+      await book(m, theirs);
+
+      const [r] = await as<{ r: { bookings: { full_name: string; kind: string; is_new: boolean }[]; booked_count: number } }>(
+        db, user(t.uid), `select staff_roster($1) as r`, [mine]);
+      expect(r.r.booked_count).toBe(1);
+      expect(r.r.bookings).toHaveLength(1);
+      expect(r.r.bookings[0]).toMatchObject({ full_name: 'RosterMember', kind: 'membership' });
+      await expectError(as(db, user(t.uid), `select staff_roster($1)`, [theirs]), 'forbidden');
+      await expectError(as(db, user(m), `select staff_roster($1)`, [mine]), 'forbidden');
+
+      const visible = await as<{ session_id: string }>(db, user(t.uid), `select session_id from bookings where user_id = $1`, [m]);
+      expect(visible.map((b) => b.session_id)).toEqual([mine]);
+
+      const [sessions] = await as<{ r: { id: string; booked_count: number }[] }>(db, user(t.uid),
+        `select staff_sessions(now(), now() + interval '2 days') as r`);
+      expect(sessions.r.map((x) => x.id)).toEqual([mine]);
+      expect(sessions.r[0].booked_count).toBe(1);
+    });
+
+    it('marks a member New on their first class at the studio', async () => {
+      const t = await teacher('Humberto');
+      const first = await taughtBy(t.instructorId, 700, 'reggaeton');
+      const second = await taughtBy(t.instructorId, 2000, 'reggaeton');
+      const m = await createUser(db, 'Newbie');
+      await buy(m, 'multi-5');
+      await book(m, first);
+      await book(m, second);
+      const flag = async (s: string) => ((await as<{ r: { bookings: { is_new: boolean }[] } }>(db, user(t.uid), `select staff_roster($1) as r`, [s]))[0]).r.bookings[0].is_new;
+      expect(await flag(first)).toBe(true);
+      expect(await flag(second)).toBe(false);
+    });
+
+    it('instructors can book a member into their class using the member’s membership', async () => {
+      const t = await teacher('Jorginho');
+      const s = await taughtBy(t.instructorId, 25 * 24 * 60, 'fitdance'); // beyond the members' 3-week window
+      const m = await createUser(db, 'WalkIn', 'customer', { photo: false });
+      const { membershipId } = await (async () => {
+        await db.query(`insert into storage.objects (bucket_id, name, owner) values ('avatars', $1 || '/t.jpg', $1::uuid)`, [m]);
+        const r = await buy(m, 'multi-5');
+        await db.query(`delete from storage.objects where bucket_id = 'avatars' and owner = $1::uuid`, [m]);
+        return r;
+      })();
+      const [r] = await as<{ r: { booking_id: string; classes_remaining: number } }>(db, user(t.uid), `select staff_book_member($1, $2) as r`, [s, m]);
+      expect(r.r.classes_remaining).toBe(4);
+      const { rows } = await db.query(`select actor_id from credit_transactions where booking_id = $1`, [r.r.booking_id]);
+      expect(rows[0].actor_id).toBe(t.uid);
+      expect((await db.query(`select classes_remaining from memberships where id = $1`, [membershipId])).rows[0].classes_remaining).toBe(4);
+
+      const noPack = await createUser(db, 'NoPack');
+      await expectError(as(db, user(t.uid), `select staff_book_member($1, $2)`, [s, noPack]), 'no_membership');
+      const other = await taughtBy((await teacher('Ana')).instructorId, 900);
+      await expectError(as(db, user(t.uid), `select staff_book_member($1, $2)`, [other, m]), 'forbidden');
+      const found = await as<{ r: { full_name: string }[] }>(db, user(t.uid), `select staff_find_members('walk') as r`);
+      expect(found[0].r.map((x) => x.full_name)).toContain('WalkIn');
+      await expectError(as(db, user(m), `select staff_find_members('walk')`), 'forbidden');
+    });
+
+    it('instructors can only mark attendance in their own classes', async () => {
+      const t = await teacher('Joao');
+      const other = await teacher('Outro');
+      const theirs = await taughtBy(other.instructorId, 20);
+      const m = await createUser(db, 'AttendMember');
+      await buy(m, 'multi-5');
+      const { booking_id } = await book(m, theirs);
+      await expectError(as(db, user(t.uid), `select admin_set_attendance($1, 'attended')`, [booking_id]), 'forbidden');
+      await as(db, user(other.uid), `select admin_set_attendance($1, 'attended')`, [booking_id]);
+    });
+
+    it('alerts the teacher about a birthday the day before and 10 minutes before class, once each', async () => {
+      const t = await teacher('Birthdays');
+      const s = await taughtBy(t.instructorId, 5 * 60);
+      const m = await createUser(db, 'Party Person');
+      await db.query(
+        `update profiles set date_of_birth = ((select starts_at from class_sessions where id = $2) at time zone 'Europe/Dublin')::date - interval '30 years' where id = $1`,
+        [m, s]);
+      await buy(m, 'multi-5');
+      await book(m, s);
+      const plain = await createUser(db, 'NotToday');
+      await db.query(`update profiles set date_of_birth = '1990-01-01' where id = $1`, [plain]);
+      await buy(plain, 'multi-5');
+      await book(plain, s);
+
+      await as(db, service, `select queue_birthday_alerts()`);
+      await as(db, service, `select queue_birthday_alerts()`);
+      let { rows } = await db.query(`select payload from notification_outbox where user_id = $1 and kind = 'member_birthday'`, [t.uid]);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].payload).toMatchObject({ member_name: 'Party Person', phase: 'day_before', turning: 30 });
+
+      await db.query(`update class_sessions set starts_at = now() + interval '8 minutes', ends_at = now() + interval '68 minutes' where id = $1`, [s]);
+      // Keep the birthday on the class's (possibly new) local date, whatever the time of day the suite runs.
+      await db.query(
+        `update profiles set date_of_birth = ((select starts_at from class_sessions where id = $2) at time zone 'Europe/Dublin')::date - interval '30 years' where id = $1`,
+        [m, s]);
+      await as(db, service, `select queue_birthday_alerts()`);
+      ({ rows } = await db.query(`select payload ->> 'phase' as phase from notification_outbox where user_id = $1 and kind = 'member_birthday' order by id`, [t.uid]));
+      expect(rows.map((r) => r.phase)).toEqual(['day_before', 'ten_min']);
+
+      const [r] = await as<{ r: { bookings: { full_name: string; is_birthday: boolean; turning: number | null }[] } }>(db, user(t.uid), `select staff_roster($1) as r`, [s]);
+      expect(r.r.bookings.find((b) => b.full_name === 'Party Person')).toMatchObject({ is_birthday: true, turning: 30 });
+      expect(r.r.bookings.find((b) => b.full_name === 'NotToday')).toMatchObject({ is_birthday: false, turning: null });
+    });
+  });
+
+  describe('date of birth', () => {
+    it('is taken from the sign-up form and validated', async () => {
+      const id = randomUUID();
+      await db.query(`insert into auth.users (id, email, raw_user_meta_data) values ($1, 'dob@example.com', $2)`,
+        [id, { full_name: 'Dob Person', date_of_birth: '1995-06-15' }]);
+      expect((await db.query(`select to_char(date_of_birth, 'YYYY-MM-DD') d from profiles where id = $1`, [id])).rows[0].d).toBe('1995-06-15');
+      const bad = randomUUID();
+      await db.query(`insert into auth.users (id, email, raw_user_meta_data) values ($1, 'baddob@example.com', $2)`, [bad, { date_of_birth: 'not a date' }]);
+      expect((await db.query(`select date_of_birth from profiles where id = $1`, [bad])).rows[0].date_of_birth).toBeNull();
+      await expect(as(db, user(id), `update profiles set date_of_birth = current_date + 1 where id = $1`, [id])).rejects.toThrow(/invalid_date_of_birth/);
+      await as(db, user(id), `update profiles set date_of_birth = '1996-06-15' where id = $1`, [id]);
+    });
+  });
+
   // ---------------------------------------------------------------- notifications
   describe('notifications', () => {
     it('studio cancellations queue a notification per booked customer', async () => {
