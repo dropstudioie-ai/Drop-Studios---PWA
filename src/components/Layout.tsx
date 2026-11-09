@@ -52,6 +52,7 @@ export function Layout() {
             {STUDIO.instagram && <a href={STUDIO.instagram} className="hover:text-ink" rel="noreferrer" target="_blank">Instagram</a>}
             <Link to="/memberships" className="hover:text-ink">Memberships</Link>
             <Link to="/timetable" className="hover:text-ink">Timetable</Link>
+            <Link to="/app" className="font-semibold text-brand-700 hover:text-ink">Get the app</Link>
             <Link to="/terms" className="hover:text-ink">Terms</Link>
             <Link to="/privacy" className="hover:text-ink">Privacy</Link>
           </div>

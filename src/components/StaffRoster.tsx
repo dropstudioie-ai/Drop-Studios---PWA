@@ -8,7 +8,7 @@ import { fmt, ordinal } from '../domain/time';
 import { Avatar } from './Avatar';
 import { ErrorNotice, Notice, PageSpinner, Sheet, Spinner, useToast } from './ui';
 
-const KIND_LABEL: Record<RosterEntry['kind'], string> = { membership: 'Membership', drop_in: 'Drop In', ticket: 'Ticket' };
+const KIND_LABEL: Record<RosterEntry['kind'], string> = { membership: 'Membership', drop_in: 'Drop In', ticket: 'Ticket', staff: 'Instructor · free' };
 const STATUS_LABEL: Record<string, string> = {
   booked: 'Booked', attended: 'Attended', no_show: 'No-show', pending_payment: 'Paying now…',
 };

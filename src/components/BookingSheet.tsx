@@ -32,7 +32,10 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
   const [membershipId, setMembershipId] = useState<string | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [renewal, setRenewal] = useState<RenewalOffer | null>(null);
-  const userId = useAuth().session?.user.id;
+  const auth = useAuth();
+  const userId = auth.session?.user.id;
+  const isStaff = auth.isStaff;
+  const [staffFree, setStaffFree] = useState(false);
   // One key per opened class: retries reuse the same ticket payment.
   const ticketKey = useMemo(() => crypto.randomUUID(), [session?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -49,6 +52,8 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
         setOpts(o);
         setMembershipId(o.eligible_membership_id ?? null);
         setRenewal(null);
+        setStaffFree(false);
+        if (isStaff && o.my_booking_id) api.isStaffFreeBooking(o.my_booking_id).then((v) => live && setStaffFree(v)).catch(() => {});
         // All classes used? Offer to renew early (same plan) next to the Drop In.
         if (userId && o.memberships?.some((m) => m.issue === 'no_classes_left') && !o.memberships.some((m) => !m.issue)) {
           Promise.all([api.myMemberships(userId), api.plans()])
@@ -59,7 +64,7 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
       .catch((e) => live && setError((e as Error).message))
       .finally(() => live && setLoading(false));
     return () => { live = false; };
-  }, [session, userId]);
+  }, [session, userId, isStaff]);
 
   if (!session) return null;
   const start = new Date(session.starts_at);
@@ -77,7 +82,9 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
   const dropInPrice = session.is_special ? null : (opts?.drop_in_price_cents ?? null);
   // Booking needs a profile photo (enforced by the server too).
   const needsPhoto = Boolean(free && opts?.has_profile_photo === false);
-  const canAct = free && !needsPhoto;
+  // Instructors and admins book themselves in for free; members' options are hidden for them.
+  const staffMode = Boolean(isStaff && free && session.status === 'scheduled');
+  const canAct = free && !needsPhoto && !staffMode;
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -100,8 +107,16 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
     onClose();
   });
 
+  const bookFree = () => run(async () => {
+    await api.staffBookSelf(session.id);
+    toast('Booked in, free (instructor).');
+    onChanged();
+    onClose();
+  });
+
   const cancel = () => run(async () => {
     const res = await api.cancel(opts!.my_booking_id!);
+    if (staffFree) { toast('Booking cancelled. Your spot has been released.'); onChanged(); onClose(); return; }
     toast(res.class_restored ? 'Booking cancelled. Your class has been returned.' : 'Booking cancelled. This late cancellation used the class.', res.class_restored ? 'success' : 'info');
     onChanged();
     onClose();
@@ -164,7 +179,7 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
         {/* Already booked */}
         {opts?.authenticated && opts.my_booking_id && (
           <div className="space-y-3">
-            <Notice tone="success"><strong>{opts.my_booking_is_ticket ? (session.is_special ? 'You have a ticket.' : 'You’re booked in (Drop In).') : 'You’re booked in.'}</strong> See you on the floor!</Notice>
+            <Notice tone="success"><strong>{opts.my_booking_is_ticket ? (session.is_special ? 'You have a ticket.' : 'You’re booked in (Drop In).') : staffFree ? 'You’re booked in (instructor, free).' : 'You’re booked in.'}</strong> See you on the floor!</Notice>
             {opts.my_booking_is_ticket ? (
               <p className="text-sm text-muted">Can’t make it? Contact the studio about your booking.</p>
             ) : (
@@ -179,7 +194,7 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
                 )}
                 {confirmCancel && (
                   <div className="space-y-3">
-                    {cancelInfo.restores
+                    {staffFree ? <Notice tone="info">Your free spot will be released for someone else.</Notice> : cancelInfo.restores
                       ? <Notice tone="info">You’ll get this class back on your membership.</Notice>
                       : <Notice tone="warn">It’s less than {cutoffLabel(policy.cancellation_cutoff_minutes)} before class. If you cancel now, you <strong>won’t</strong> get this class back.</Notice>}
                     <div className="flex gap-2">
@@ -202,7 +217,21 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
           </div>
         )}
 
-        {needsPhoto && scheduled && !opts?.session_issue && (
+        {/* Instructors and admins: free booking */}
+        {opts && staffMode && (
+          <div className="space-y-3">
+            {opts.session_issue === 'session_full' && <Notice tone="warn">{messageFor('session_full')}</Notice>}
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-ink-soft"><strong className="text-ink">Instructor booking</strong> · takes a spot, no charge</span>
+              <span className="font-display text-2xl font-black">Free</span>
+            </div>
+            <button className="btn-primary w-full text-lg" disabled={busy || opts.session_issue === 'session_full'} onClick={bookFree}>
+              {busy && <Spinner />}Book for free
+            </button>
+          </div>
+        )}
+
+        {needsPhoto && !staffMode && scheduled && !opts?.session_issue && (
           <div className="space-y-3">
             <Notice tone="warn">{messageFor('profile_photo_required')}</Notice>
             <Link to="/account#photo" className="btn-accent w-full">Add profile photo</Link>
@@ -229,7 +258,7 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
         )}
 
         {/* Regular class */}
-        {opts && free && !session.is_special && opts.session_issue && scheduled && <Notice tone="warn">{messageFor(opts.session_issue)}</Notice>}
+        {opts && free && !staffMode && !session.is_special && opts.session_issue && scheduled && <Notice tone="warn">{messageFor(opts.session_issue)}</Notice>}
 
         {opts && canAct && !session.is_special && !opts.session_issue && eligible.length > 0 && (
           <div className="space-y-3">

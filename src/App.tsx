@@ -15,6 +15,7 @@ const Checkout = lazy(() => import('./pages/Checkout'));
 const CheckoutSuccess = lazy(() => import('./pages/CheckoutResult').then((m) => ({ default: m.CheckoutSuccess })));
 const CheckoutCancelled = lazy(() => import('./pages/CheckoutResult').then((m) => ({ default: m.CheckoutCancelled })));
 const Account = lazy(() => import('./pages/Account'));
+const GetApp = lazy(() => import('./pages/GetApp'));
 const Teach = lazy(() => import('./pages/Teach'));
 const AdminLayout = lazy(() => import('./pages/admin/AdminLayout'));
 const AdminOverview = lazy(() => import('./pages/admin/Overview'));
@@ -63,6 +64,7 @@ export default function App() {
                 <Route path="reset-password" element={<ResetPassword />} />
                 <Route path="terms" element={<Terms />} />
                 <Route path="privacy" element={<Privacy />} />
+                <Route path="app" element={<GetApp />} />
                 <Route path="checkout/success" element={<RequireAuth><CheckoutSuccess /></RequireAuth>} />
                 <Route path="checkout/cancelled" element={<CheckoutCancelled />} />
                 <Route path="checkout/:code" element={<RequireAuth><Checkout /></RequireAuth>} />

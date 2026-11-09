@@ -48,7 +48,11 @@ Admin → Timetable, press **Publish next 5 weeks**.
 ### Instructors
 
 Each teacher registers on the website like a member. Then in Admin → Instructors,
-open their instructor profile and enter that **App login email**. They become an
+tap **Edit** on their instructor profile and choose their account under **App login**
+(or "Someone else…" and type the email they registered with). The page warns about
+instructor accounts that aren't linked yet. Which classes they teach is set per
+class in Admin → Timetable. Instructors (and admins) can also book any class for
+themselves for free; it takes a spot and shows as "Instructor · free" on the list. They become an
 instructor and get **My classes**: the next two weeks of the classes they teach,
 with how many are booked, each class list (photos, **New** for someone's first
 class at Drop, 🎂 birthdays), attendance, and **Add a member** (booked with the
@@ -194,13 +198,19 @@ Failed deliveries are retried up to 5 times; the last error is kept on the
 outbox row. Messages for customers with neither an email nor a push
 subscription are marked done.
 
-## 8. Logo files
+## 8. "Get the app" link
+
+The app installs from the browser (no app store). Share `https://<your domain>/app`:
+it shows the install steps for iPhone and Android, an Install button where the
+browser supports it, and a QR code to print for the studio.
+
+## 9. Logo files
 
 `design/logo/` holds the original stencil letters. `npm run icons` rebuilds the
 logo (`public/brand/*.svg`: colour, white, one-colour wordmark and app icons),
 the favicon, the in-app logo data and the PWA icons.
 
-## 9. Still to do
+## 10. Still to do
 
 - **Studio details.** Fill in `src/config/studio.ts` (address, email, phone, Instagram).
 - **Legal pages.** `/terms` and `/privacy` are drafts written to match how the app works.

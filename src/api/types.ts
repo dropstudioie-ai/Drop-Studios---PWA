@@ -92,7 +92,7 @@ export interface RosterEntry {
   status: BookingStatus;
   class_restored: boolean;
   booked_at: string;
-  kind: 'membership' | 'ticket' | 'drop_in';
+  kind: 'membership' | 'ticket' | 'drop_in' | 'staff';
   plan_name: string | null;
   is_new: boolean;
   is_birthday: boolean;

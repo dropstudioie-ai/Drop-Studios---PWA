@@ -802,6 +802,29 @@ run('database: plans, booking, allowances, pauses, security', () => {
       return { uid, instructorId: i.id as string };
     }
 
+    it('instructors can book any class for themselves, free, within capacity', async () => {
+      const t = await teacher('Freebie');
+      const other = await teacher('Colleague');
+      const s = await taughtBy(other.instructorId, 600, 'commercial'); // not their own class
+      const [r] = await as<{ r: { booking_id: string } }>(db, user(t.uid), `select staff_book_self($1) r`, [s]);
+      const { rows: [b] } = await db.query(`select membership_id, payment_id, staff_free, status from bookings where id = $1`, [r.r.booking_id]);
+      expect(b).toMatchObject({ membership_id: null, payment_id: null, staff_free: true, status: 'booked' });
+      expect((await db.query(`select booked_count from class_sessions where id = $1`, [s])).rows[0].booked_count).toBe(1);
+      await expectError(as(db, user(t.uid), `select staff_book_self($1)`, [s]), 'already_booked');
+
+      // Their colleague sees them on the list as staff; they can cancel it themselves.
+      const [roster] = await as<{ r: { bookings: { kind: string }[] } }>(db, user(other.uid), `select staff_roster($1) r`, [s]);
+      expect(roster.r.bookings.map((x) => x.kind)).toEqual(['staff']);
+      await as(db, user(t.uid), `select cancel_booking($1)`, [r.r.booking_id]);
+      expect((await db.query(`select booked_count from class_sessions where id = $1`, [s])).rows[0].booked_count).toBe(0);
+
+      // Members can't; a full class stays full.
+      const m = await createUser(db, 'NotStaff');
+      await expectError(as(db, user(m), `select staff_book_self($1)`, [s]), 'forbidden');
+      await db.query(`update class_sessions set booked_count = capacity where id = $1`, [s]);
+      await expectError(as(db, user(t.uid), `select staff_book_self($1)`, [s]), 'session_full');
+    });
+
     it('instructors must add their birthday before using the teacher view', async () => {
       const t = await teacher('Zublin');
       const s = await taughtBy(t.instructorId, 600);
@@ -814,13 +837,13 @@ run('database: plans, booking, allowances, pauses, security', () => {
     });
 
     it('admins are told about instructor birthdays a week before and on the day', async () => {
-      const t = await teacher('Humberto');
+      const t = await teacher('Birthdayteacher');
       const { rows: [{ tz }] } = await db.query(`select timezone tz from app_settings`);
       const { rows: [{ late }] } = await db.query(`select (now() at time zone $1)::time >= '09:00' late`, [tz]);
       const setDob = (days: number) => db.query(
         `update profiles set date_of_birth = ((now() at time zone $2)::date + $3::int) - interval '30 years' where id = $1`, [t.uid, tz, days]);
       const mine = async () => (await db.query(
-        `select payload->>'phase' phase from notification_outbox where user_id = $1 and kind = 'instructor_birthday' and payload->>'instructor_name' = 'Humberto' order by id`, [admin])).rows.map((r) => r.phase);
+        `select payload->>'phase' phase from notification_outbox where user_id = $1 and kind = 'instructor_birthday' and payload->>'instructor_name' = 'Birthdayteacher' order by id`, [admin])).rows.map((r) => r.phase);
 
       await setDob(7);
       await as(db, service, `select queue_instructor_birthday_alerts()`);
@@ -1009,9 +1032,9 @@ run('database: plans, booking, allowances, pauses, security', () => {
       expect(await claim()).toHaveLength(0); // already claimed
       await as(db, service, `select complete_notification($1)`, [first[0].id]);
       await as(db, service, `select complete_notification($1, 'smtp down')`, [first[1].id]);
-      const { rows } = await db.query(`select id, sent_at is not null sent, error from notification_outbox where id = any($1) order by id`, [[first[0].id, first[1].id]]);
-      expect(rows[0]).toMatchObject({ sent: true, error: null });
-      expect(rows[1]).toMatchObject({ sent: false, error: 'smtp down' });
+      const outcome = async (id: number) => (await db.query(`select sent_at is not null sent, error from notification_outbox where id = $1`, [id])).rows[0];
+      expect(await outcome(first[0].id)).toMatchObject({ sent: true, error: null });
+      expect(await outcome(first[1].id)).toMatchObject({ sent: false, error: 'smtp down' });
       const retry = await claim(); // failed one is claimable again
       expect(retry.map((r) => Number(r.id))).toContain(Number(first[1].id));
       await expect(as(db, user(admin), `select * from claim_notifications(10)`)).rejects.toThrow(/permission denied/);

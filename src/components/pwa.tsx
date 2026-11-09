@@ -7,6 +7,35 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
+// The browser fires beforeinstallprompt once; keep it so both the banner and the
+// "Get the app" page can use it.
+let deferredInstall: BeforeInstallPromptEvent | null = null;
+const installListeners = new Set<(e: BeforeInstallPromptEvent | null) => void>();
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredInstall = e as BeforeInstallPromptEvent;
+    installListeners.forEach((l) => l(deferredInstall));
+  });
+  window.addEventListener('appinstalled', () => {
+    deferredInstall = null;
+    installListeners.forEach((l) => l(null));
+  });
+}
+
+/** The pending install prompt (Android / desktop Chrome), if the browser offered one. */
+export function useInstallEvent() {
+  const [evt, setEvt] = useState(deferredInstall);
+  useEffect(() => {
+    installListeners.add(setEvt);
+    return () => { installListeners.delete(setEvt); };
+  }, []);
+  return evt;
+}
+
+export const isStandalone = () =>
+  typeof window !== 'undefined' && (window.matchMedia('(display-mode: standalone)').matches || Boolean((navigator as { standalone?: boolean }).standalone));
+
 export function useOnline() {
   const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine);
   useEffect(() => {
@@ -42,16 +71,11 @@ export function InstallPrompt() {
     try { return localStorage.getItem(DISMISS_KEY) === '1'; } catch { return false; }
   });
 
+  const installEvt = useInstallEvent();
+  useEffect(() => { setEvt(installEvt); }, [installEvt]);
   useEffect(() => {
-    const handler = (e: Event) => {
-      e.preventDefault();
-      setEvt(e as BeforeInstallPromptEvent);
-    };
-    window.addEventListener('beforeinstallprompt', handler);
-    const standalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone;
     const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
-    if (isIos && !standalone) setIosHint(true);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
+    if (isIos && !isStandalone()) setIosHint(true);
   }, []);
 
   const dismiss = () => {

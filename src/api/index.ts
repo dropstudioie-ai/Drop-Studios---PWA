@@ -57,6 +57,10 @@ export const api = {
     unwrap(await supabase.rpc('staff_find_members', { p_query: query })) as MemberMatch[],
   staffBook: async (sessionId: string, userId: string) =>
     unwrap(await supabase.rpc('staff_book_member', { p_session_id: sessionId, p_user_id: userId })) as { booking_id: string; classes_remaining: number },
+  staffBookSelf: async (sessionId: string) =>
+    unwrap(await supabase.rpc('staff_book_self', { p_session_id: sessionId })) as { booking_id: string },
+  isStaffFreeBooking: async (bookingId: string) =>
+    Boolean((unwrap(await supabase.from('bookings').select('staff_free').eq('id', bookingId).maybeSingle()) as { staff_free: boolean } | null)?.staff_free),
   setAttendance: async (bookingId: string, status: 'attended' | 'no_show' | 'booked') =>
     unwrap(await supabase.rpc('admin_set_attendance', { p_booking_id: bookingId, p_status: status })),
 

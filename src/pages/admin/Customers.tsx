@@ -93,7 +93,9 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
     if (!window.confirm(`Change role to ${role}?`)) return;
     try {
       unwrap(await supabase.rpc('admin_set_role', { p_user_id: userId, p_role: role }));
-      toast('Role updated.');
+      toast(role === 'instructor'
+        ? 'Now an instructor. Next: Admin → Instructors → Edit their name → choose this account under App login, so they see their classes.'
+        : 'Role updated.');
       void data.reload();
     } catch (e) {
       toast((e as Error).message, 'error');
