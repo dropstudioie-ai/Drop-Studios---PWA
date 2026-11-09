@@ -11,6 +11,8 @@ import { fmt, localDateKey } from '../domain/time';
 import { validDob } from '../domain/profile';
 import { MembershipCard } from '../components/MembershipCard';
 import { BirthdayCard } from '../components/BirthdayCard';
+import { renewalLink, renewalOffer } from '../domain/renewal';
+import { formatPrice } from '../domain/money';
 import { ProfilePhotoCard } from '../components/ProfilePhotoCard';
 import { PauseSheet } from '../components/PauseSheet';
 import { EmptyState, ErrorNotice, Field, Notice, PageSpinner, Sheet, Spinner, useToast } from '../components/ui';
@@ -24,10 +26,10 @@ export default function Account() {
   const toast = useToast();
   const uid = session!.user.id;
   const data = useAsync(async () => {
-    const [memberships, bookings, styles, settings, allowance] = await Promise.all([
-      api.myMemberships(uid), api.myBookings(uid), api.styles(), api.settings(), api.pauseAllowance(),
+    const [memberships, bookings, styles, settings, allowance, plans] = await Promise.all([
+      api.myMemberships(uid), api.myBookings(uid), api.styles(), api.settings(), api.pauseAllowance(), api.plans(),
     ]);
-    return { memberships, bookings, styles, settings, allowance };
+    return { memberships, bookings, styles, settings, allowance, plans };
   }, [uid]);
 
   const [pausing, setPausing] = useState<Membership | null>(null);
@@ -36,7 +38,8 @@ export default function Account() {
 
   if (data.loading && !data.data) return <PageSpinner />;
   if (data.error) return <div className="container-page py-8"><ErrorNotice error={data.error} onRetry={data.reload} /></div>;
-  const { memberships, bookings, styles, settings, allowance } = data.data!;
+  const { memberships, bookings, styles, settings, allowance, plans } = data.data!;
+  const renewal = renewalOffer(memberships, plans);
 
   const current = memberships.filter((m) => ['active', 'paused', 'pending_activation'].includes(m.state));
   const past = memberships.filter((m) => !current.includes(m));
@@ -76,7 +79,22 @@ export default function Account() {
 
       <section className="mt-6 space-y-4" aria-labelledby="current-h">
         <h2 id="current-h" className="sr-only">Current memberships</h2>
-        {current.length === 0 ? (
+        {renewal && (
+          <div className="card border-2 border-accent-500 p-5">
+            <h3 className="text-lg font-extrabold">You’ve used all your classes</h3>
+            <p className="mt-1 text-sm text-ink-soft">
+              Your <strong>{renewal.planName}</strong>{renewal.expiresAt ? ` is valid until ${fmt.date(renewal.expiresAt)}` : ''}, but has no classes left.
+              {renewal.plan ? ' Renew early to keep booking, or pay per class with a Drop In.' : ' Choose a new membership to keep booking, or pay per class with a Drop In.'}
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Link to={renewalLink(renewal)} className="btn-primary">
+                {renewal.plan ? `Renew early · ${formatPrice(renewal.plan.price_cents, renewal.plan.currency)}` : 'Choose a membership'}
+              </Link>
+              <Link to="/timetable" className="btn-ghost">Book a Drop In</Link>
+            </div>
+          </div>
+        )}
+        {current.length === 0 && renewal ? null : current.length === 0 ? (
           <EmptyState title={past.length ? 'No active membership' : 'You don’t have a membership yet'}
             action={<Link to="/memberships" className="btn-accent">Explore plans</Link>}>
             Choose a class pack to start booking.

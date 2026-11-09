@@ -111,7 +111,7 @@ run('database: plans, booking, allowances, pauses, security', () => {
         '1 18:00 Choreography (Choreography, Ground Floor Studio, Vini Martins, 30)',
         '1 19:00 Jazz Funk (Jazz Funk, Ground Floor Studio, Vini Martins, 30)',
         '1 20:00 Heels (Heels, Ground Floor Studio, Talita Lima, 30)',
-        '2 18:30 FitDance Special (FitDance, Ground Floor Studio, João Zublin, 30)',
+        '2 18:30 FitDance (FitDance, Ground Floor Studio, João Zublin, 30)',
         '2 19:30 Reggaeton (Reggaeton, Ground Floor Studio, Humberto, 30)',
         '3 18:30 FitDance (FitDance, Ground Floor Studio, Jorginho, 30)',
         '3 19:30 Hip Hop (Hip Hop, Ground Floor Studio, Ana Souto, 30)',

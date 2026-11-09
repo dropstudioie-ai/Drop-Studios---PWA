@@ -118,6 +118,16 @@ every booking follows the same membership rules. `queue_birthday_alerts`
 staff functions until they add it; `queue_instructor_birthday_alerts` (cron,
 every 15 min, from 09:00 Dublin) tells every admin a week before and on the day.
 
+## Early renewal
+
+When every class on a membership is used but its dates haven't run out (and no
+other membership has classes left), the booking sheet and My Membership offer
+**Renew early** (the same plan, and the same style for single-style plans) next
+to the Drop In. `domain/renewal.ts` picks the offer; checkout and eligibility are
+the normal purchase path, so the Intro Offer can't be bought again (those
+members are sent to choose a plan). The new membership is independent; the used-up
+one simply runs to its expiry.
+
 ## Frontend structure
 
 ```

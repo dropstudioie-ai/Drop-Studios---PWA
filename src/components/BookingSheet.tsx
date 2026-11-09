@@ -8,6 +8,8 @@ import { availabilityLabel, cancellationOutcome, cutoffLabel } from '../domain/b
 import { formatPrice } from '../domain/money';
 import { messageFor } from '../domain/messages';
 import { fmt } from '../domain/time';
+import { renewalLink, renewalOffer, type RenewalOffer } from '../domain/renewal';
+import { useAuth } from '../auth/AuthProvider';
 import { ClockIcon, UserIcon } from './icons';
 import { ErrorNotice, Notice, Sheet, Spinner, useToast } from './ui';
 
@@ -29,6 +31,8 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
   const [error, setError] = useState<string | null>(null);
   const [membershipId, setMembershipId] = useState<string | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [renewal, setRenewal] = useState<RenewalOffer | null>(null);
+  const userId = useAuth().session?.user.id;
   // One key per opened class: retries reuse the same ticket payment.
   const ticketKey = useMemo(() => crypto.randomUUID(), [session?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -44,11 +48,18 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
         if (!live) return;
         setOpts(o);
         setMembershipId(o.eligible_membership_id ?? null);
+        setRenewal(null);
+        // All classes used? Offer to renew early (same plan) next to the Drop In.
+        if (userId && o.memberships?.some((m) => m.issue === 'no_classes_left') && !o.memberships.some((m) => !m.issue)) {
+          Promise.all([api.myMemberships(userId), api.plans()])
+            .then(([ms, plans]) => live && setRenewal(renewalOffer(ms, plans)))
+            .catch(() => {});
+        }
       })
       .catch((e) => live && setError((e as Error).message))
       .finally(() => live && setLoading(false));
     return () => { live = false; };
-  }, [session]);
+  }, [session, userId]);
 
   if (!session) return null;
   const start = new Date(session.starts_at);
@@ -240,7 +251,19 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
         {opts && canAct && !session.is_special && !opts.session_issue && eligible.length === 0 && (
           dropInPrice != null ? (
             <div className="space-y-3">
-              {blocking && <Notice tone="info">{messageFor(blocking.issue)} You can still come as a Drop In.</Notice>}
+              {renewal ? (
+                <>
+                  <Notice tone="info">
+                    You’ve used all the classes on your <strong>{renewal.planName}</strong>
+                    {renewal.expiresAt ? ` (valid until ${fmt.date(renewal.expiresAt)})` : ''}. Renew it now, or pay for this class as a Drop In.
+                  </Notice>
+                  <Link to={renewalLink(renewal)} className="btn-primary w-full text-lg">
+                    {renewal.plan ? `Renew early · ${formatPrice(renewal.plan.price_cents, renewal.plan.currency)}` : 'Choose a new membership'}
+                  </Link>
+                  {renewal.plan && <p className="text-center text-xs text-muted">{renewal.plan.name}: {renewal.plan.class_count} classes.</p>}
+                  <p className="pt-1 text-center text-xs font-semibold uppercase tracking-wide text-muted">or</p>
+                </>
+              ) : blocking && <Notice tone="info">{messageFor(blocking.issue)} You can still come as a Drop In.</Notice>}
               {paymentsMode === 'test' && <Notice tone="test"><strong>TEST MODE</strong> — no real payment will be taken.</Notice>}
               <div className="flex items-center justify-between">
                 <span className="text-sm text-ink-soft"><strong className="text-ink">Drop In</strong> · this class only</span>
@@ -249,7 +272,7 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
               <button className="btn-accent w-full text-lg" disabled={busy} onClick={buyTicket}>
                 {busy && <Spinner />}{paymentsMode === 'test' ? 'Book TEST Drop In' : 'Book Drop In'}
               </button>
-              <Link to="/memberships" className="btn-outline w-full">Save with a membership</Link>
+              {!renewal && <Link to="/memberships" className="btn-outline w-full">Save with a membership</Link>}
               <p className="text-center text-xs text-muted">Drop Ins aren’t refundable in the app. Contact the studio if you can’t make it.</p>
             </div>
           ) : (

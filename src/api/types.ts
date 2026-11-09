@@ -136,7 +136,10 @@ export interface Booking {
 
 export interface MembershipPurchase {
   id: string;
+  plan_id: string;
+  plan_code: string;
   plan_name: string;
+  first_time_only: boolean;
   price_cents: number;
   currency: string;
   class_count: number;

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { useAsync } from '../lib/useAsync';
 import { checkout, paymentsMode } from '../lib/payments';
@@ -14,6 +14,8 @@ import { useAuth } from '../auth/AuthProvider';
 
 export default function Checkout() {
   const { code = '' } = useParams();
+  const [search] = useSearchParams();
+  const renewing = search.get('renew') === '1';
   const navigate = useNavigate();
   const { profile } = useAuth();
   const data = useAsync(async () => {
@@ -24,7 +26,8 @@ export default function Checkout() {
     return { plan, settings, styles, firstTime, planStyleIds };
   }, [code]);
 
-  const [styleId, setStyleId] = useState<string | null>(null);
+  // Renewing a single-style plan keeps the same style (it can still be changed here).
+  const [styleId, setStyleId] = useState<string | null>(search.get('style'));
   const [agreed, setAgreed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -75,6 +78,12 @@ export default function Checkout() {
       {paymentsMode === 'test' && (
         <div className="mt-4"><Notice tone="test">
           <strong>TEST MODE — no real payment will be taken.</strong> Memberships created here are marked TEST and are not real transactions.
+        </Notice></div>
+      )}
+
+      {renewing && (
+        <div className="mt-4"><Notice tone="info">
+          <strong>Renewing early.</strong> You’ve used all the classes on your current membership, so this new one gives you classes again straight away.
         </Notice></div>
       )}
 
