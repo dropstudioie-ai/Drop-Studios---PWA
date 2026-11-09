@@ -50,10 +50,12 @@ Deno.serve(async (req) => {
   }
 
   // The webhook finds this payment again through the Square order id.
-  if (payment.provider_session_id !== link.order_id) {
+  // Sandbox payments are flagged as tests so they never count as revenue.
+  const sandbox = Deno.env.get('SQUARE_ENVIRONMENT') !== 'production';
+  if (payment.provider_session_id !== link.order_id || (sandbox && !payment.is_test)) {
     const { error: saveError } = await adminClient()
       .from('payments')
-      .update({ provider_session_id: link.order_id })
+      .update({ provider_session_id: link.order_id, ...(sandbox ? { is_test: true } : {}) })
       .eq('id', payment.payment_id)
       .eq('status', 'pending');
     if (saveError) {

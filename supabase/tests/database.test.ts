@@ -220,6 +220,20 @@ run('database: plans, booking, allowances, pauses, security', () => {
       await db.query(`update membership_plans set price_cents = 5500, class_count = 5 where code = 'multi-5'`);
       await expect(db.query(`update membership_purchases set price_cents = 1`)).rejects.toThrow(/immutable_record/);
     });
+
+    it('a pending Square Sandbox payment can be flagged as a test, never the other way', async () => {
+      const c = await createUser(db, 'SandboxBuyer');
+      const [checkout] = await as<{ r: { payment_id: string; amount_cents: number } }>(db, user(c),
+        `select create_checkout($1, null, $2, 'square') as r`, [await planId('multi-5'), randomUUID()]);
+      const id = checkout.r.payment_id;
+      await as(db, service, `update payments set is_test = true, provider_session_id = 'order_1' where id = $1`, [id]);
+      await expect(as(db, service, `update payments set is_test = false where id = $1`, [id])).rejects.toThrow(/immutable_record/);
+      const [res] = await as<{ r: { membership_id: string } }>(db, service,
+        `select fulfill_payment($1, 'square', 'pay_1', $2, $3, 'EUR') as r`, [id, `evt_${randomUUID()}`, checkout.r.amount_cents]);
+      expect((await db.query(`select is_test from memberships where id = $1`, [res.r.membership_id])).rows[0].is_test).toBe(true);
+      const real = await buy(c, 'multi-5');
+      await expect(db.query(`update payments set is_test = true where id = $1`, [real.paymentId])).rejects.toThrow(/immutable_record/);
+    });
   });
 
   // ---------------------------------------------------------------- RLS
