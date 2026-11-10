@@ -100,3 +100,12 @@ export function webhookAction(event: {
   }
   return { kind: 'ignore', reason: `event ${type}` };
 }
+
+/**
+ * Was money taken on this Square order? A payment-link order stays OPEN until
+ * the buyer pays; once paid it carries a tender (and usually becomes COMPLETED).
+ */
+export function orderWasPaid(order: { state?: string; tenders?: unknown[] } | null | undefined): boolean {
+  if (!order) return false;
+  return order.state === 'COMPLETED' || (Array.isArray(order.tenders) && order.tenders.length > 0);
+}

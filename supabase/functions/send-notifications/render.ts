@@ -64,6 +64,14 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
           url: '/teach',
         };
     }
+    case 'payment_review': {
+      const amount = new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR' }).format(Number(p.amount_cents) / 100);
+      return {
+        subject: `Payment to review: ${p.member_name ?? 'a member'} paid an old checkout`,
+        text: `${hi}\n\n${p.member_name ?? 'A member'} paid ${amount} for ${p.plan_name} on a checkout that had already been replaced or cancelled (for example, in an old browser tab). The payment was accepted and the membership created.\n\nPlease check their account: if they now have two of the same purchase (such as a second Intro Offer), refund one in the Square Dashboard and adjust their classes. Then mark the payment as reviewed in Admin → Customers.\n\nDrop Studios`,
+        url: `/admin/customers?user=${p.user_id}`,
+      };
+    }
     case 'instructor_birthday': {
       // birthday is a plain date (YYYY-MM-DD); format it at noon UTC so no time zone shifts the day.
       const date = new Intl.DateTimeFormat('en-IE', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long' })

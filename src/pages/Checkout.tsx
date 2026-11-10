@@ -31,6 +31,9 @@ export default function Checkout() {
   const [agreed, setAgreed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Shown when this checkout replaced an unfinished one, before going to Square.
+  const [replaced, setReplaced] = useState<{ redirect: string; plans: string[] } | null>(null);
+  const [alreadyPaid, setAlreadyPaid] = useState(false);
   // One key per visit to this page: retries/double-clicks reuse the same payment.
   const idempotencyKey = useMemo(() => crypto.randomUUID(), []);
 
@@ -61,10 +64,14 @@ export default function Checkout() {
     const req = { plan_id: plan!.id, selected_style_id: needsStyle ? styleId : null, idempotency_key: idempotencyKey };
     try {
       const next = await checkout(req);
-      if ('redirect' in next) window.location.assign(next.redirect);
+      if ('redirect' in next && next.superseded?.length) {
+        setReplaced({ redirect: next.redirect, plans: next.superseded.map((x) => x.plan_name) });
+        setBusy(false);
+      } else if ('redirect' in next) window.location.assign(next.redirect);
       else navigate(next.navigate);
     } catch (e) {
       const code = (e as { code?: string }).code ?? (e as Error).message;
+      if (code === 'earlier_payment_completed') setAlreadyPaid(true);
       setError(messageFor(code, 'We couldn’t start the payment. Please try again.'));
       setBusy(false);
     }
@@ -138,13 +145,27 @@ export default function Checkout() {
           <span className="font-display text-3xl font-black">{formatPrice(plan.price_cents, plan.currency, { forceDecimals: true })}</span>
         </div>
         <p className="mt-1 text-right text-xs text-muted">One-off charge in euro (EUR).</p>
-        {error && <div className="mt-4"><ErrorNotice error={error} /></div>}
-        <button className={`${paymentsMode === 'test' ? 'btn-accent' : 'btn-primary'} mt-5 w-full text-lg`} disabled={!canPay} onClick={pay}>
+        {alreadyPaid ? (
+          <div className="mt-4 space-y-3">
+            <Notice tone="success">{messageFor('earlier_payment_completed')}</Notice>
+            <Link to="/account" className="btn-primary w-full">Go to My Membership</Link>
+          </div>
+        ) : error && <div className="mt-4"><ErrorNotice error={error} /></div>}
+        {replaced && (
+          <div className="mt-4 space-y-3">
+            <Notice tone="info">
+              You had an unfinished checkout for <strong>{replaced.plans.join(' and ')}</strong>. Nothing was paid on it, so we’ve
+              cancelled it and replaced it with this one. You’ll only be charged once.
+            </Notice>
+            <a href={replaced.redirect} className="btn-primary w-full text-lg">Continue to payment</a>
+          </div>
+        )}
+        {!replaced && !alreadyPaid && <button className={`${paymentsMode === 'test' ? 'btn-accent' : 'btn-primary'} mt-5 w-full text-lg`} disabled={!canPay} onClick={pay}>
           {busy && <Spinner />}
           {paymentsMode === 'test'
             ? 'Complete TEST purchase'
             : `Pay ${formatPrice(plan.price_cents, plan.currency, { forceDecimals: true })} securely`}
-        </button>
+        </button>}
         {paymentsMode === 'live' && <p className="mt-2 text-center text-xs text-muted">You’ll be taken to Square’s secure checkout to pay. Card details never touch our servers.</p>}
       </section>
     </div>

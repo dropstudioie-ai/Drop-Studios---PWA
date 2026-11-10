@@ -1,6 +1,6 @@
 // deno test --allow-env _shared/square.test.ts
 import { assert, assertEquals } from 'jsr:@std/assert@1';
-import { paymentLinkRequest, squareBaseUrl, squareSignature, verifySquareSignature, webhookAction } from './square.ts';
+import { orderWasPaid, paymentLinkRequest, squareBaseUrl, squareSignature, verifySquareSignature, webhookAction } from './square.ts';
 
 Deno.test('signature matches the HMAC-SHA256(url + body) scheme used by Square', async () => {
   const body = '{"merchant_id":"M1","type":"payment.updated","event_id":"e1"}';
@@ -57,4 +57,12 @@ Deno.test('sandbox unless production is chosen', () => {
   assertEquals(squareBaseUrl(undefined), 'https://connect.squareupsandbox.com');
   assertEquals(squareBaseUrl('sandbox'), 'https://connect.squareupsandbox.com');
   assertEquals(squareBaseUrl('production'), 'https://connect.squareup.com');
+});
+
+Deno.test('an unpaid payment-link order is OPEN with no tenders', () => {
+  assertEquals(orderWasPaid({ state: 'OPEN' }), false);
+  assertEquals(orderWasPaid({ state: 'OPEN', tenders: [] }), false);
+  assertEquals(orderWasPaid({ state: 'OPEN', tenders: [{ id: 't1' }] }), true);
+  assertEquals(orderWasPaid({ state: 'COMPLETED' }), true);
+  assertEquals(orderWasPaid(null), false);
 });

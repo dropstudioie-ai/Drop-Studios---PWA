@@ -32,6 +32,8 @@ const MESSAGES: Record<string, string> = {
   booking_not_active: 'This booking is no longer active.',
   plan_unavailable: 'This membership is not available right now.',
   intro_not_eligible: 'The Intro Offer is for first-time customers only.',
+  earlier_payment_completed: 'Good news: your earlier payment for this went through. Your membership will appear in My Membership in a moment, so there’s no need to pay again.',
+  payment_not_pending: 'This checkout is already finished or cancelled.',
   intro_checkout_in_progress: 'You already have an Intro Offer checkout in progress. Please finish it or try again later.',
   style_required: 'Please choose your dance style.',
   style_not_eligible: 'That dance style isn’t available for this membership.',

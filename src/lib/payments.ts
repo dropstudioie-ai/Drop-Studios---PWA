@@ -24,19 +24,22 @@ async function invoke<T>(fn: string, body: Record<string, unknown>): Promise<T> 
 }
 
 /** Real payment: returns a Square checkout URL to redirect to. */
+export interface Superseded { payment_id: string; plan_name: string; created_at: string }
+
 export const startSquareCheckout = (req: CheckoutRequest) =>
-  invoke<{ url?: string; payment_id: string; status?: string }>('create-checkout', { ...req });
+  invoke<{ url?: string; payment_id: string; status?: string; superseded?: Superseded[] }>('create-checkout', { ...req });
 
 /** Development only. The server refuses unless ALLOW_TEST_PAYMENTS=true. */
 export const completeTestCheckout = (req: CheckoutRequest) =>
   invoke<{ payment_id: string; membership_id: string | null; booking_id: string | null; is_test: true }>('dev-checkout', { ...req });
 
 /** Starts payment for either kind of checkout and returns where to go next. */
-export async function checkout(req: CheckoutRequest): Promise<{ redirect: string } | { navigate: string }> {
+export async function checkout(req: CheckoutRequest): Promise<({ redirect: string } | { navigate: string }) & { superseded?: Superseded[] }> {
   if (paymentsMode === 'test') {
     const res = await completeTestCheckout(req);
     return { navigate: `/checkout/success?payment_id=${res.payment_id}` };
   }
   const res = await startSquareCheckout(req);
-  return res.url ? { redirect: res.url } : { navigate: `/checkout/success?payment_id=${res.payment_id}` };
+  const superseded = res.superseded ?? [];
+  return res.url ? { redirect: res.url, superseded } : { navigate: `/checkout/success?payment_id=${res.payment_id}`, superseded };
 }

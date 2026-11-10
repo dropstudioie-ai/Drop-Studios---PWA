@@ -197,6 +197,38 @@ run('database: plans, booking, allowances, pauses, security', () => {
       await expect(as(db, user(c), `insert into bookings (user_id, session_id) values ($1, $1)`, [c])).rejects.toThrow(/permission denied/);
     });
 
+    it('a new checkout replaces an unfinished one instead of blocking it', async () => {
+      const c = await createUser(db, 'ComesBack');
+      const start = async (code: string) => (await as<{ r: { payment_id: string; superseded: { plan_name: string }[] } }>(db, user(c),
+        `select create_checkout($1, null, $2, 'square') as r`, [await planId(code), randomUUID()]))[0].r;
+      const first = await start('intro-3');
+      expect(first.superseded).toEqual([]);
+      const second = await start('intro-3'); // left Square without paying, then came back
+      expect(second.superseded.map((x) => x.plan_name)).toEqual(['3-Class Intro']);
+      const status = async (id: string) => (await db.query(`select status, failure_reason, review_reason from payments where id = $1`, [id])).rows[0];
+      expect(await status(first.payment_id)).toMatchObject({ status: 'cancelled', failure_reason: 'replaced by a new checkout' });
+      expect((await status(second.payment_id)).status).toBe('pending');
+      // Choosing a different plan also replaces the unfinished intro.
+      const third = await start('multi-5');
+      expect(third.superseded.map((x) => x.plan_name)).toEqual(['3-Class Intro']);
+
+      // If the replaced checkout is paid anyway (an old tab), it's honoured and flagged for the studio.
+      const [res] = await as<{ r: { ok: boolean; membership_id: string } }>(db, service,
+        `select fulfill_payment($1, 'square', 'pay_old', $2, 3500, 'EUR') as r`, [first.payment_id, `evt_${randomUUID()}`]);
+      expect(res.r.ok).toBe(true);
+      expect(await status(first.payment_id)).toMatchObject({ status: 'succeeded', review_reason: 'paid_after_cancel' });
+      expect((await db.query(`select count(*)::int n from notification_outbox where kind = 'payment_review' and user_id = $1`, [admin])).rows[0].n).toBeGreaterThanOrEqual(1);
+      await expectError(as(db, user(c), `select admin_resolve_payment_review($1, 'refunded')`, [first.payment_id]), 'forbidden');
+      await as(db, user(admin), `select admin_resolve_payment_review($1, 'Refunded the second intro in Square')`, [first.payment_id]);
+      expect((await status(first.payment_id)).review_reason).toBeNull();
+
+      // The studio can cancel an unfinished checkout; the member can't use the admin function.
+      await expectError(as(db, user(c), `select admin_cancel_checkout($1)`, [third.payment_id]), 'forbidden');
+      await as(db, user(admin), `select admin_cancel_checkout($1)`, [third.payment_id]);
+      expect((await status(third.payment_id)).status).toBe('cancelled');
+      await expectError(as(db, user(admin), `select admin_cancel_checkout($1)`, [third.payment_id]), 'payment_not_pending');
+    });
+
     it('intro offer is limited to first-time customers', async () => {
       const c = await createUser(db, 'IntroTwice');
       await buy(c, 'intro-3');

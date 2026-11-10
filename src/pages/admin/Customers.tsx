@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { supabase, AppError } from '../../lib/supabase';
 import { api, unwrap } from '../../api';
 import type { Membership, MembershipPlan, Profile } from '../../api/types';
@@ -13,7 +14,10 @@ import { Avatar } from '../../components/Avatar';
 
 export default function AdminCustomers() {
   const [q, setQ] = useState('');
-  const [selected, setSelected] = useState<string | null>(null);
+  // ?user=<id> opens a customer directly (used by the "payment to review" email).
+  const [search, setSearch] = useSearchParams();
+  const selected = search.get('user');
+  const setSelected = (id: string | null) => setSearch(id ? { user: id } : {});
   const list = useAsync(async () => {
     let query = supabase.from('profiles').select('*, memberships(id, classes_remaining, expires_at, admin_status)').order('created_at', { ascending: false }).limit(100);
     const term = q.trim().replace(/[%,()]/g, '');
@@ -51,7 +55,7 @@ export default function AdminCustomers() {
 }
 
 interface LedgerRow { id: number; membership_id: string; delta: number; balance_after: number; kind: string; reason: string | null; created_at: string }
-interface PaymentRow { id: string; amount_cents: number; currency: string; provider: string; status: string; is_test: boolean; created_at: string; completed_at: string | null; provider_payment_ref: string | null; plan_snapshot: { plan_name: string } }
+interface PaymentRow { id: string; amount_cents: number; currency: string; provider: string; status: string; is_test: boolean; created_at: string; completed_at: string | null; provider_payment_ref: string | null; plan_snapshot: { plan_name: string }; review_reason: string | null; failure_reason: string | null }
 
 function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void }) {
   const toast = useToast();
@@ -83,6 +87,29 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
     try {
       await api.resume(m.id, reason || 'Admin resumed');
       toast('Pause ended.');
+      void data.reload();
+    } catch (e) {
+      toast((e as Error).message, 'error');
+    }
+  }
+
+  async function cancelCheckout(p: PaymentRow) {
+    if (!window.confirm(`Cancel this unfinished checkout for ${p.plan_snapshot?.plan_name}? Nothing has been paid on it. The member can start a new one at any time.`)) return;
+    try {
+      unwrap(await supabase.rpc('admin_cancel_checkout', { p_payment_id: p.id }));
+      toast('Checkout cancelled.');
+      void data.reload();
+    } catch (e) {
+      toast((e as Error).message, 'error');
+    }
+  }
+
+  async function resolveReview(p: PaymentRow) {
+    const note = window.prompt('What did you do? (e.g. "Refunded in Square, removed 3 classes") — saved in the audit log');
+    if (!note?.trim()) return;
+    try {
+      unwrap(await supabase.rpc('admin_resolve_payment_review', { p_payment_id: p.id, p_note: note }));
+      toast('Marked as reviewed.');
       void data.reload();
     } catch (e) {
       toast((e as Error).message, 'error');
@@ -164,15 +191,29 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
       </Section>
 
       <Section title="Payments">
-        <Table head={['Created', 'Plan', 'Amount', 'Provider', 'Status', 'Reference']} empty={!d.payments.length}>
+        {d.payments.some((p) => p.review_reason) && (
+          <div className="mb-3"><Notice tone="warn">
+            A payment was made on a checkout that had already been replaced or cancelled. It was accepted. If the member now has two of the
+            same purchase (for example a second Intro Offer), refund one in the Square Dashboard and adjust their classes, then tap <strong>Mark reviewed</strong>.
+          </Notice></div>
+        )}
+        <Table head={['Created', 'Plan', 'Amount', 'Provider', 'Status', 'Reference', '']} empty={!d.payments.length}>
           {d.payments.map((p) => (
             <tr key={p.id}>
               <Td>{fmt.dateTime(p.created_at)}</Td>
               <Td>{p.plan_snapshot?.plan_name}</Td>
               <Td className="tabular-nums">{formatPrice(p.amount_cents, p.currency, { forceDecimals: true })}</Td>
               <Td>{p.provider} {p.is_test && <TestBadge />}</Td>
-              <Td>{p.status}</Td>
+              <Td>
+                {p.status === 'pending' ? 'unfinished' : p.status}
+                {p.failure_reason && <span className="block text-xs text-muted">{p.failure_reason}</span>}
+                {p.review_reason && <span className="chip mt-1 bg-accent-100 text-ink">Needs review</span>}
+              </Td>
               <Td className="max-w-40 truncate text-xs">{p.provider_payment_ref ?? '—'}</Td>
+              <Td>
+                {p.status === 'pending' && <button className="btn-sm btn-ghost text-danger" onClick={() => void cancelCheckout(p)}>Cancel checkout</button>}
+                {p.review_reason && <button className="btn-sm btn-ghost" onClick={() => void resolveReview(p)}>Mark reviewed</button>}
+              </Td>
             </tr>
           ))}
         </Table>

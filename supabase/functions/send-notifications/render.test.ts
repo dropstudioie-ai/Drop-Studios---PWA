@@ -43,3 +43,10 @@ Deno.test('admin alerts for instructor birthdays: a week before and on the day',
   assertEquals(today.subject, "🎂 It's Vini Martins's birthday today");
   assertEquals(today.url, '/admin/instructors');
 });
+
+Deno.test('admin is asked to review a payment made on a replaced checkout', () => {
+  const m = render({ kind: 'payment_review', full_name: 'Jorge dos Santos', payload: { member_name: 'Anna Coutinho', plan_name: '3-Class Intro', amount_cents: 3500, user_id: 'u1' } })!;
+  assertEquals(m.subject, 'Payment to review: Anna Coutinho paid an old checkout');
+  assertStringIncludes(m.text, '€35.00 for 3-Class Intro');
+  assertEquals(m.url, '/admin/customers?user=u1');
+});

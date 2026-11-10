@@ -2,7 +2,7 @@
 // workshop ticket or a Drop In class. The price comes from the database
 // (create_checkout / create_ticket_checkout RPC), never from the client.
 import { adminClient, corsHeaders, dbErrorCode, json, readCheckoutBody, startCheckout, userClient } from '../_shared/http.ts';
-import { paymentLinkRequest, SQUARE_VERSION, squareBaseUrl } from '../_shared/square.ts';
+import { orderWasPaid, paymentLinkRequest, SQUARE_VERSION, squareBaseUrl } from '../_shared/square.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(req) });
@@ -20,6 +20,35 @@ Deno.serve(async (req) => {
   const { data: auth } = await supa.auth.getUser();
   if (!auth.user) return json(req, { error: 'not_authenticated' }, 401);
 
+  const squareApi = squareBaseUrl(Deno.env.get('SQUARE_ENVIRONMENT'));
+  const squareHeaders = { Authorization: `Bearer ${accessToken}`, 'Square-Version': SQUARE_VERSION, 'Content-Type': 'application/json' };
+
+  // A new membership checkout replaces the member's unfinished ones. First make
+  // sure none of them was actually paid (a webhook can lag a few seconds), and
+  // switch their Square payment links off so they can't be paid later.
+  if (body.kind !== 'ticket') {
+    const { data: open } = await adminClient()
+      .from('payments')
+      .select('id, provider_session_id, provider_link_id')
+      .eq('user_id', auth.user.id).eq('kind', 'membership').eq('status', 'pending').eq('provider', 'square')
+      .neq('idempotency_key', body.idempotency_key);
+    for (const old of open ?? []) {
+      if (old.provider_session_id) {
+        const r = await fetch(`${squareApi}/v2/orders/${encodeURIComponent(old.provider_session_id)}`, { headers: squareHeaders });
+        const order = (await r.json().catch(() => null))?.order;
+        if (r.ok && orderWasPaid(order)) return json(req, { error: 'earlier_payment_completed', payment_id: old.id }, 409);
+        if (!r.ok && r.status !== 404) {
+          console.error('Square order check failed', r.status);
+          return json(req, { error: 'payment_provider_error' }, 502);
+        }
+      }
+      if (old.provider_link_id) {
+        const d = await fetch(`${squareApi}/v2/online-checkout/payment-links/${encodeURIComponent(old.provider_link_id)}`, { method: 'DELETE', headers: squareHeaders });
+        if (!d.ok && d.status !== 404) console.error('could not switch off old Square payment link', d.status);
+      }
+    }
+  }
+
   const { data: payment, error } = await startCheckout(supa, body, 'square');
   if (error) return json(req, { error: dbErrorCode(error) }, 400);
   if (payment.status === 'succeeded') return json(req, { payment_id: payment.payment_id, status: 'succeeded' });
@@ -27,13 +56,9 @@ Deno.serve(async (req) => {
 
   // The idempotency key is derived from our payment id, so a retry gets the
   // same Square link back: one payment record can never be paid twice.
-  const res = await fetch(`${squareBaseUrl(Deno.env.get('SQUARE_ENVIRONMENT'))}/v2/online-checkout/payment-links`, {
+  const res = await fetch(`${squareApi}/v2/online-checkout/payment-links`, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Square-Version': SQUARE_VERSION,
-      'Content-Type': 'application/json',
-    },
+    headers: squareHeaders,
     body: JSON.stringify(paymentLinkRequest(payment, {
       locationId,
       siteUrl,
@@ -55,7 +80,7 @@ Deno.serve(async (req) => {
   if (payment.provider_session_id !== link.order_id || (sandbox && !payment.is_test)) {
     const { error: saveError } = await adminClient()
       .from('payments')
-      .update({ provider_session_id: link.order_id, ...(sandbox ? { is_test: true } : {}) })
+      .update({ provider_session_id: link.order_id, provider_link_id: link.id ?? null, ...(sandbox ? { is_test: true } : {}) })
       .eq('id', payment.payment_id)
       .eq('status', 'pending');
     if (saveError) {
@@ -64,5 +89,5 @@ Deno.serve(async (req) => {
     }
   }
 
-  return json(req, { url: link.url, payment_id: payment.payment_id });
+  return json(req, { url: link.url, payment_id: payment.payment_id, superseded: payment.superseded ?? [] });
 });
