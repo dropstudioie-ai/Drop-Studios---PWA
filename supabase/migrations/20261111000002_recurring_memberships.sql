@@ -1,29 +1,35 @@
--- Drop Studios — monthly recurring memberships with a 3-month cycle.
+-- Drop Studios — monthly memberships: 3 monthly payments, then they stop.
 --
 -- Plans:     intro-3 stays a one-off pack. single-4, multi-5, multi-8 and
---            multi-12 become monthly memberships with a 3-month commitment that
---            renews for another 3 months unless cancelled.
--- Credits:   every paid billing month issues the plan's classes.
+--            multi-12 are monthly memberships: charged every month (Square
+--            subscription, same day each month) for 3 payments, then the
+--            membership ends and the member signs up again if they wish.
+-- Credits:   every paid month issues the plan's classes.
 --            * No rollover (Single Style, Multi-Style, Committed): each month is
---              its own membership row valid until the next billing date; when
---              the next month is paid, the previous month's unused classes
---              expire (ledger 'period_expired').
---            * Rollover (All In): month 1 of a cycle opens one membership valid
---              to the end of the 3-month cycle; months 2 and 3 add their classes
---              to it ('grant_renewal'). A new cycle starts a fresh membership and
---              the old cycle's unused classes expire.
--- Billing:   Square charges the card monthly (subscription). Each paid month is
---            a payments row and a subscription_periods row; the unique
---            (subscription, period_index) makes credit issuing idempotent, so a
---            repeated webhook can never issue classes twice.
--- Square:    plan variations are created on demand by create-checkout and kept
---            in square_plan_variations (per Square environment and price).
+--              its own membership row valid until the next payment date; when
+--              the next month is paid, what's left expires ('period_expired').
+--            * Rollover (All In): one membership row for the 3 months; months 2
+--              and 3 add their classes to it ('grant_renewal'); whatever is left
+--              when the 3 months end expires with it.
+--            The unique (subscription, period_index) makes credit issuing
+--            idempotent: a repeated webhook can never issue classes twice.
+-- Cancel:    any time, no penalty. It takes effect at the next payment date if
+--            asked at least 72 hours before it; otherwise after the next payment.
+-- Pause:     pausing a monthly membership moves the next payment date (and the
+--            end date) back by the paused days.
+-- Upgrade:   a member with no classes left can move to a dearer plan; the old
+--            membership stops and the new one starts.
+-- Reward:    members who complete all 3 payments and sign up again get 3 free
+--            classes to use within 7 days ('grant_reward').
+-- Square:    plan variations (MONTHLY, 3 periods) are created on demand by
+--            create-checkout and kept in square_plan_variations.
 
 -- ---------------------------------------------------------------------------
 -- Plans
 -- ---------------------------------------------------------------------------
 alter table public.membership_plans
   add column billing_interval text not null default 'one_off' check (billing_interval in ('one_off', 'monthly')),
+  -- Number of monthly payments before the membership ends (3).
   add column commitment_months int check (commitment_months between 1 and 24),
   add column credit_rollover boolean not null default false,
   add column highlight text check (highlight in ('recommended', 'best_value')),
@@ -126,6 +132,379 @@ begin
 end;
 $$;
 
+-- ---------------------------------------------------------------------------
+-- Subscriptions and their paid months
+-- ---------------------------------------------------------------------------
+create table public.member_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles (id) on delete restrict,
+  plan_id uuid not null references public.membership_plans (id),
+  -- Terms agreed at checkout (price, monthly classes, rollover, number of payments).
+  plan_snapshot jsonb not null,
+  status text not null default 'active'
+    check (status in ('active', 'past_due', 'cancel_scheduled', 'ended')),
+  end_reason text check (end_reason in ('completed', 'cancelled', 'upgraded', 'provider')),
+  provider public.payment_provider not null,
+  provider_subscription_id text unique,
+  provider_customer_id text,
+  initial_payment_id uuid not null unique references public.payments (id),
+  total_periods int not null check (total_periods > 0),
+  periods_paid int not null default 0,
+  -- Date of the next monthly payment (Dublin); null once all payments are made.
+  next_billing_on date,
+  -- When the last paid month ends (moves with pauses).
+  current_period_ends_on date,
+  -- Set when a pause moved the payment date and Square still has to be told;
+  -- pending_shift_days says by how many days since Square was last told.
+  billing_sync_needed boolean not null default false,
+  pending_shift_days int not null default 0,
+  cancel_requested_at timestamptz,
+  cancel_requested_by uuid references public.profiles (id),
+  -- Payments stop from this date (a payment date).
+  cancel_effective_on date,
+  provider_cancel_sent_at timestamptz,
+  upgraded_to uuid references public.member_subscriptions (id),
+  -- The loyalty reward this subscription earned has been given (once).
+  reward_used_at timestamptz,
+  ended_at timestamptz,
+  is_test boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index member_subscriptions_user_idx on public.member_subscriptions (user_id);
+create trigger member_subscriptions_touch before update on public.member_subscriptions
+  for each row execute function public.touch_updated_at();
+
+create table public.subscription_periods (
+  id uuid primary key default gen_random_uuid(),
+  subscription_id uuid not null references public.member_subscriptions (id) on delete restrict,
+  period_index int not null check (period_index >= 0),
+  starts_on date not null,
+  ends_on date not null,   -- next payment date (exclusive)
+  payment_id uuid not null unique references public.payments (id),
+  membership_id uuid not null references public.memberships (id),
+  credits_issued int not null check (credits_issued > 0),
+  created_at timestamptz not null default now(),
+  unique (subscription_id, period_index)
+);
+
+alter table public.memberships add column subscription_id uuid references public.member_subscriptions (id);
+create index memberships_subscription_idx on public.memberships (subscription_id) where subscription_id is not null;
+
+-- Square's own payment id for an invoice payment (found when refunding).
+alter table public.payments add column provider_payment_id text;
+
+-- Square catalog plan variations created by create-checkout (service role only).
+create table public.square_plan_variations (
+  plan_id uuid not null references public.membership_plans (id),
+  environment text not null check (environment in ('sandbox', 'production')),
+  price_cents int not null,
+  periods int not null,
+  plan_object_id text not null,
+  variation_id text not null,
+  created_at timestamptz not null default now(),
+  primary key (plan_id, environment, price_cents, periods)
+);
+
+alter table public.member_subscriptions enable row level security;
+alter table public.subscription_periods enable row level security;
+alter table public.square_plan_variations enable row level security;
+revoke all on public.member_subscriptions, public.subscription_periods, public.square_plan_variations from anon, authenticated;
+grant select on public.member_subscriptions, public.subscription_periods to authenticated;
+create policy member_subscriptions_read on public.member_subscriptions for select to authenticated
+  using (user_id = auth.uid() or public.is_admin());
+create policy subscription_periods_read on public.subscription_periods for select to authenticated
+  using (exists (select 1 from public.member_subscriptions s where s.id = subscription_id and (s.user_id = auth.uid() or public.is_admin())));
+grant select (subscription_id) on public.memberships to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Helpers
+-- ---------------------------------------------------------------------------
+create or replace function public._add_month(p_day date)
+returns date
+language sql
+immutable
+as $$
+  -- Same rule as Square: a missing day (e.g. 31st) falls on the month's last day.
+  select (p_day + interval '1 month')::date;
+$$;
+
+-- Local midnight at the end of a date (Dublin).
+create or replace function public._end_of_day(p_day date)
+returns timestamptz
+language sql
+stable
+set search_path = public, pg_temp
+as $$
+  select ((p_day + 1)::timestamp at time zone (select timezone from public.app_settings where id));
+$$;
+
+-- Expire what's left on a membership now (next month / upgrade). In the ledger.
+create or replace function public._close_membership(p_membership_id uuid, p_reason text)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  m public.memberships;
+begin
+  select * into m from public.memberships where id = p_membership_id for update;
+  if not found or m.expires_at <= now() then return; end if;
+  if m.classes_remaining > 0 then
+    insert into public.credit_transactions (membership_id, user_id, delta, balance_after, kind, actor_id, reason)
+    values (m.id, m.user_id, -m.classes_remaining, 0, 'period_expired', null, p_reason);
+  end if;
+  update public.memberships
+  set classes_remaining = 0, expires_at = now(), base_expires_at = now()
+  where id = m.id;
+end;
+$$;
+
+-- A membership row for a purchase (or reward), with its ledger grant.
+create or replace function public._grant_membership(
+  p_user_id uuid, p_pay public.payments, p_snap jsonb, p_credits int, p_expires_at timestamptz,
+  p_subscription_id uuid, p_kind public.ledger_kind, p_reason text, p_purchase_name text default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  cfg public.app_settings := public._settings();
+  v_purchase_id uuid;
+  v_membership_id uuid;
+  v_name text := coalesce(p_purchase_name, p_snap ->> 'plan_name');
+begin
+  insert into public.membership_purchases (
+    user_id, payment_id, plan_id, plan_code, plan_name, price_cents, currency,
+    class_count, validity_days, style_access, allowed_style_ids, excluded_template_ids,
+    selected_style_id, first_time_only, activation_policy, cancellation_cutoff_minutes, is_test
+  ) values (
+    p_user_id, p_pay.id, (p_snap ->> 'plan_id')::uuid, p_snap ->> 'plan_code', v_name,
+    p_pay.amount_cents, p_pay.currency, p_credits, greatest(1, public._local_date(p_expires_at) - public._local_date(now())),
+    (p_snap ->> 'style_access')::public.style_access,
+    array(select jsonb_array_elements_text(p_snap -> 'allowed_style_ids')::uuid),
+    array(select jsonb_array_elements_text(p_snap -> 'excluded_template_ids')::uuid),
+    (p_snap ->> 'selected_style_id')::uuid, false, 'on_purchase', cfg.cancellation_cutoff_minutes, p_pay.is_test
+  ) returning id into v_purchase_id;
+
+  insert into public.memberships (
+    purchase_id, user_id, plan_name, style_access, selected_style_id,
+    classes_total, classes_remaining, activated_at, expires_at, base_expires_at, is_test, subscription_id
+  ) values (
+    v_purchase_id, p_user_id, v_name, (p_snap ->> 'style_access')::public.style_access,
+    (p_snap ->> 'selected_style_id')::uuid, p_credits, p_credits, now(), p_expires_at, p_expires_at, p_pay.is_test, p_subscription_id
+  ) returning id into v_membership_id;
+
+  insert into public.credit_transactions (membership_id, user_id, delta, balance_after, kind, actor_id, reason)
+  values (v_membership_id, p_user_id, p_credits, p_credits, p_kind, null, p_reason);
+  return v_membership_id;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Paid months
+-- ---------------------------------------------------------------------------
+
+-- Issue the classes for the next paid month of a subscription. Idempotent per
+-- period index (a repeated call for the same month does nothing).
+create or replace function public._issue_period(p_subscription_id uuid, p_index int, p_pay public.payments)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  sub public.member_subscriptions;
+  snap jsonb;
+  v_starts date;
+  v_ends date;
+  v_credits int;
+  v_rollover boolean;
+  v_membership_id uuid;
+  v_remaining int;
+  v_prev record;
+  v_last boolean;
+  v_send_cancel boolean;
+begin
+  select * into sub from public.member_subscriptions where id = p_subscription_id for update;
+  if not found then perform public._fail('subscription_not_found'); end if;
+  if exists (select 1 from public.subscription_periods where subscription_id = sub.id and period_index = p_index) then
+    return jsonb_build_object('ok', true, 'duplicate', true);
+  end if;
+
+  snap := sub.plan_snapshot;
+  v_credits := (snap ->> 'class_count')::int;
+  v_rollover := coalesce((snap ->> 'credit_rollover')::boolean, false);
+  v_starts := coalesce(case when p_index = 0 then null else sub.next_billing_on end, public._local_date(now()));
+  v_ends := public._add_month(v_starts);
+  v_last := p_index + 1 >= sub.total_periods;
+
+  if v_rollover and p_index > 0 then
+    select id into v_membership_id from public.memberships
+    where subscription_id = sub.id and expires_at > now() and admin_status = 'valid'
+    order by created_at desc limit 1
+    for update;
+  end if;
+
+  if v_membership_id is null then
+    -- A new month (no rollover): last month's unused classes expire now.
+    for v_prev in select id from public.memberships where subscription_id = sub.id and expires_at > now() loop
+      perform public._close_membership(v_prev.id, 'Billing month ended');
+    end loop;
+    -- Valid through the next payment date (so a payment taken later that day
+    -- never leaves a gap; the next month closes it). With rollover, valid to the
+    -- end of all the paid months.
+    v_membership_id := public._grant_membership(sub.user_id, p_pay, snap, v_credits,
+      public._end_of_day(case when v_rollover then
+        (select (v_starts + make_interval(months => sub.total_periods - p_index))::date) else v_ends end),
+      sub.id, case when p_index = 0 then 'grant_purchase' else 'grant_renewal' end::public.ledger_kind,
+      format('Month %s of %s · payment %s', p_index + 1, sub.total_periods, p_pay.id));
+  else
+    -- All In: this month's classes are added on top of what's left.
+    insert into public.membership_purchases (
+      user_id, payment_id, plan_id, plan_code, plan_name, price_cents, currency, class_count, validity_days, style_access,
+      allowed_style_ids, excluded_template_ids, selected_style_id, first_time_only, activation_policy, cancellation_cutoff_minutes, is_test
+    )
+    select sub.user_id, p_pay.id, pu.plan_id, pu.plan_code, pu.plan_name, p_pay.amount_cents, p_pay.currency, v_credits,
+           v_ends - v_starts, pu.style_access, pu.allowed_style_ids, pu.excluded_template_ids, pu.selected_style_id, false,
+           pu.activation_policy, pu.cancellation_cutoff_minutes, sub.is_test
+    from public.memberships m join public.membership_purchases pu on pu.id = m.purchase_id where m.id = v_membership_id;
+    update public.memberships
+    set classes_total = classes_total + v_credits, classes_remaining = classes_remaining + v_credits
+    where id = v_membership_id
+    returning classes_remaining into v_remaining;
+    insert into public.credit_transactions (membership_id, user_id, delta, balance_after, kind, actor_id, reason)
+    values (v_membership_id, sub.user_id, v_credits, v_remaining, 'grant_renewal', null,
+            format('Month %s of %s · payment %s', p_index + 1, sub.total_periods, p_pay.id));
+  end if;
+
+  insert into public.subscription_periods (subscription_id, period_index, starts_on, ends_on, payment_id, membership_id, credits_issued)
+  values (sub.id, p_index, v_starts, v_ends, p_pay.id, v_membership_id, v_credits);
+
+  -- A cancellation that waited for this payment can now go to Square.
+  v_send_cancel := sub.status = 'cancel_scheduled' and sub.provider_cancel_sent_at is null
+                   and sub.cancel_effective_on <= v_ends;
+
+  update public.member_subscriptions
+  set periods_paid = greatest(periods_paid, p_index + 1),
+      next_billing_on = case when v_last or (status = 'cancel_scheduled' and cancel_effective_on <= v_ends) then null else v_ends end,
+      current_period_ends_on = v_ends,
+      status = case when status = 'past_due' then 'active' else status end
+  where id = sub.id;
+
+  perform public._audit('subscription_period_paid', 'subscription', sub.id::text,
+    jsonb_build_object('month', p_index + 1, 'of', sub.total_periods, 'credits', v_credits,
+                       'payment_id', p_pay.id, 'membership_id', v_membership_id));
+
+  return jsonb_build_object('ok', true, 'duplicate', false, 'membership_id', v_membership_id,
+                            'subscription_id', sub.id, 'period_index', p_index, 'send_provider_cancel', v_send_cancel);
+end;
+$$;
+
+-- Loyalty reward: a member who completed every payment of a previous monthly
+-- membership and signs up again gets 3 free classes for 7 days. Once per
+-- completed membership.
+create or replace function public._grant_loyalty_reward(p_new public.member_subscriptions, p_pay public.payments)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_old public.member_subscriptions;
+  v_snap jsonb;
+  v_pay public.payments;
+  v_membership_id uuid;
+begin
+  select * into v_old from public.member_subscriptions
+  where user_id = p_new.user_id and id <> p_new.id and periods_paid >= total_periods
+    and coalesce(end_reason, 'completed') <> 'upgraded' and reward_used_at is null
+  order by created_at desc limit 1
+  for update;
+  if not found then return null; end if;
+
+  -- Any style, any class: same eligibility as a multi-style plan.
+  v_snap := p_new.plan_snapshot || jsonb_build_object(
+    'style_access', 'multi', 'selected_style_id', null,
+    'allowed_style_ids', (select coalesce(jsonb_agg(id order by sort_order), '[]') from public.dance_styles where is_active),
+    'excluded_template_ids', '[]'::jsonb);
+
+  insert into public.payments (user_id, plan_id, plan_snapshot, amount_cents, currency, provider, is_test, status,
+                               idempotency_key, completed_at, kind)
+  values (p_new.user_id, p_new.plan_id, v_snap || jsonb_build_object('plan_name', 'Loyalty reward'), 0, 'EUR', 'manual',
+          p_new.is_test, 'succeeded', 'reward:' || v_old.id, now(), 'membership')
+  returning * into v_pay;
+
+  v_membership_id := public._grant_membership(p_new.user_id, v_pay, v_snap, 3,
+    public._end_of_day(public._local_date(now()) + 7), null, 'grant_reward',
+    'Loyalty reward: 3 months completed', 'Loyalty reward · 3 free classes');
+  update public.member_subscriptions set reward_used_at = now() where id = v_old.id;
+
+  insert into public.notification_outbox (user_id, kind, payload, dedupe_key)
+  values (p_new.user_id, 'loyalty_reward', jsonb_build_object('classes', 3, 'days', 7, 'membership_id', v_membership_id),
+          'reward:' || v_old.id);
+  perform public._audit('loyalty_reward_granted', 'membership', v_membership_id::text,
+    jsonb_build_object('earned_by', v_old.id, 'new_subscription', p_new.id, 'user_id', p_new.user_id));
+  return v_membership_id;
+end;
+$$;
+
+-- First payment of a monthly membership: start it, issue month 1, finish an
+-- upgrade, and give the loyalty reward if earned.
+create or replace function public._start_subscription(p_pay public.payments)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  sub public.member_subscriptions;
+  v_result jsonb;
+  v_old public.member_subscriptions;
+  v_prev record;
+  v_reward uuid;
+  v_cancel_old text;
+begin
+  insert into public.member_subscriptions (user_id, plan_id, plan_snapshot, provider, initial_payment_id, total_periods, is_test)
+  values (p_pay.user_id, p_pay.plan_id, p_pay.plan_snapshot, p_pay.provider, p_pay.id,
+          coalesce((p_pay.plan_snapshot ->> 'commitment_months')::int, 3), p_pay.is_test)
+  on conflict (initial_payment_id) do nothing
+  returning * into sub;
+  if sub.id is null then
+    select * into sub from public.member_subscriptions where initial_payment_id = p_pay.id;
+    return jsonb_build_object('ok', true, 'duplicate', true, 'subscription_id', sub.id);
+  end if;
+
+  v_result := public._issue_period(sub.id, 0, p_pay);
+
+  -- Upgrade: the old membership stops now (its classes were used up).
+  if p_pay.plan_snapshot ? 'upgrade_from' then
+    select * into v_old from public.member_subscriptions where id = (p_pay.plan_snapshot ->> 'upgrade_from')::uuid for update;
+    if found and v_old.status <> 'ended' then
+      for v_prev in select id from public.memberships where subscription_id = v_old.id and expires_at > now() loop
+        perform public._close_membership(v_prev.id, 'Upgraded to ' || (p_pay.plan_snapshot ->> 'plan_name'));
+      end loop;
+      update public.member_subscriptions
+      set status = 'ended', end_reason = 'upgraded', upgraded_to = sub.id, ended_at = now(), next_billing_on = null
+      where id = v_old.id;
+      v_cancel_old := v_old.id::text;
+      perform public._audit('subscription_upgraded', 'subscription', v_old.id::text,
+        jsonb_build_object('to', sub.id, 'plan_name', p_pay.plan_snapshot ->> 'plan_name'));
+    end if;
+  end if;
+
+  select * into sub from public.member_subscriptions where id = sub.id;
+  v_reward := public._grant_loyalty_reward(sub, p_pay);
+  perform public._audit('subscription_started', 'subscription', sub.id::text,
+    jsonb_build_object('payment_id', p_pay.id, 'plan_name', p_pay.plan_snapshot ->> 'plan_name', 'user_id', p_pay.user_id,
+                       'reward_membership_id', v_reward));
+  return v_result || jsonb_build_object('reward_membership_id', v_reward, 'cancel_provider_subscription_of', v_cancel_old);
+end;
+$$;
+
 -- Checkout tells create-checkout whether to start a subscription.
 create or replace function public.create_checkout(
   p_plan_id uuid,
@@ -143,6 +522,7 @@ declare
   v_snap jsonb;
   pay public.payments;
   v_superseded jsonb := '[]';
+  v_live public.member_subscriptions;
 begin
   if v_uid is null then perform public._fail('not_authenticated'); end if;
   if not public.has_profile_photo(v_uid) then perform public._fail('profile_photo_required'); end if;
@@ -158,11 +538,21 @@ begin
   else
     v_snap := public._plan_snapshot(v_uid, p_plan_id, p_selected_style_id, true);
 
-    -- One monthly membership at a time (a second one would bill twice).
-    if v_snap ->> 'billing_interval' = 'monthly' and exists (
-      select 1 from public.member_subscriptions where user_id = v_uid and status in ('active', 'past_due', 'cancel_scheduled')
-    ) then
-      perform public._fail('already_subscribed');
+    -- One monthly membership at a time (a second one would bill twice). The
+    -- exception is an upgrade: no classes left and a dearer plan.
+    if v_snap ->> 'billing_interval' = 'monthly' then
+      select * into v_live from public.member_subscriptions
+      where user_id = v_uid and status in ('active', 'past_due', 'cancel_scheduled')
+      order by created_at desc limit 1;
+      if found then
+        if (v_snap ->> 'price_cents')::int <= (v_live.plan_snapshot ->> 'price_cents')::int
+           or exists (select 1 from public.memberships m
+                      where m.user_id = v_uid and m.admin_status = 'valid' and m.classes_remaining > 0
+                        and m.activated_at is not null and m.expires_at > now()) then
+          perform public._fail('already_subscribed');
+        end if;
+        v_snap := v_snap || jsonb_build_object('upgrade_from', v_live.id);
+      end if;
     end if;
 
     -- A new checkout replaces any unfinished membership checkout of this member
@@ -208,288 +598,6 @@ begin
 end;
 $$;
 
--- ---------------------------------------------------------------------------
--- Subscriptions and their billing months
--- ---------------------------------------------------------------------------
-create table public.member_subscriptions (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references public.profiles (id) on delete restrict,
-  plan_id uuid not null references public.membership_plans (id),
-  -- Terms agreed at checkout (price, monthly classes, rollover, commitment).
-  plan_snapshot jsonb not null,
-  status text not null default 'active'
-    check (status in ('active', 'past_due', 'cancel_scheduled', 'ended')),
-  provider public.payment_provider not null,
-  provider_subscription_id text unique,
-  provider_customer_id text,
-  initial_payment_id uuid not null unique references public.payments (id),
-  -- Billing month n starts on anchor_date + n months (Dublin dates).
-  anchor_date date not null,
-  last_period_index int not null default -1,
-  cancel_requested_at timestamptz,
-  cancel_requested_by uuid references public.profiles (id),
-  -- Last day covered: billing stops from this date (end of the 3-month cycle).
-  cancel_effective_on date,
-  -- When the cancellation was sent to Square (it then stops at the end of the
-  -- current billing month).
-  provider_cancel_sent_at timestamptz,
-  ended_at timestamptz,
-  is_test boolean not null default false,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-create index member_subscriptions_user_idx on public.member_subscriptions (user_id);
-create trigger member_subscriptions_touch before update on public.member_subscriptions
-  for each row execute function public.touch_updated_at();
-
-create table public.subscription_periods (
-  id uuid primary key default gen_random_uuid(),
-  subscription_id uuid not null references public.member_subscriptions (id) on delete restrict,
-  period_index int not null check (period_index >= 0),
-  cycle_no int not null,
-  month_in_cycle int not null,
-  starts_on date not null,
-  ends_on date not null,   -- next billing date (exclusive)
-  payment_id uuid not null unique references public.payments (id),
-  membership_id uuid not null references public.memberships (id),
-  credits_issued int not null check (credits_issued > 0),
-  created_at timestamptz not null default now(),
-  unique (subscription_id, period_index)
-);
-
-alter table public.memberships
-  add column subscription_id uuid references public.member_subscriptions (id),
-  add column subscription_cycle int;
-create index memberships_subscription_idx on public.memberships (subscription_id) where subscription_id is not null;
-
--- Square catalog plan variations created by create-checkout (service role only).
-create table public.square_plan_variations (
-  plan_id uuid not null references public.membership_plans (id),
-  environment text not null check (environment in ('sandbox', 'production')),
-  price_cents int not null,
-  plan_object_id text not null,
-  variation_id text not null,
-  created_at timestamptz not null default now(),
-  primary key (plan_id, environment, price_cents)
-);
-
-alter table public.member_subscriptions enable row level security;
-alter table public.subscription_periods enable row level security;
-alter table public.square_plan_variations enable row level security;
-revoke all on public.member_subscriptions, public.subscription_periods, public.square_plan_variations from anon, authenticated;
-grant select on public.member_subscriptions, public.subscription_periods to authenticated;
-create policy member_subscriptions_read on public.member_subscriptions for select to authenticated
-  using (user_id = auth.uid() or public.is_admin());
-create policy subscription_periods_read on public.subscription_periods for select to authenticated
-  using (exists (select 1 from public.member_subscriptions s where s.id = subscription_id and (s.user_id = auth.uid() or public.is_admin())));
-grant select (subscription_id, subscription_cycle) on public.memberships to authenticated;
-
--- Pausing moves an expiry date; with monthly billing that would stretch paid
--- months, so recurring memberships can't be paused (one-off packs still can).
-create or replace function public._forbid_recurring_pause()
-returns trigger
-language plpgsql
-as $$
-begin
-  if exists (select 1 from public.memberships where id = new.membership_id and subscription_id is not null) then
-    raise exception 'pause_not_available' using detail = 'monthly memberships cannot be paused';
-  end if;
-  return new;
-end;
-$$;
-create trigger membership_pauses_recurring before insert on public.membership_pauses
-  for each row execute function public._forbid_recurring_pause();
-
--- ---------------------------------------------------------------------------
--- Credit periods
--- ---------------------------------------------------------------------------
-create or replace function public._month_start(p_anchor date, p_index int)
-returns date
-language sql
-immutable
-as $$
-  -- Same rule as Square: a missing day (e.g. 31st) falls on the month's last day.
-  select (p_anchor + make_interval(months => p_index))::date;
-$$;
-
--- Local midnight at the end of a date (Dublin).
-create or replace function public._end_of_day(p_day date)
-returns timestamptz
-language sql
-stable
-set search_path = public, pg_temp
-as $$
-  select ((p_day + 1)::timestamp at time zone (select timezone from public.app_settings where id));
-$$;
-
--- Expire what's left on a subscription membership (used when the next month
--- or cycle replaces it). Recorded in the ledger.
-create or replace function public._close_membership(p_membership_id uuid, p_reason text)
-returns void
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $$
-declare
-  m public.memberships;
-begin
-  select * into m from public.memberships where id = p_membership_id for update;
-  if not found or m.expires_at <= now() then return; end if;
-  if m.classes_remaining > 0 then
-    insert into public.credit_transactions (membership_id, user_id, delta, balance_after, kind, actor_id, reason)
-    values (m.id, m.user_id, -m.classes_remaining, 0, 'period_expired', null, p_reason);
-  end if;
-  update public.memberships
-  set classes_remaining = 0, expires_at = now(), base_expires_at = now()
-  where id = m.id;
-end;
-$$;
-
--- Issue the classes for billing month p_index, paid by p_pay. Idempotent: a
--- second call for the same month does nothing.
-create or replace function public._issue_period(p_subscription_id uuid, p_index int, p_pay public.payments)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $$
-declare
-  sub public.member_subscriptions;
-  snap jsonb;
-  cfg public.app_settings := public._settings();
-  v_commit int;
-  v_cycle int;
-  v_month int;
-  v_starts date;
-  v_ends date;
-  v_cycle_end date;
-  v_credits int;
-  v_rollover boolean;
-  v_purchase_id uuid;
-  v_membership_id uuid;
-  v_remaining int;
-  v_prev record;
-  v_send_cancel boolean := false;
-begin
-  select * into sub from public.member_subscriptions where id = p_subscription_id for update;
-  if not found then perform public._fail('subscription_not_found'); end if;
-
-  if exists (select 1 from public.subscription_periods where subscription_id = sub.id and period_index = p_index) then
-    return jsonb_build_object('ok', true, 'duplicate', true);
-  end if;
-
-  snap := sub.plan_snapshot;
-  v_commit := coalesce((snap ->> 'commitment_months')::int, 3);
-  v_cycle := p_index / v_commit;
-  v_month := p_index % v_commit + 1;
-  v_starts := public._month_start(sub.anchor_date, p_index);
-  v_ends := public._month_start(sub.anchor_date, p_index + 1);
-  v_cycle_end := public._month_start(sub.anchor_date, (v_cycle + 1) * v_commit);
-  v_credits := (snap ->> 'class_count')::int;
-  v_rollover := coalesce((snap ->> 'credit_rollover')::boolean, false);
-
-  -- The terms of this month's payment (immutable record, like any purchase).
-  insert into public.membership_purchases (
-    user_id, payment_id, plan_id, plan_code, plan_name, price_cents, currency,
-    class_count, validity_days, style_access, allowed_style_ids, excluded_template_ids,
-    selected_style_id, first_time_only, activation_policy, cancellation_cutoff_minutes, is_test
-  ) values (
-    sub.user_id, p_pay.id, (snap ->> 'plan_id')::uuid, snap ->> 'plan_code', snap ->> 'plan_name',
-    p_pay.amount_cents, p_pay.currency, v_credits, v_ends - v_starts,
-    (snap ->> 'style_access')::public.style_access,
-    array(select jsonb_array_elements_text(snap -> 'allowed_style_ids')::uuid),
-    array(select jsonb_array_elements_text(snap -> 'excluded_template_ids')::uuid),
-    (snap ->> 'selected_style_id')::uuid, false, 'on_purchase', cfg.cancellation_cutoff_minutes, sub.is_test
-  ) returning id into v_purchase_id;
-
-  if v_rollover then
-    select id into v_membership_id from public.memberships
-    where subscription_id = sub.id and subscription_cycle = v_cycle and expires_at > now()
-    for update;
-  end if;
-
-  if v_membership_id is null then
-    -- New month (no rollover) or new cycle (rollover): previous credits expire.
-    for v_prev in
-      select id from public.memberships
-      where subscription_id = sub.id and expires_at > now() and admin_status = 'valid'
-    loop
-      perform public._close_membership(v_prev.id,
-        case when v_rollover then 'Three-month cycle ended' else 'Billing month ended' end);
-    end loop;
-
-    insert into public.memberships (
-      purchase_id, user_id, plan_name, style_access, selected_style_id,
-      classes_total, classes_remaining, activated_at, expires_at, base_expires_at, is_test,
-      subscription_id, subscription_cycle
-    ) values (
-      v_purchase_id, sub.user_id, snap ->> 'plan_name', (snap ->> 'style_access')::public.style_access,
-      (snap ->> 'selected_style_id')::uuid, v_credits, v_credits, now(),
-      -- Valid through the next billing date (or the cycle's end) so a renewal
-      -- charged later that day never leaves a gap; the next month closes it.
-      public._end_of_day(case when v_rollover then v_cycle_end else v_ends end),
-      public._end_of_day(case when v_rollover then v_cycle_end else v_ends end),
-      sub.is_test, sub.id, v_cycle
-    ) returning id into v_membership_id;
-    v_remaining := v_credits;
-  else
-    -- All In, months 2 and 3: add this month's classes to the cycle.
-    update public.memberships
-    set classes_total = classes_total + v_credits, classes_remaining = classes_remaining + v_credits
-    where id = v_membership_id
-    returning classes_remaining into v_remaining;
-  end if;
-
-  insert into public.credit_transactions (membership_id, user_id, delta, balance_after, kind, actor_id, reason)
-  values (v_membership_id, sub.user_id, v_credits, v_remaining,
-          case when p_index = 0 then 'grant_purchase' else 'grant_renewal' end::public.ledger_kind, null,
-          format('Month %s of cycle %s · payment %s', v_month, v_cycle + 1, p_pay.id));
-
-  insert into public.subscription_periods (subscription_id, period_index, cycle_no, month_in_cycle, starts_on, ends_on,
-                                           payment_id, membership_id, credits_issued)
-  values (sub.id, p_index, v_cycle, v_month, v_starts, v_ends, p_pay.id, v_membership_id, v_credits);
-
-  -- A cancellation takes effect at the end of the cycle: Square's cancel stops
-  -- billing after the current month, so it's sent once the cycle's last month is paid.
-  v_send_cancel := sub.status = 'cancel_scheduled' and sub.provider_cancel_sent_at is null
-                   and v_ends >= sub.cancel_effective_on;
-
-  update public.member_subscriptions
-  set last_period_index = greatest(last_period_index, p_index),
-      status = case when status = 'past_due' then 'active' else status end
-  where id = sub.id;
-
-  perform public._audit('subscription_period_paid', 'subscription', sub.id::text,
-    jsonb_build_object('period_index', p_index, 'cycle', v_cycle + 1, 'month', v_month, 'credits', v_credits,
-                       'payment_id', p_pay.id, 'membership_id', v_membership_id));
-
-  return jsonb_build_object('ok', true, 'duplicate', false, 'membership_id', v_membership_id,
-                            'subscription_id', sub.id, 'period_index', p_index, 'send_provider_cancel', v_send_cancel);
-end;
-$$;
-
--- First payment of a monthly membership: start the subscription and month 1.
-create or replace function public._start_subscription(p_pay public.payments)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $$
-declare
-  v_id uuid;
-begin
-  insert into public.member_subscriptions (user_id, plan_id, plan_snapshot, provider, initial_payment_id, anchor_date, is_test)
-  values (p_pay.user_id, p_pay.plan_id, p_pay.plan_snapshot, p_pay.provider, p_pay.id, public._local_date(now()), p_pay.is_test)
-  on conflict (initial_payment_id) do nothing
-  returning id into v_id;
-  if v_id is null then
-    select id into v_id from public.member_subscriptions where initial_payment_id = p_pay.id;
-  end if;
-  perform public._audit('subscription_started', 'subscription', v_id::text,
-    jsonb_build_object('payment_id', p_pay.id, 'plan_name', p_pay.plan_snapshot ->> 'plan_name', 'user_id', p_pay.user_id));
-  return public._issue_period(v_id, 0, p_pay);
-end;
-$$;
 
 -- fulfill_payment: same as before, but a monthly plan starts a subscription.
 create or replace function public.fulfill_payment(
@@ -569,6 +677,61 @@ begin
 end;
 $$;
 
+
+-- ---------------------------------------------------------------------------
+-- Pausing moves the next payment date
+-- ---------------------------------------------------------------------------
+create or replace function public._pause_moves_billing()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_sub_id uuid;
+  sub public.member_subscriptions;
+  v_old int := 0;
+  v_new int := 0;
+  v_delta int;
+begin
+  select subscription_id into v_sub_id from public.memberships where id = new.membership_id;
+  if v_sub_id is null then return new; end if;
+  select * into sub from public.member_subscriptions where id = v_sub_id for update;
+  if sub.status = 'ended' then return new; end if;
+
+  if tg_op = 'INSERT' and sub.next_billing_on is not null and new.starts_on >= sub.next_billing_on then
+    raise exception 'pause_after_next_payment' using detail = 'a pause must start before the next payment date';
+  end if;
+  if tg_op = 'UPDATE' and not old.is_cancelled then v_old := old.ends_on - old.starts_on + 1; end if;
+  if not new.is_cancelled then v_new := new.ends_on - new.starts_on + 1; end if;
+  v_delta := v_new - v_old;
+  if v_delta = 0 then return new; end if;
+
+  update public.member_subscriptions
+  set next_billing_on = next_billing_on + v_delta,
+      current_period_ends_on = current_period_ends_on + v_delta,
+      cancel_effective_on = cancel_effective_on + v_delta,
+      billing_sync_needed = next_billing_on is not null,
+      pending_shift_days = pending_shift_days + v_delta
+  where id = sub.id;
+  perform public._audit('subscription_billing_moved', 'subscription', sub.id::text,
+    jsonb_build_object('days', v_delta, 'pause_id', new.id, 'next_billing_on', sub.next_billing_on + v_delta));
+  return new;
+end;
+$$;
+create trigger membership_pauses_move_billing after insert or update on public.membership_pauses
+  for each row execute function public._pause_moves_billing();
+
+-- Square was told about the new payment date.
+create or replace function public.mark_billing_synced(p_subscription_id uuid)
+returns void
+language sql
+security definer
+set search_path = public, pg_temp
+as $$
+  update public.member_subscriptions set billing_sync_needed = false, pending_shift_days = 0 where id = p_subscription_id;
+$$;
+
 -- ---------------------------------------------------------------------------
 -- Provider (Square) events — service role only
 -- ---------------------------------------------------------------------------
@@ -592,13 +755,13 @@ begin
   set provider_subscription_id = p_provider_subscription_id, provider_customer_id = coalesce(p_provider_customer_id, provider_customer_id)
   where id = sub.id;
   return jsonb_build_object('ok', true, 'subscription_id', sub.id,
-    'send_provider_cancel', sub.status = 'cancel_scheduled' and sub.provider_cancel_sent_at is null
-      and public._month_start(sub.anchor_date, sub.last_period_index + 1) >= sub.cancel_effective_on);
+    'send_provider_cancel', sub.status in ('cancel_scheduled', 'ended') and sub.provider_cancel_sent_at is null
+      and (sub.status = 'ended' or sub.next_billing_on is null),
+    'billing_sync_needed', sub.billing_sync_needed);
 end;
 $$;
 
--- A monthly charge was collected (Square invoice paid). Idempotent per Square
--- payment: repeated webhooks return the first result.
+-- A monthly charge was collected (Square invoice paid). Idempotent per invoice.
 create or replace function public.fulfill_subscription_charge(
   p_provider_subscription_id text,
   p_provider_payment_ref text,
@@ -615,74 +778,56 @@ as $$
 declare
   sub public.member_subscriptions;
   pay public.payments;
-  v_index int;
-  v_day date;
   v_existing public.payments;
+  v_day date := public._local_date(p_paid_at);
+  v_review text;
 begin
   select * into sub from public.member_subscriptions where provider_subscription_id = p_provider_subscription_id for update;
   if not found then perform public._fail('subscription_not_found'); end if;
 
-  -- Same Square payment seen before (webhook retry): nothing new.
   select * into v_existing from public.payments
   where provider = sub.provider and provider_payment_ref = p_provider_payment_ref and status = 'succeeded';
-  if found then
-    return jsonb_build_object('ok', true, 'duplicate', true, 'payment_id', v_existing.id);
-  end if;
-  -- The checkout payment itself (month 1) may also arrive as an invoice payment.
-  if exists (select 1 from public.payments where id = sub.initial_payment_id and provider_payment_ref = p_provider_payment_ref) then
-    return jsonb_build_object('ok', true, 'duplicate', true, 'payment_id', sub.initial_payment_id);
-  end if;
+  if found then return jsonb_build_object('ok', true, 'duplicate', true, 'payment_id', v_existing.id); end if;
 
-  -- Which billing month is this? The latest month that has started (allowing a
-  -- day for time-zone differences in when Square charges).
-  v_day := public._local_date(p_paid_at) + 1;
-  v_index := greatest(sub.last_period_index, 0);
-  while public._month_start(sub.anchor_date, v_index + 1) <= v_day loop
-    v_index := v_index + 1;
-  end loop;
-
-  -- Square also reports the first month (paid at checkout) as a subscription
-  -- invoice: that's the same money, not a second payment.
-  if v_index = 0 then
+  -- Square also reports the first month (paid at checkout) as an invoice:
+  -- the same money, not a second payment.
+  if sub.periods_paid = 1 and (sub.next_billing_on is null or v_day + 1 < sub.next_billing_on) then
     perform public._audit('subscription_first_invoice', 'subscription', sub.id::text,
       jsonb_build_object('provider_payment_ref', p_provider_payment_ref));
     return jsonb_build_object('ok', true, 'duplicate', true, 'payment_id', sub.initial_payment_id);
   end if;
 
+  if sub.next_billing_on is null or sub.periods_paid >= sub.total_periods then
+    v_review := 'no_payment_expected';
+  elsif v_day + 1 < sub.next_billing_on then
+    v_review := 'early_payment';
+  elsif p_amount_cents is distinct from (sub.plan_snapshot ->> 'price_cents')::int
+        or upper(p_currency) is distinct from upper(sub.plan_snapshot ->> 'currency') then
+    v_review := 'amount_mismatch';
+  end if;
+
   insert into public.payments (
     user_id, plan_id, selected_style_id, plan_snapshot, amount_cents, currency, provider, is_test,
-    idempotency_key, created_by, status, completed_at, provider_payment_ref, provider_event_id, kind
+    idempotency_key, status, completed_at, provider_payment_ref, provider_event_id, kind, review_reason
   ) values (
     sub.user_id, sub.plan_id, (sub.plan_snapshot ->> 'selected_style_id')::uuid, sub.plan_snapshot,
     p_amount_cents, upper(p_currency), sub.provider, sub.is_test,
-    'sub:' || p_provider_payment_ref, null, 'pending', null, null, null, 'membership'
+    'sub:' || p_provider_payment_ref, 'succeeded', p_paid_at, p_provider_payment_ref, p_provider_event_id, 'membership', v_review
   ) returning * into pay;
 
-  if p_amount_cents is distinct from (sub.plan_snapshot ->> 'price_cents')::int
-     or upper(p_currency) is distinct from upper(sub.plan_snapshot ->> 'currency') then
-    update public.payments set status = 'succeeded', completed_at = p_paid_at, provider_payment_ref = p_provider_payment_ref,
-      provider_event_id = p_provider_event_id, review_reason = 'amount_mismatch'
-    where id = pay.id;
+  if v_review is not null then
+    -- Accepted (the money was taken) but no classes; the studio reviews it.
     perform public._audit('payment_review_required', 'payment', pay.id::text,
-      jsonb_build_object('reason', 'amount_mismatch', 'subscription_id', sub.id, 'amount_cents', p_amount_cents));
-    return jsonb_build_object('ok', false, 'error', 'amount_mismatch', 'payment_id', pay.id);
+      jsonb_build_object('reason', v_review, 'subscription_id', sub.id, 'amount_cents', p_amount_cents));
+    insert into public.notification_outbox (user_id, kind, payload)
+    select a.id, 'payment_review', jsonb_build_object(
+      'member_name', (select full_name from public.profiles where id = sub.user_id),
+      'plan_name', sub.plan_snapshot ->> 'plan_name', 'amount_cents', p_amount_cents, 'user_id', sub.user_id)
+    from public.profiles a where a.role = 'admin';
+    return jsonb_build_object('ok', v_review <> 'amount_mismatch', 'review', true, 'error', v_review, 'payment_id', pay.id);
   end if;
 
-  update public.payments set status = 'succeeded', completed_at = p_paid_at, provider_payment_ref = p_provider_payment_ref,
-    provider_event_id = p_provider_event_id
-  where id = pay.id
-  returning * into pay;
-
-  if exists (select 1 from public.subscription_periods where subscription_id = sub.id and period_index = v_index) then
-    -- Money for a month that's already covered (e.g. an old invoice paid late):
-    -- accepted, no extra classes, and the studio is asked to review it.
-    update public.payments set review_reason = 'month_already_paid' where id = pay.id;
-    perform public._audit('payment_review_required', 'payment', pay.id::text,
-      jsonb_build_object('reason', 'month_already_paid', 'subscription_id', sub.id, 'period_index', v_index));
-    return jsonb_build_object('ok', true, 'duplicate', false, 'payment_id', pay.id, 'review', true);
-  end if;
-
-  return public._issue_period(sub.id, v_index, pay) || jsonb_build_object('payment_id', pay.id);
+  return public._issue_period(sub.id, sub.periods_paid, pay) || jsonb_build_object('payment_id', pay.id);
 end;
 $$;
 
@@ -711,7 +856,18 @@ begin
 end;
 $$;
 
--- Square says the subscription is over (cancelled, completed or deactivated).
+create or replace function public._end_reason(sub public.member_subscriptions)
+returns text
+language sql
+immutable
+as $$
+  select case when sub.end_reason is not null then sub.end_reason
+              when sub.periods_paid >= sub.total_periods and sub.cancel_requested_at is null then 'completed'
+              when sub.cancel_requested_at is not null then 'cancelled'
+              else 'provider' end;
+$$;
+
+-- Square says the subscription is over (completed, cancelled or deactivated).
 create or replace function public.subscription_provider_ended(p_provider_subscription_id text, p_provider_status text)
 returns jsonb
 language plpgsql
@@ -720,15 +876,17 @@ set search_path = public, pg_temp
 as $$
 declare
   sub public.member_subscriptions;
+  v_reason text;
 begin
   select * into sub from public.member_subscriptions where provider_subscription_id = p_provider_subscription_id for update;
   if not found then perform public._fail('subscription_not_found'); end if;
   if sub.status = 'ended' then return jsonb_build_object('ok', true, 'duplicate', true); end if;
-  update public.member_subscriptions set status = 'ended', ended_at = now() where id = sub.id;
+  v_reason := public._end_reason(sub);
+  update public.member_subscriptions set status = 'ended', end_reason = v_reason, ended_at = now(), next_billing_on = null where id = sub.id;
   perform public._audit('subscription_ended', 'subscription', sub.id::text,
-    jsonb_build_object('provider_status', p_provider_status, 'requested', sub.cancel_requested_at is not null));
-  if sub.cancel_requested_at is null then
-    -- Not asked for by the member or studio (e.g. Square deactivated it): tell the studio.
+    jsonb_build_object('provider_status', p_provider_status, 'reason', v_reason));
+  if v_reason = 'provider' then
+    -- Not asked for and not finished (e.g. Square deactivated it): tell the studio.
     insert into public.notification_outbox (user_id, kind, payload)
     select a.id, 'subscription_ended_unexpectedly', jsonb_build_object(
       'member_name', (select full_name from public.profiles where id = sub.user_id), 'plan_name', sub.plan_snapshot ->> 'plan_name',
@@ -749,11 +907,8 @@ as $$
 $$;
 
 -- ---------------------------------------------------------------------------
--- Cancelling (member and admin)
+-- Cancelling: any time, no penalty, 72 hours before the next payment
 -- ---------------------------------------------------------------------------
-
--- Member: stop renewing. Billing continues to the end of the current 3-month
--- cycle (the commitment); classes stay usable until then.
 create or replace function public.request_subscription_cancel(p_subscription_id uuid)
 returns jsonb
 language plpgsql
@@ -762,34 +917,38 @@ set search_path = public, pg_temp
 as $$
 declare
   sub public.member_subscriptions;
-  v_commit int;
-  v_cycle int;
   v_effective date;
-  v_next_billing date;
+  v_send boolean;
+  v_payments_left int;
 begin
   select * into sub from public.member_subscriptions where id = p_subscription_id for update;
   if not found or (sub.user_id <> auth.uid() and not public.is_admin()) then perform public._fail('subscription_not_found'); end if;
   if sub.status in ('cancel_scheduled', 'ended') then perform public._fail('subscription_not_active'); end if;
 
-  v_commit := coalesce((sub.plan_snapshot ->> 'commitment_months')::int, 3);
-  v_cycle := greatest(sub.last_period_index, 0) / v_commit;
-  v_effective := public._month_start(sub.anchor_date, (v_cycle + 1) * v_commit);
-  v_next_billing := public._month_start(sub.anchor_date, sub.last_period_index + 1);
+  if sub.next_billing_on is null then
+    -- No more payments due: it simply ends with the current month.
+    v_effective := sub.current_period_ends_on; v_send := true; v_payments_left := 0;
+  elsif now() <= (sub.next_billing_on::timestamp at time zone (select timezone from public.app_settings where id)) - interval '72 hours' then
+    -- At least 72 hours' notice: no more payments.
+    v_effective := sub.next_billing_on; v_send := true; v_payments_left := 0;
+  else
+    -- Less than 72 hours before the next payment: that payment is still taken,
+    -- and the membership ends after that month.
+    v_effective := public._add_month(sub.next_billing_on); v_send := false; v_payments_left := 1;
+  end if;
 
   update public.member_subscriptions
-  set status = 'cancel_scheduled', cancel_requested_at = now(), cancel_requested_by = auth.uid(), cancel_effective_on = v_effective
+  set status = 'cancel_scheduled', cancel_requested_at = now(), cancel_requested_by = auth.uid(), cancel_effective_on = v_effective,
+      next_billing_on = case when v_payments_left = 0 then null else next_billing_on end
   where id = sub.id;
   perform public._audit('subscription_cancel_requested', 'subscription', sub.id::text,
-    jsonb_build_object('effective_on', v_effective, 'by_admin', sub.user_id <> auth.uid()));
-
+    jsonb_build_object('effective_on', v_effective, 'payments_left', v_payments_left, 'by_admin', sub.user_id <> auth.uid()));
   return jsonb_build_object('ok', true, 'subscription_id', sub.id, 'ends_on', v_effective,
-    'payments_left', greatest(0, (v_cycle + 1) * v_commit - (sub.last_period_index + 1)),
-    -- Square stops after the month it's in: send now if the cycle's last month is paid.
-    'send_provider_cancel', v_next_billing >= v_effective);
+                            'payments_left', v_payments_left, 'send_provider_cancel', v_send);
 end;
 $$;
 
--- Member changes their mind before the cancellation has been sent to Square.
+-- Changed their mind, before the cancellation reached Square.
 create or replace function public.undo_subscription_cancel(p_subscription_id uuid)
 returns jsonb
 language plpgsql
@@ -804,15 +963,15 @@ begin
   if sub.status <> 'cancel_scheduled' then perform public._fail('subscription_not_cancelling'); end if;
   if sub.provider_cancel_sent_at is not null then perform public._fail('cancel_already_processed'); end if;
   update public.member_subscriptions
-  set status = 'active', cancel_requested_at = null, cancel_requested_by = null, cancel_effective_on = null
+  set status = 'active', cancel_requested_at = null, cancel_requested_by = null, cancel_effective_on = null,
+      next_billing_on = case when periods_paid < total_periods then coalesce(next_billing_on, current_period_ends_on) end
   where id = sub.id;
   perform public._audit('subscription_cancel_undone', 'subscription', sub.id::text, '{}');
   return jsonb_build_object('ok', true);
 end;
 $$;
 
--- Admin: end at the end of the current billing month, waiving the rest of the
--- commitment (e.g. within the 14-day cooling-off period, injury, moving away).
+-- Admin: stop at the next payment date regardless of notice.
 create or replace function public.admin_end_subscription_now(p_subscription_id uuid, p_reason text)
 returns jsonb
 language plpgsql
@@ -828,20 +987,41 @@ begin
   select * into sub from public.member_subscriptions where id = p_subscription_id for update;
   if not found then perform public._fail('subscription_not_found'); end if;
   if sub.status = 'ended' then perform public._fail('subscription_not_active'); end if;
-  v_effective := public._month_start(sub.anchor_date, sub.last_period_index + 1);
+  v_effective := coalesce(sub.next_billing_on, sub.current_period_ends_on);
   update public.member_subscriptions
   set status = 'cancel_scheduled', cancel_requested_at = coalesce(cancel_requested_at, now()),
-      cancel_requested_by = coalesce(cancel_requested_by, auth.uid()), cancel_effective_on = v_effective
+      cancel_requested_by = coalesce(cancel_requested_by, auth.uid()), cancel_effective_on = v_effective, next_billing_on = null
   where id = sub.id;
   perform public._audit('subscription_ended_by_studio', 'subscription', sub.id::text,
     jsonb_build_object('reason', p_reason, 'effective_on', v_effective, 'user_id', sub.user_id));
-  return jsonb_build_object('ok', true, 'subscription_id', sub.id, 'ends_on', v_effective, 'send_provider_cancel', true);
+  return jsonb_build_object('ok', true, 'subscription_id', sub.id, 'ends_on', v_effective, 'payments_left', 0, 'send_provider_cancel', true);
 end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- Reminders: renewal for another 3 months, and the last month of a cancelled
--- membership. Daily, 7 days ahead. One per subscription and cycle.
+-- Refunds are made by admins only (create-refund edge function → Square).
+-- ---------------------------------------------------------------------------
+create or replace function public.admin_can_refund(p_payment_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  pay public.payments;
+begin
+  perform public._require_admin();
+  select * into pay from public.payments where id = p_payment_id;
+  if not found then perform public._fail('payment_not_found'); end if;
+  if pay.status <> 'succeeded' or pay.provider <> 'square' or pay.amount_cents <= 0 then perform public._fail('payment_not_refundable'); end if;
+  return jsonb_build_object('payment_id', pay.id, 'amount_cents', pay.amount_cents, 'currency', pay.currency,
+                            'provider_payment_ref', pay.provider_payment_ref, 'provider_payment_id', pay.provider_payment_id);
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Daily: reminders before each payment and before the end, and closing
+-- memberships whose last month is over.
 -- ---------------------------------------------------------------------------
 create or replace function public.queue_subscription_reminders()
 returns int
@@ -851,25 +1031,42 @@ set search_path = public, pg_temp
 as $$
 declare
   v_today date := public._local_date(now());
-  v_count int;
+  v_count int := 0;
+  v_n int;
+  sub public.member_subscriptions;
 begin
+  -- 5 days before a payment, so there's time to cancel (72 hours' notice).
   insert into public.notification_outbox (user_id, kind, payload, dedupe_key)
-  select s.user_id,
-         case when s.status = 'cancel_scheduled' then 'subscription_ending' else 'subscription_renewing' end,
+  select s.user_id, 'subscription_renewing',
          jsonb_build_object('plan_name', s.plan_snapshot ->> 'plan_name', 'price_cents', (s.plan_snapshot ->> 'price_cents')::int,
-                            'class_count', (s.plan_snapshot ->> 'class_count')::int,
-                            'commitment_months', (s.plan_snapshot ->> 'commitment_months')::int, 'on', x.cycle_end),
-         format('subcycle:%s:%s:%s', s.id, x.cycle_end, s.status)
+                            'class_count', (s.plan_snapshot ->> 'class_count')::int, 'on', s.next_billing_on,
+                            'month', s.periods_paid + 1, 'of', s.total_periods),
+         format('subpay:%s:%s', s.id, s.next_billing_on)
   from public.member_subscriptions s
-  cross join lateral (
-    select public._month_start(s.anchor_date,
-      (greatest(s.last_period_index, 0) / coalesce((s.plan_snapshot ->> 'commitment_months')::int, 3) + 1)
-      * coalesce((s.plan_snapshot ->> 'commitment_months')::int, 3)) as cycle_end
-  ) x
-  where s.status in ('active', 'past_due', 'cancel_scheduled')
-    and x.cycle_end - v_today between 0 and 7
+  where s.status in ('active', 'past_due') and s.next_billing_on is not null and s.next_billing_on - v_today between 0 and 5
   on conflict (dedupe_key) do nothing;
-  get diagnostics v_count = row_count;
+  get diagnostics v_n = row_count; v_count := v_count + v_n;
+
+  -- 7 days before the last month ends: sign up again (and the reward, if earned).
+  insert into public.notification_outbox (user_id, kind, payload, dedupe_key)
+  select s.user_id, 'subscription_ending',
+         jsonb_build_object('plan_name', s.plan_snapshot ->> 'plan_name', 'on', coalesce(s.cancel_effective_on, s.current_period_ends_on),
+                            'reward', s.periods_paid >= s.total_periods and s.cancel_requested_at is null),
+         format('subend:%s:%s', s.id, coalesce(s.cancel_effective_on, s.current_period_ends_on))
+  from public.member_subscriptions s
+  where s.status in ('active', 'cancel_scheduled') and s.next_billing_on is null
+    and coalesce(s.cancel_effective_on, s.current_period_ends_on) - v_today between 0 and 7
+  on conflict (dedupe_key) do nothing;
+  get diagnostics v_n = row_count; v_count := v_count + v_n;
+
+  -- Finished memberships (Square's own "completed" event also does this).
+  for sub in select * from public.member_subscriptions
+             where status <> 'ended' and next_billing_on is null
+               and coalesce(cancel_effective_on, current_period_ends_on) <= v_today
+             for update
+  loop
+    update public.member_subscriptions set status = 'ended', end_reason = public._end_reason(sub), ended_at = now() where id = sub.id;
+  end loop;
   return v_count;
 end;
 $$;
@@ -885,16 +1082,19 @@ $$;
 -- ---------------------------------------------------------------------------
 -- Privileges
 -- ---------------------------------------------------------------------------
-revoke execute on function public._month_start(date, int), public._end_of_day(date), public._close_membership(uuid, text),
-  public._issue_period(uuid, int, public.payments), public._start_subscription(public.payments),
-  public.link_provider_subscription(uuid, text, text), public.fulfill_subscription_charge(text, text, text, int, text, timestamptz),
+revoke execute on function public._add_month(date), public._end_of_day(date), public._close_membership(uuid, text),
+  public._grant_membership(uuid, public.payments, jsonb, int, timestamptz, uuid, public.ledger_kind, text, text),
+  public._issue_period(uuid, int, public.payments), public._grant_loyalty_reward(public.member_subscriptions, public.payments),
+  public._start_subscription(public.payments), public._end_reason(public.member_subscriptions),
+  public.mark_billing_synced(uuid), public.link_provider_subscription(uuid, text, text),
+  public.fulfill_subscription_charge(text, text, text, int, text, timestamptz),
   public.subscription_charge_failed(text, text), public.subscription_provider_ended(text, text),
   public.mark_provider_cancel_sent(uuid), public.request_subscription_cancel(uuid), public.undo_subscription_cancel(uuid),
-  public.admin_end_subscription_now(uuid, text), public.queue_subscription_reminders()
+  public.admin_end_subscription_now(uuid, text), public.admin_can_refund(uuid), public.queue_subscription_reminders()
   from public, anon, authenticated;
 grant execute on function public.request_subscription_cancel(uuid), public.undo_subscription_cancel(uuid),
-  public.admin_end_subscription_now(uuid, text) to authenticated;
-grant execute on function public.link_provider_subscription(uuid, text, text),
+  public.admin_end_subscription_now(uuid, text), public.admin_can_refund(uuid) to authenticated;
+grant execute on function public.mark_billing_synced(uuid), public.link_provider_subscription(uuid, text, text),
   public.fulfill_subscription_charge(text, text, text, int, text, timestamptz),
   public.subscription_charge_failed(text, text), public.subscription_provider_ended(text, text),
   public.mark_provider_cancel_sent(uuid), public.queue_subscription_reminders() to service_role;

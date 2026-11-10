@@ -5,7 +5,7 @@
 // an app checkout is acknowledged and ignored.
 import { adminClient } from '../_shared/http.ts';
 import { ENDED_SUBSCRIPTION_STATUSES, subscriptionEvent, verifySquareSignature, webhookAction } from '../_shared/square.ts';
-import { customerEmail, findSubscription, retrieveSubscription, sendCancelIfDue, squareConfig, type SquareConfig } from '../_shared/squareApi.ts';
+import { cancelSubscription, customerEmail, findSubscription, retrieveSubscription, sendCancelIfDue, squareConfig, syncBillingIfNeeded, type SquareConfig } from '../_shared/squareApi.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.118.0';
 
 /** Link our new subscription (started by its first payment) to Square's. */
@@ -19,6 +19,15 @@ async function linkSubscription(db: SupabaseClient, cfg: SquareConfig | null, pa
   if (!sq) return; // subscription.created will link it
   const { data } = await db.rpc('link_provider_subscription', { p_payment_id: paymentId, p_provider_subscription_id: sq.id, p_provider_customer_id: customerId });
   await sendCancelIfDue(db, cfg, subscriptionId, data?.send_provider_cancel);
+  await syncBillingIfNeeded(db, cfg, subscriptionId);
+}
+
+/** After an upgrade, stop the old plan's Square subscription (no more charges). */
+async function stopUpgradedSubscription(db: SupabaseClient, cfg: SquareConfig | null, oldSubscriptionId: string | null | undefined) {
+  if (!cfg || !oldSubscriptionId) return;
+  const { data: old } = await db.from('member_subscriptions').select('provider_subscription_id, provider_cancel_sent_at').eq('id', oldSubscriptionId).maybeSingle();
+  if (!old?.provider_subscription_id || old.provider_cancel_sent_at) return;
+  if (await cancelSubscription(cfg, old.provider_subscription_id)) await db.rpc('mark_provider_cancel_sent', { p_subscription_id: oldSubscriptionId });
 }
 
 /**
@@ -58,6 +67,7 @@ async function ourSubscription(db: SupabaseClient, cfg: SquareConfig | null, squ
   });
   if (error || !res?.subscription_id) return null;
   await db.rpc('link_provider_subscription', { p_payment_id: pending.id, p_provider_subscription_id: squareSubId, p_provider_customer_id: sq.customer_id });
+  await stopUpgradedSubscription(db, cfg, res.cancel_provider_subscription_of);
   return res.subscription_id as string;
 }
 
@@ -108,7 +118,11 @@ Deno.serve(async (req) => {
     if (data && !data.ok) console.error('payment rejected', payment.id, data.error);
     if (data?.refund_required) console.error('ticket paid but no spot available — refund needed', payment.id);
     // First month of a monthly membership: find the subscription Square created.
-    if (data?.subscription_id) await linkSubscription(db, squareConfig(), payment.id, data.subscription_id, action.customerId);
+    if (data?.subscription_id) {
+      const cfg = squareConfig();
+      await linkSubscription(db, cfg, payment.id, data.subscription_id, action.customerId);
+      await stopUpgradedSubscription(db, cfg, data.cancel_provider_subscription_of);
+    }
     return Response.json({ received: true });
   }
 
@@ -148,11 +162,13 @@ Deno.serve(async (req) => {
   }
 
   if (action.kind === 'refund') {
+    // Monthly charges are stored by invoice; their Square payment id is saved
+    // when an admin refunds them from the app.
     const { data: payment } = await db
       .from('payments')
       .select('id, amount_cents')
       .eq('provider', 'square')
-      .eq('provider_payment_ref', action.squarePaymentId)
+      .or(`provider_payment_ref.eq.${action.squarePaymentId},provider_payment_id.eq.${action.squarePaymentId}`)
       .maybeSingle();
     if (!payment) return Response.json({ ignored: 'not an app payment' });
 

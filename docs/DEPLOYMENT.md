@@ -103,14 +103,15 @@ online and in-studio sales share one dashboard and payout. Test in Square's
 
 1. Apply migrations `20261111000001_recurring_ledger_kinds.sql` and
    `20261111000002_recurring_memberships.sql`. This turns Single Style,
-   Multi-Style, Committed and All In into monthly plans (existing members keep
-   what they bought).
+   Multi-Style, Committed and All In into monthly plans of 3 payments
+   (existing members keep what they bought).
 2. In Square → Webhooks → your subscription, also tick `invoice.payment_made`,
    `invoice.scheduled_charge_failed`, `subscription.created` and
    `subscription.updated`.
-3. Deploy `create-checkout`, `square-webhook` and the new `manage-subscription`.
-4. Notifications must be working (section 7): the Terms promise a renewal
-   reminder 7 days before each renewal.
+3. Deploy `create-checkout`, `square-webhook` and the new `manage-subscription`
+   and `admin-refund`.
+4. Notifications must be working (section 7) so members get the payment
+   reminders (5 days before each payment) and the end-of-membership message.
 5. Test in the Sandbox: buy each monthly plan, then in Square's sandbox
    dashboard check the subscription and its invoices.
 

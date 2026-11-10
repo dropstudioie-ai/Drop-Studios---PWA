@@ -118,39 +118,47 @@ every booking follows the same membership rules. `queue_birthday_alerts`
 staff functions until they add it; `queue_instructor_birthday_alerts` (cron,
 every 15 min, from 09:00 Dublin) tells every admin a week before and on the day.
 
-## Monthly memberships (3-month cycle)
+## Monthly memberships (3 monthly payments, then they stop)
 
-Plans have `billing_interval` (`one_off` / `monthly`), `commitment_months` and
-`credit_rollover`. The Intro Offer is one-off; the other four are monthly.
+Plans have `billing_interval` (`one_off` / `monthly`), `commitment_months`
+(number of monthly payments, 3) and `credit_rollover`. The Intro Offer is
+one-off; the other four are monthly.
 
-- **Checkout.** `create-checkout` creates (once per plan, price and Square
-  environment) a Square SUBSCRIPTION_PLAN + single-phase MONTHLY variation,
-  stored in `square_plan_variations`, and a payment link with
-  `checkout_options.subscription_plan_id`. Square saves the card, creates the
-  subscription and charges month 1.
+- **Checkout.** `create-checkout` creates (once per plan, price, number of
+  payments and Square environment) a Square SUBSCRIPTION_PLAN + single-phase
+  MONTHLY variation with `periods: 3`, stored in `square_plan_variations`, and a
+  payment link with `checkout_options.subscription_plan_id`. Square saves the
+  card, creates the subscription, charges month 1 and completes it after 3.
 - **Month 1.** `payment.updated` for our link's order → `fulfill_payment` →
-  `_start_subscription` (`member_subscriptions`, anchor = Dublin date of the
-  first payment) → `_issue_period(0)`. The webhook then finds the Square
-  subscription by the payment's customer and links it.
-- **Later months.** `invoice.payment_made` (invoice with `subscription_id`) →
-  `fulfill_subscription_charge`, idempotent per invoice, period = latest month
-  that has started. `subscription_periods (subscription_id, period_index)` is
-  unique, so a month's classes can never be issued twice.
-- **Credits.** No rollover: each month is its own `memberships` row valid to the
-  next billing date (+ that day); paying the next month expires what's left
-  (`period_expired`). Rollover (All In): one row per 3-month cycle; months 2–3
-  add classes (`grant_renewal`); a new cycle expires the old row.
-- **Failures.** `invoice.scheduled_charge_failed` → `past_due`, member notified,
-  no classes until the invoice is paid.
-- **Cancelling.** `request_subscription_cancel` (member) keeps the commitment:
-  billing stops at the end of the current 3-month cycle. Square's cancel stops
-  after the current month, so it is sent (`manage-subscription` or the webhook)
-  once the cycle's last month is paid. `admin_end_subscription_now` ends after
-  the current month. `subscription.updated` with CANCELED / DEACTIVATED /
-  COMPLETED → `ended`.
-- **Reminders.** `queue_subscription_reminders` (daily) — 7 days before a cycle
-  renews or a cancelled membership ends.
-- Monthly memberships can't be paused; one live subscription per member.
+  `_start_subscription` → `_issue_period(0)`; finishes an upgrade and gives the
+  loyalty reward if earned. The webhook then finds the Square subscription by
+  the payment's customer and links it.
+- **Months 2–3.** `invoice.payment_made` → `fulfill_subscription_charge`,
+  idempotent per invoice and per month (`subscription_periods` unique per
+  index). Early, extra or wrong-amount payments are accepted but flagged
+  (`review_reason`) with no classes.
+- **Credits.** No rollover: one `memberships` row per month, valid to the next
+  payment date (+ that day); the next month expires what's left
+  (`period_expired`). Rollover (All In): one row for the 3 months; months 2–3
+  add classes (`grant_renewal`); it expires with the last month.
+- **Cancel** (`request_subscription_cancel`): any time, no penalty. ≥72 h before
+  the next payment → no more payments, Square cancel sent now; later → that
+  payment is taken and the cancel is sent once it's paid.
+  `admin_end_subscription_now` stops from the next payment date regardless.
+- **Pause.** A trigger on `membership_pauses` moves `next_billing_on` by the
+  paused days (and back if a pause is shortened); `manage-subscription`
+  (`sync_billing`) changes Square's billing anchor day, effective from the old
+  payment date.
+- **Upgrade.** With no classes left, `create_checkout` allows a dearer monthly
+  plan (`upgrade_from`); on payment the old subscription ends (`upgraded`) and
+  its Square subscription is cancelled.
+- **Loyalty reward.** Signing up again after completing all payments of a
+  previous membership: 3 classes, any style, valid 7 days (`grant_reward`), once
+  per completed membership.
+- **Refunds.** Admins only: `admin-refund` (checks `admin_can_refund`, finds the
+  Square payment id, calls Square Refunds); the refund webhook records it.
+- **Reminders** (`queue_subscription_reminders`, daily): 5 days before each
+  payment, 7 days before the end; also marks finished memberships ended.
 
 ## Early renewal
 

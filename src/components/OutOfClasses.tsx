@@ -19,15 +19,17 @@ function Content({ out, onDone }: { out: OutOfClasses; onDone?: () => void }) {
       </h2>
       <p className="mt-3 text-lg text-white/90">
         {!sub && 'Renew your membership or upgrade to a new plan to keep dancing.'}
-        {sub && !sub.pastDue && <>Your next {p!.class_count} classes arrive on <strong>{formatKey(sub.nextBilling, { weekday: 'long', day: 'numeric', month: 'long' })}</strong>. Can’t wait? Book a Drop In, or upgrade your plan.</>}
+        {sub && !sub.pastDue && sub.nextBilling && <>Your next {p!.class_count} classes arrive on <strong>{formatKey(sub.nextBilling, { weekday: 'long', day: 'numeric', month: 'long' })}</strong>. Can’t wait? Upgrade to a bigger plan now, or book a Drop In.</>}
+        {sub && !sub.pastDue && !sub.nextBilling && <>This was your last month. Upgrade to a bigger plan to keep dancing now, or book a Drop In.</>}
         {sub?.pastDue && <>Your last monthly payment didn’t go through. Pay the invoice Square emailed you and your classes are added straight away.</>}
       </p>
       <div className="mt-5 flex flex-col gap-2 sm:flex-row">
-        {sub ? (
-          <a className="btn bg-white text-brand-700 hover:bg-brand-50" onClick={onDone}
-            href={`mailto:${STUDIO.email}?subject=${encodeURIComponent(`Upgrade my ${p!.plan_name} membership`)}`}>Upgrade my plan</a>
+        {sub && sub.pastDue ? (
+          <a className="btn bg-white text-brand-700 hover:bg-brand-50" onClick={onDone} href={`mailto:${STUDIO.email}`}>Contact the studio</a>
         ) : (
-          <Link to="/memberships" className="btn bg-white text-brand-700 hover:bg-brand-50" onClick={onDone}>Renew or upgrade</Link>
+          <Link to={sub ? '/memberships?upgrade=1' : '/memberships'} className="btn bg-white text-brand-700 hover:bg-brand-50" onClick={onDone}>
+            {sub ? 'Upgrade my plan' : 'Renew or upgrade'}
+          </Link>
         )}
         <Link to="/timetable" className="btn border-2 border-white/70 text-white hover:bg-white/10" onClick={onDone}>Book a Drop In</Link>
       </div>

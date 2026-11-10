@@ -1,6 +1,6 @@
 // deno test --allow-env _shared/square.test.ts
 import { assert, assertEquals } from 'jsr:@std/assert@1';
-import { orderWasPaid, paymentLinkRequest, subscriptionEvent, subscriptionLinkRequest, subscriptionPlanUpsert, squareBaseUrl, squareSignature, verifySquareSignature, webhookAction } from './square.ts';
+import { billingAnchorRequest, orderWasPaid, paymentLinkRequest, refundRequest, subscriptionEvent, subscriptionLinkRequest, subscriptionPlanUpsert, squareBaseUrl, squareSignature, verifySquareSignature, webhookAction } from './square.ts';
 
 Deno.test('signature matches the HMAC-SHA256(url + body) scheme used by Square', async () => {
   const body = '{"merchant_id":"M1","type":"payment.updated","event_id":"e1"}';
@@ -67,15 +67,15 @@ Deno.test('an unpaid payment-link order is OPEN with no tenders', () => {
   assertEquals(orderWasPaid(null), false);
 });
 
-Deno.test('monthly plan: one MONTHLY phase at a static price, no end date', () => {
-  const body = subscriptionPlanUpsert({ planCode: 'multi-8', planName: 'Committed', priceCents: 7900, currency: 'eur' });
+Deno.test('monthly plan: one MONTHLY phase at a static price, 3 payments', () => {
+  const body = subscriptionPlanUpsert({ planCode: 'multi-8', planName: 'Committed', priceCents: 7900, currency: 'eur', periods: 3 });
   const variation = body.batches[0].objects[1];
   assertEquals(variation.type, 'SUBSCRIPTION_PLAN_VARIATION');
   assertEquals(variation.subscription_plan_variation_data!.subscription_plan_id, '#plan');
   assertEquals(variation.subscription_plan_variation_data!.phases, [
-    { cadence: 'MONTHLY', ordinal: 0, pricing: { type: 'STATIC', price_money: { amount: 7900, currency: 'EUR' } } },
+    { cadence: 'MONTHLY', ordinal: 0, periods: 3, pricing: { type: 'STATIC', price_money: { amount: 7900, currency: 'EUR' } } },
   ]);
-  assertEquals(body.idempotency_key, 'drop-plan-multi-8-7900');
+  assertEquals(body.idempotency_key, 'drop-plan-multi-8-7900-3');
 });
 
 Deno.test('subscription checkout link: quick pay at the plan price with the variation id', () => {
@@ -100,4 +100,15 @@ Deno.test('reads monthly invoice payments, failures and subscription status chan
     { kind: 'subscription', subscriptionId: 's1', customerId: 'C1', planVariationId: 'V', status: 'CANCELED' });
   // An invoice that isn't for a subscription (e.g. a manual invoice) is not ours.
   assertEquals(subscriptionEvent({ type: 'invoice.payment_made', data: { object: { invoice: { id: 'inv3' } } } }), { kind: 'none' });
+});
+
+Deno.test('pause: the payment day moves, applied from the old payment date', () => {
+  // Was due on the 20th; a 7-day pause moves it to the 27th.
+  assertEquals(billingAnchorRequest('2026-12-27', 7), { monthly_billing_anchor_date: 27, effective_date: '2026-12-20' });
+  assertEquals(billingAnchorRequest('2027-01-03', 7), { monthly_billing_anchor_date: 3, effective_date: '2026-12-27' });
+});
+
+Deno.test('refund: Square payment id, exact amount, one refund per payment', () => {
+  assertEquals(refundRequest({ paymentId: 'p1', squarePaymentId: 'sq1', amountCents: 5500, currency: 'eur', reason: 'Cooling-off' }),
+    { idempotency_key: 'drop-refund-p1', payment_id: 'sq1', amount_money: { amount: 5500, currency: 'EUR' }, reason: 'Cooling-off' });
 });

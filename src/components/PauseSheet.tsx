@@ -1,3 +1,4 @@
+import { manageSubscription } from '../lib/payments';
 import { useState } from 'react';
 import { api } from '../api';
 import type { Membership, PauseAllowance } from '../api/types';
@@ -33,6 +34,8 @@ export function PauseSheet({ membership, allowance, onClose, onDone, adminOverri
     setError(null);
     try {
       await api.pause(membership.id, start, end, reason || undefined, adminOverride && override);
+      // Monthly membership: the next payment moves back too; tell Square.
+      if (membership.subscription_id) await manageSubscription('sync_billing', membership.subscription_id).catch(() => {});
       onDone();
       onClose();
     } catch (e) {

@@ -1,25 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { addMonths, outOfClasses, subscriptionDates, type Subscription } from './subscription';
+import { cancelPreview, endsOn, outOfClasses, type Subscription } from './subscription';
 
 const sub = (over: Partial<Subscription> = {}): Subscription => ({
-  id: 's', status: 'active', anchor_date: '2026-11-10', last_period_index: 0, cancel_effective_on: null, provider_cancel_sent_at: null,
+  id: 's', status: 'active', end_reason: null, periods_paid: 1, total_periods: 3, next_billing_on: '2026-12-10',
+  current_period_ends_on: '2026-12-10', cancel_effective_on: null, provider_cancel_sent_at: null,
   plan_snapshot: { plan_name: 'Committed', price_cents: 7900, currency: 'EUR', class_count: 8, commitment_months: 3, credit_rollover: false },
   created_at: '2026-11-10T10:00:00Z', ...over,
 });
 const used = { state: 'used_up', classes_remaining: 0, admin_status: 'valid' };
 
-describe('monthly membership dates', () => {
-  it('bills on the same day each month, or the last day of a shorter month (like Square)', () => {
-    expect(addMonths('2026-11-10', 1)).toBe('2026-12-10');
-    expect(addMonths('2027-01-31', 1)).toBe('2027-02-28');
-    expect(addMonths('2027-01-31', 2)).toBe('2027-03-31');
+describe('cancelling (72 hours before the next payment)', () => {
+  it('with enough notice: no more payments, ends on the next payment date', () => {
+    expect(cancelPreview(sub(), new Date('2026-12-06T12:00:00Z'))).toEqual({ paymentsLeft: 0, endsOn: '2026-12-10' });
   });
-
-  it('knows the month of the cycle, the next payment and when the cycle ends', () => {
-    expect(subscriptionDates(sub({ last_period_index: 1 }))).toEqual({
-      nextBilling: '2027-01-10', monthInCycle: 2, commit: 3, cycleEnds: '2027-02-10', paymentsLeftInCycle: 1,
-    });
-    expect(subscriptionDates(sub({ last_period_index: 3 })).monthInCycle).toBe(1);
+  it('too late: the next payment is taken, then it ends a month later', () => {
+    expect(cancelPreview(sub(), new Date('2026-12-08T12:00:00Z'))).toEqual({ paymentsLeft: 1, endsOn: '2027-01-10' });
+    expect(cancelPreview(sub({ next_billing_on: '2027-01-31' }), new Date('2027-01-30T12:00:00Z')).endsOn).toBe('2027-02-28');
+  });
+  it('after the last payment it simply ends with the month', () => {
+    expect(cancelPreview(sub({ next_billing_on: null, current_period_ends_on: '2027-02-10' }))).toEqual({ paymentsLeft: 0, endsOn: '2027-02-10' });
+    expect(endsOn(sub({ next_billing_on: null, periods_paid: 3, current_period_ends_on: '2027-02-10' }))).toBe('2027-02-10');
   });
 });
 
@@ -28,16 +28,12 @@ describe('outOfClasses', () => {
     expect(outOfClasses([], [])).toBeNull();
     expect(outOfClasses([{ state: 'active', classes_remaining: 2, admin_status: 'valid' }], [sub()])).toBeNull();
   });
-
   it('tells monthly members when their next classes arrive', () => {
     expect(outOfClasses([used], [sub()])).toMatchObject({ kind: 'subscription', nextBilling: '2026-12-10', pastDue: false });
     expect(outOfClasses([used], [sub({ status: 'past_due' })])).toMatchObject({ pastDue: true });
   });
-
   it('asks everyone else to renew or upgrade', () => {
     expect(outOfClasses([{ state: 'expired', classes_remaining: 1, admin_status: 'valid' }], [])).toEqual({ kind: 'renew' });
     expect(outOfClasses([used], [sub({ status: 'ended' })])).toEqual({ kind: 'renew' });
-    // Cancelled and no more payments to come → renew.
-    expect(outOfClasses([used], [sub({ status: 'cancel_scheduled', last_period_index: 2, cancel_effective_on: '2027-02-10' })])).toEqual({ kind: 'renew' });
   });
 });

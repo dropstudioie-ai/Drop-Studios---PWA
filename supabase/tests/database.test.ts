@@ -1032,24 +1032,30 @@ run('database: plans, booking, allowances, pauses, security', () => {
   });
 
   // ---------------------------------------------------------------- notifications
-  describe('monthly memberships (3-month cycle)', () => {
+  describe('monthly memberships (3 monthly payments)', () => {
     let seq = 0;
-    async function subscribe(code: string) {
-      const c = await createUser(db, `Monthly${++seq}`);
+    async function subscribe(code: string, existing?: string) {
+      const c = existing ?? await createUser(db, `Monthly${++seq}`);
       const { paymentId, membershipId } = await buy(c, code);
       const { rows: [sub] } = await db.query(`select id from member_subscriptions where initial_payment_id = $1`, [paymentId]);
       const provider = `sqsub_${randomUUID()}`;
       await as(db, service, `select link_provider_subscription($1, $2, 'CUST1')`, [paymentId, provider]);
       return { c, paymentId, membershipId, subId: sub.id as string, provider };
     }
-    // Pretend the subscription started n months ago, then Square collects the next month.
-    async function monthLater(subId: string, provider: string, monthsAgo: number, amount: number, ref = `sqpay_${randomUUID()}`) {
-      await db.query(`update member_subscriptions set anchor_date = (_local_date(now()) - make_interval(months => $2))::date where id = $1`, [subId, monthsAgo]);
+    const subRow = async (id: string) => (await db.query(
+      `select status, end_reason, periods_paid, next_billing_on = _local_date(now()) + interval '1 month' as next_in_a_month,
+              next_billing_on is null as no_more_payments, billing_sync_needed, cancel_effective_on
+       from member_subscriptions where id = $1`, [id])).rows[0];
+    // Make the next payment due today, then Square collects it.
+    async function payNext(subId: string, provider: string, amount: number, ref = `inv:${randomUUID()}`) {
+      await db.query(`update member_subscriptions set next_billing_on = _local_date(now()),
+                        cancel_effective_on = case when cancel_effective_on is null then null else _add_month(_local_date(now())) end
+                      where id = $1 and next_billing_on is not null`, [subId]);
       const [r] = await as<{ r: Record<string, unknown> }>(db, service,
         `select fulfill_subscription_charge($1, $2, $3, $4, 'EUR') r`, [provider, ref, `evt_${randomUUID()}`, amount]);
-      return { ...r.r, ref } as { ok: boolean; duplicate: boolean; membership_id: string; period_index: number; send_provider_cancel?: boolean; ref: string; review?: boolean };
+      return { ...r.r, ref } as { ok: boolean; duplicate?: boolean; review?: boolean; error?: string; membership_id: string; period_index: number; send_provider_cancel?: boolean; ref: string };
     }
-    const openMemberships = async (subId: string) =>
+    const open = async (subId: string) =>
       (await db.query(`select id, classes_remaining, classes_total from memberships where subscription_id = $1 and expires_at > now() order by created_at`, [subId])).rows;
     const use = (membershipId: string, n: number) =>
       db.query(`update memberships set classes_remaining = classes_remaining - $2 where id = $1`, [membershipId, n]);
@@ -1060,140 +1066,178 @@ run('database: plans, booking, allowances, pauses, security', () => {
       expect((await db.query(`select count(*)::int n from member_subscriptions where initial_payment_id = $1`, [paymentId])).rows[0].n).toBe(0);
     });
 
-    it('a monthly plan starts a subscription with the first month of classes, valid until the next billing date', async () => {
+    it('starts with month 1 of 3: classes valid until the next payment date a month later', async () => {
       const { subId, membershipId } = await subscribe('multi-5');
-      const { rows: [sub] } = await db.query(`select status, last_period_index, anchor_date, plan_snapshot->>'commitment_months' cm from member_subscriptions where id = $1`, [subId]);
-      expect(sub).toMatchObject({ status: 'active', last_period_index: 0, cm: '3' });
+      expect(await subRow(subId)).toMatchObject({ status: 'active', periods_paid: 1, next_in_a_month: true });
       const { rows: [m] } = await db.query(
-        `select classes_remaining, subscription_cycle, (expires_at = _end_of_day(_month_start(anchor_date, 1))) as ends_ok
+        `select m.classes_remaining, m.expires_at = _end_of_day(s.next_billing_on) as ends_at_next_payment
          from memberships m join member_subscriptions s on s.id = m.subscription_id where m.id = $1`, [membershipId]);
-      expect(m).toMatchObject({ classes_remaining: 5, subscription_cycle: 0, ends_ok: true });
+      expect(m).toEqual({ classes_remaining: 5, ends_at_next_payment: true });
     });
 
     it('Single Style, Multi-Style, Committed: each month resets the classes; unused ones expire', async () => {
       const { subId, provider, membershipId } = await subscribe('multi-8');
       await use(membershipId, 5); // 3 left
-      const m2 = await monthLater(subId, provider, 1, 7900);
+      const m2 = await payNext(subId, provider, 7900);
       expect(m2).toMatchObject({ ok: true, duplicate: false, period_index: 1 });
-      expect(await openMemberships(subId)).toEqual([{ id: m2.membership_id, classes_remaining: 8, classes_total: 8 }]);
-      const { rows: [exp] } = await db.query(`select delta, kind, balance_after from credit_transactions where membership_id = $1 and kind = 'period_expired'`, [membershipId]);
-      expect(exp).toEqual({ delta: -3, kind: 'period_expired', balance_after: 0 });
-      // Duplicate webhook for the same Square payment: no extra classes.
-      const again = await monthLater(subId, provider, 1, 7900, m2.ref);
-      expect(again.duplicate).toBe(true);
-      expect(await openMemberships(subId)).toEqual([{ id: m2.membership_id, classes_remaining: 8, classes_total: 8 }]);
+      expect(await open(subId)).toEqual([{ id: m2.membership_id, classes_remaining: 8, classes_total: 8 }]);
+      const { rows: [exp] } = await db.query(`select delta, balance_after from credit_transactions where membership_id = $1 and kind = 'period_expired'`, [membershipId]);
+      expect(exp).toEqual({ delta: -3, balance_after: 0 });
+      // The same Square payment reported again: nothing new.
+      const [again] = await as<{ r: { duplicate: boolean } }>(db, service, `select fulfill_subscription_charge($1, $2, 'evt_x', 7900, 'EUR') r`, [provider, m2.ref]);
+      expect(again.r.duplicate).toBe(true);
+      expect(await open(subId)).toHaveLength(1);
     });
 
-    it('All In: classes roll over within the 3-month cycle, then all expire and a new cycle starts fresh', async () => {
+    it('All In: classes roll over through the 3 months; then the membership ends and anything left expires', async () => {
       const { subId, provider, membershipId } = await subscribe('multi-12');
-      await use(membershipId, 8);                           // month 1: 12 issued, 8 used → 4
-      const m2 = await monthLater(subId, provider, 1, 9900); // month 2: +12 → 16
-      expect(m2.membership_id).toBe(membershipId);
-      expect((await openMemberships(subId))[0]).toMatchObject({ classes_remaining: 16, classes_total: 24 });
-      await use(membershipId, 10);                          // 6 left
-      await monthLater(subId, provider, 2, 9900);           // month 3: +12 → 18
-      expect((await openMemberships(subId))[0]).toMatchObject({ id: membershipId, classes_remaining: 18 });
-      const m4 = await monthLater(subId, provider, 3, 9900); // new cycle: 18 expire, fresh 12
-      expect(m4.membership_id).not.toBe(membershipId);
-      expect(await openMemberships(subId)).toEqual([{ id: m4.membership_id, classes_remaining: 12, classes_total: 12 }]);
-      const { rows: [exp] } = await db.query(`select delta, reason from credit_transactions where membership_id = $1 and kind = 'period_expired'`, [membershipId]);
-      expect(exp).toEqual({ delta: -18, reason: 'Three-month cycle ended' });
-      const { rows: periods } = await db.query(`select cycle_no, month_in_cycle from subscription_periods where subscription_id = $1 order by period_index`, [subId]);
-      expect(periods).toEqual([{ cycle_no: 0, month_in_cycle: 1 }, { cycle_no: 0, month_in_cycle: 2 }, { cycle_no: 0, month_in_cycle: 3 }, { cycle_no: 1, month_in_cycle: 1 }]);
+      const { rows: [m1] } = await db.query(`select expires_at = _end_of_day((_local_date(now()) + interval '3 months')::date) as three_months from memberships where id = $1`, [membershipId]);
+      expect(m1.three_months).toBe(true);
+      await use(membershipId, 8);                        // month 1: 12 → 4
+      expect((await payNext(subId, provider, 9900)).membership_id).toBe(membershipId);
+      expect((await open(subId))[0]).toMatchObject({ classes_remaining: 16 });
+      await use(membershipId, 10);                       // 6 left
+      await payNext(subId, provider, 9900);              // month 3: 18
+      expect((await open(subId))[0]).toMatchObject({ id: membershipId, classes_remaining: 18, classes_total: 36 });
+      expect(await subRow(subId)).toMatchObject({ periods_paid: 3, no_more_payments: true });
+      // Square shouldn't charge again; if it did, the money is flagged, no classes.
+      const extra = await as<{ r: { review: boolean; error: string } }>(db, service, `select fulfill_subscription_charge($1, 'inv:extra', 'evt_e', 9900, 'EUR') r`, [provider]);
+      expect(extra[0].r).toMatchObject({ review: true, error: 'no_payment_expected' });
+      // After the last month the membership ends as completed.
+      await db.query(`update member_subscriptions set current_period_ends_on = _local_date(now()) where id = $1`, [subId]);
+      await as(db, service, `select queue_subscription_reminders()`);
+      expect(await subRow(subId)).toMatchObject({ status: 'ended', end_reason: 'completed' });
     });
 
     it('the first month reported again as a Square invoice is not a second payment', async () => {
       const { subId, provider } = await subscribe('multi-5');
-      const r = await monthLater(subId, provider, 0, 5500);
-      expect(r).toMatchObject({ ok: true, duplicate: true });
-      expect((await db.query(`select count(*)::int n from subscription_periods where subscription_id = $1`, [subId])).rows[0].n).toBe(1);
+      const [r] = await as<{ r: { duplicate: boolean } }>(db, service, `select fulfill_subscription_charge($1, 'inv:first', 'evt_f', 5500, 'EUR') r`, [provider]);
+      expect(r.r.duplicate).toBe(true);
+      expect((await subRow(subId)).periods_paid).toBe(1);
     });
 
-    it('a failed monthly payment issues no classes and tells the member', async () => {
+    it('a failed payment issues no classes and tells the member; paying later issues them', async () => {
       const { c, subId, provider } = await subscribe('multi-5');
-      await db.query(`update member_subscriptions set anchor_date = (_local_date(now()) - interval '1 month')::date where id = $1`, [subId]);
-      await as(db, service, `select subscription_charge_failed($1, 'sqpay_failed_1')`, [provider]);
-      await as(db, service, `select subscription_charge_failed($1, 'sqpay_failed_1')`, [provider]); // repeated webhook
-      expect((await db.query(`select status from member_subscriptions where id = $1`, [subId])).rows[0].status).toBe('past_due');
-      expect((await db.query(`select count(*)::int n from subscription_periods where subscription_id = $1`, [subId])).rows[0].n).toBe(1);
+      await as(db, service, `select subscription_charge_failed($1, 'inv:failed_1')`, [provider]);
+      await as(db, service, `select subscription_charge_failed($1, 'inv:failed_1')`, [provider]);
+      expect((await subRow(subId)).status).toBe('past_due');
       expect((await db.query(`select count(*)::int n from notification_outbox where user_id = $1 and kind = 'subscription_payment_failed'`, [c])).rows[0].n).toBe(1);
-      // Paid later (Square's emailed invoice): classes issued, back to active.
-      const later = await monthLater(subId, provider, 1, 5500);
-      expect(later.period_index).toBe(1);
-      expect((await db.query(`select status from member_subscriptions where id = $1`, [subId])).rows[0].status).toBe('active');
+      expect((await payNext(subId, provider, 5500)).period_index).toBe(1);
+      expect((await subRow(subId)).status).toBe('active');
     });
 
-    it('a wrong amount or an already-paid month is accepted but flagged, with no extra classes', async () => {
+    it('a wrong amount or an early payment is accepted but flagged, with no classes', async () => {
       const { subId, provider } = await subscribe('multi-5');
-      const wrong = await monthLater(subId, provider, 1, 100);
-      expect(wrong).toMatchObject({ ok: false });
-      const ok = await monthLater(subId, provider, 1, 5500);
-      expect(ok.period_index).toBe(1);
-      const extra = await monthLater(subId, provider, 1, 5500); // a second, different payment for month 2
-      expect(extra.review).toBe(true);
-      expect((await db.query(`select count(*)::int n from payments where review_reason is not null and plan_id = (select plan_id from member_subscriptions where id = $1) and user_id = (select user_id from member_subscriptions where id = $1)`, [subId])).rows[0].n).toBe(2);
-      expect((await db.query(`select count(*)::int n from subscription_periods where subscription_id = $1`, [subId])).rows[0].n).toBe(2);
+      await db.query(`update member_subscriptions set next_billing_on = _local_date(now()) where id = $1`, [subId]);
+      const [wrong] = await as<{ r: { ok: boolean; error: string } }>(db, service, `select fulfill_subscription_charge($1, 'inv:w', 'evt_w', 100, 'EUR') r`, [provider]);
+      expect(wrong.r).toMatchObject({ ok: false, error: 'amount_mismatch' });
+      expect((await subRow(subId)).periods_paid).toBe(1);
+      expect((await payNext(subId, provider, 5500)).period_index).toBe(1);
+      await db.query(`update member_subscriptions set next_billing_on = _local_date(now()) + 10 where id = $1`, [subId]);
+      const [early] = await as<{ r: { error: string } }>(db, service, `select fulfill_subscription_charge($1, 'inv:early', 'evt_early', 5500, 'EUR') r`, [provider]);
+      expect(early.r.error).toBe('early_payment');
     });
 
-    it('cancelling keeps the 3-month commitment: Square is told once the cycle\'s last month is paid', async () => {
-      const { c, subId, provider } = await subscribe('multi-5');
-      const [r] = await as<{ r: { ends_on: string; payments_left: number; send_provider_cancel: boolean } }>(db, user(c), `select request_subscription_cancel($1) r`, [subId]);
-      expect(r.r).toMatchObject({ payments_left: 2, send_provider_cancel: false });
-      const { rows: [s1] } = await db.query(`select status, cancel_effective_on = _month_start(anchor_date, 3) as at_cycle_end from member_subscriptions where id = $1`, [subId]);
-      expect(s1).toEqual({ status: 'cancel_scheduled', at_cycle_end: true });
-      // Changed their mind before anything was sent to Square.
+    it('cancelling at least 72 hours before the next payment: no more payments, no penalty', async () => {
+      const { c, subId } = await subscribe('multi-5');
+      const [r] = await as<{ r: { payments_left: number; send_provider_cancel: boolean } }>(db, user(c), `select request_subscription_cancel($1) r`, [subId]);
+      expect(r.r).toMatchObject({ payments_left: 0, send_provider_cancel: true });
+      expect(await subRow(subId)).toMatchObject({ status: 'cancel_scheduled', no_more_payments: true });
+      // Changed their mind before it reached Square: payments continue.
       await as(db, user(c), `select undo_subscription_cancel($1)`, [subId]);
-      expect((await monthLater(subId, provider, 1, 5500)).send_provider_cancel).toBe(false);
-      // Month 2: cancel again → one payment left (month 3), then Square is told.
-      const [r2] = await as<{ r: { payments_left: number; send_provider_cancel: boolean } }>(db, user(c), `select request_subscription_cancel($1) r`, [subId]);
-      expect(r2.r).toMatchObject({ payments_left: 1, send_provider_cancel: false });
-      await db.query(`update member_subscriptions set anchor_date = (_local_date(now()) - interval '2 months')::date,
-                        cancel_effective_on = (_local_date(now()) - interval '2 months' + interval '3 months')::date where id = $1`, [subId]);
-      expect((await monthLater(subId, provider, 2, 5500)).send_provider_cancel).toBe(true); // month 3 paid → cancel now
+      expect(await subRow(subId)).toMatchObject({ status: 'active', next_in_a_month: true });
+      await as(db, user(c), `select request_subscription_cancel($1)`, [subId]);
       await as(db, service, `select mark_provider_cancel_sent($1)`, [subId]);
       await expectError(as(db, user(c), `select undo_subscription_cancel($1)`, [subId]), 'cancel_already_processed');
-      await as(db, service, `select subscription_provider_ended($1, 'CANCELED')`, [provider]);
-      expect((await db.query(`select status from member_subscriptions where id = $1`, [subId])).rows[0].status).toBe('ended');
-      // Other members can't touch it.
       const other = await createUser(db, 'Nosy');
       await expectError(as(db, user(other), `select request_subscription_cancel($1)`, [subId]), 'subscription_not_found');
     });
 
-    it('cancelling in the last month of a cycle is sent to Square straight away', async () => {
+    it('cancelling less than 72 hours before: that payment is still taken, then it ends', async () => {
       const { c, subId, provider } = await subscribe('multi-5');
-      await monthLater(subId, provider, 1, 5500);
-      await monthLater(subId, provider, 2, 5500);
+      await db.query(`update member_subscriptions set next_billing_on = _local_date(now()) + 2 where id = $1`, [subId]);
       const [r] = await as<{ r: { payments_left: number; send_provider_cancel: boolean } }>(db, user(c), `select request_subscription_cancel($1) r`, [subId]);
-      expect(r.r).toEqual(expect.objectContaining({ payments_left: 0, send_provider_cancel: true }));
+      expect(r.r).toMatchObject({ payments_left: 1, send_provider_cancel: false });
+      const paid = await payNext(subId, provider, 5500);
+      expect(paid.send_provider_cancel).toBe(true);
+      expect(await subRow(subId)).toMatchObject({ periods_paid: 2, no_more_payments: true });
     });
 
-    it('admins can end a membership at the end of the current month, with a reason', async () => {
+    it('admins can stop a membership at the next payment date, with a reason', async () => {
       const { c, subId } = await subscribe('multi-8');
       await expectError(as(db, user(c), `select admin_end_subscription_now($1, 'x')`, [subId]), 'forbidden');
-      const [r] = await as<{ r: { send_provider_cancel: boolean } }>(db, user(admin), `select admin_end_subscription_now($1, 'Cooling-off period') r`, [subId]);
+      const [r] = await as<{ r: { send_provider_cancel: boolean } }>(db, user(admin), `select admin_end_subscription_now($1, 'Moving abroad') r`, [subId]);
       expect(r.r.send_provider_cancel).toBe(true);
-      expect((await db.query(`select cancel_effective_on = _month_start(anchor_date, 1) as next_month from member_subscriptions where id = $1`, [subId])).rows[0].next_month).toBe(true);
+      expect(await subRow(subId)).toMatchObject({ status: 'cancel_scheduled', no_more_payments: true });
     });
 
-    it('a member can only have one monthly membership at a time', async () => {
-      const { c } = await subscribe('multi-5');
-      await expectError(as(db, user(c), `select create_checkout($1, null, $2, 'square')`, [await planId('multi-8'), randomUUID()]), 'already_subscribed');
+    it('pausing moves the next payment date back by the paused days (and back again if ended early)', async () => {
+      const { c, subId, membershipId } = await subscribe('multi-5');
+      const day = (n: number) => new Date(Date.now() + n * 86_400_000).toLocaleDateString('en-CA', { timeZone: 'Europe/Dublin' });
+      const before = (await db.query(`select next_billing_on::text d from member_subscriptions where id = $1`, [subId])).rows[0].d as string;
+      await as(db, user(c), `select pause_membership($1, $2::date, $3::date)`, [membershipId, day(2), day(8)]); // 7 days
+      const { rows: [after] } = await db.query(`select (next_billing_on - $2::date) as moved, billing_sync_needed from member_subscriptions where id = $1`, [subId, before]);
+      expect(after).toEqual({ moved: 7, billing_sync_needed: true });
+      // The pause hasn't started, so ending it removes it and the date moves back.
+      await as(db, user(c), `select resume_membership($1)`, [membershipId]);
+      expect((await db.query(`select next_billing_on::text d from member_subscriptions where id = $1`, [subId])).rows[0].d).toBe(before);
+      // A pause can't start after the next payment.
+      await expect(as(db, user(c), `select pause_membership($1, $2::date, $3::date)`, [membershipId, day(40), day(47)])).rejects.toThrow(/pause_after_next_payment|pause_after_expiry/);
     });
 
-    it('monthly memberships cannot be paused', async () => {
-      const { c, membershipId } = await subscribe('multi-5');
-      const day = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
-      await expect(as(db, user(c), `select pause_membership($1, $2::date, $3::date)`, [membershipId, day(10), day(20)])).rejects.toThrow(/pause_not_available/);
+    it('upgrade: once the classes run out, a member can move to a dearer plan; the old one stops', async () => {
+      const { c, subId, membershipId } = await subscribe('multi-5');
+      const tryCheckout = async (planUuid: string, style: string | null = null) =>
+        as(db, user(c), `select create_checkout($1, $2, $3, 'square')`, [planUuid, style ? await styleId(style) : null, randomUUID()]);
+      await expectError(tryCheckout(await planId('multi-8')), 'already_subscribed'); // still has classes
+      await use(membershipId, 5);
+      await expectError(tryCheckout(await planId('single-4'), 'heels'), 'already_subscribed'); // not an upgrade
+      const up = await subscribe('multi-8', c);
+      const { rows: [old] } = await db.query(`select status, end_reason, upgraded_to from member_subscriptions where id = $1`, [subId]);
+      expect(old).toEqual({ status: 'ended', end_reason: 'upgraded', upgraded_to: up.subId });
+      expect(await open(up.subId)).toEqual([expect.objectContaining({ classes_remaining: 8 })]);
     });
 
-    it('reminds the member a week before a new 3-month cycle (or the end, if cancelled)', async () => {
+    it('loyalty reward: completing all 3 payments and signing up again gives 3 free classes for 7 days, once', async () => {
       const { c, subId } = await subscribe('multi-5');
-      await db.query(`update member_subscriptions set anchor_date = (_local_date(now()) + 5 - interval '3 months')::date, last_period_index = 2 where id = $1`, [subId]);
+      await db.query(`update member_subscriptions set periods_paid = 3, next_billing_on = null, status = 'ended', end_reason = 'completed' where id = $1`, [subId]);
+      const again = await subscribe('multi-8', c);
+      const { rows: rewards } = await db.query(
+        `select classes_remaining, style_access, plan_name, public._local_date(expires_at) - public._local_date(now()) as days
+         from memberships where user_id = $1 and plan_name like 'Loyalty reward%'`, [c]);
+      expect(rewards).toEqual([{ classes_remaining: 3, style_access: 'multi', plan_name: 'Loyalty reward · 3 free classes', days: 8 }]);
+      expect((await db.query(`select count(*)::int n from notification_outbox where user_id = $1 and kind = 'loyalty_reward'`, [c])).rows[0].n).toBe(1);
+      expect((await db.query(`select count(*)::int n from credit_transactions where user_id = $1 and kind = 'grant_reward'`, [c])).rows[0].n).toBe(1);
+      // Not again for the same completed membership.
+      await db.query(`update member_subscriptions set status = 'ended', end_reason = 'cancelled', periods_paid = 1 where id = $1`, [again.subId]);
+      await subscribe('multi-5', c);
+      expect((await db.query(`select count(*)::int n from memberships where user_id = $1 and plan_name like 'Loyalty reward%'`, [c])).rows[0].n).toBe(1);
+    });
+
+    it('no reward for a membership cancelled before its 3 payments', async () => {
+      const { c, subId } = await subscribe('multi-5');
+      await db.query(`update member_subscriptions set status = 'ended', end_reason = 'cancelled' where id = $1`, [subId]);
+      await subscribe('multi-5', c);
+      expect((await db.query(`select count(*)::int n from memberships where user_id = $1 and plan_name like 'Loyalty reward%'`, [c])).rows[0].n).toBe(0);
+    });
+
+    it('reminds before each payment and before the end', async () => {
+      const { c, subId } = await subscribe('multi-5');
+      await db.query(`update member_subscriptions set next_billing_on = _local_date(now()) + 3 where id = $1`, [subId]);
       await as(db, service, `select queue_subscription_reminders()`);
       await as(db, service, `select queue_subscription_reminders()`);
-      const { rows } = await db.query(`select kind, payload->>'price_cents' price from notification_outbox where user_id = $1 and kind like 'subscription_%'`, [c]);
-      expect(rows).toEqual([{ kind: 'subscription_renewing', price: '5500' }]);
+      await db.query(`update member_subscriptions set periods_paid = 3, next_billing_on = null, current_period_ends_on = _local_date(now()) + 5 where id = $1`, [subId]);
+      await as(db, service, `select queue_subscription_reminders()`);
+      const { rows } = await db.query(`select kind, payload->>'reward' reward from notification_outbox where user_id = $1 and kind like 'subscription_%' order by id`, [c]);
+      expect(rows).toEqual([{ kind: 'subscription_renewing', reward: null }, { kind: 'subscription_ending', reward: 'true' }]);
       await expect(as(db, user(c), `select queue_subscription_reminders()`)).rejects.toThrow(/permission denied/);
+    });
+
+    it('refunds are for admins only', async () => {
+      const { c, paymentId } = await subscribe('multi-5');
+      await expectError(as(db, user(c), `select admin_can_refund($1)`, [paymentId]), 'forbidden');
+      const [r] = await as<{ r: { amount_cents: number } }>(db, user(admin), `select admin_can_refund($1) r`, [paymentId]);
+      expect(r.r.amount_cents).toBe(5500);
     });
 
     it('members only see their own subscriptions', async () => {
@@ -1201,7 +1245,6 @@ run('database: plans, booking, allowances, pauses, security', () => {
       const other = await createUser(db, 'Peeker');
       expect(await as(db, user(c), `select id from member_subscriptions where id = $1`, [subId])).toHaveLength(1);
       expect(await as(db, user(other), `select id from member_subscriptions where id = $1`, [subId])).toHaveLength(0);
-      await expect(as(db, service, `select 1`)).resolves.toBeTruthy();
       await expect(as(db, user(c), `select fulfill_subscription_charge('x', 'y', 'z', 1, 'EUR')`)).rejects.toThrow(/permission denied/);
     });
   });

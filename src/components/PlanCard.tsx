@@ -1,5 +1,5 @@
 import type { MembershipPlan } from '../domain/plans';
-import { classesLabel, commitmentTotalCents, creditRule, durationLabel, isMonthly, planBadges, pricePerClass, styleAccessLabel } from '../domain/plans';
+import { classesLabel, creditRule, durationLabel, isMonthly, planBadges, pricePerClass, styleAccessLabel, termLabel } from '../domain/plans';
 import { formatPrice } from '../domain/money';
 import { CheckIcon, ClockIcon, LayersIcon, TargetIcon } from './icons';
 
@@ -60,7 +60,7 @@ export function PlanCard({ plan, onSelect, disabledReason }: Props) {
       {bestValue && plan.credit_rollover && (
         <div className="mt-4 rounded-xl bg-brand-600 p-3 text-sm">
           <p className="font-extrabold uppercase tracking-wide">Credits roll over</p>
-          <p className="mt-0.5 text-white/85">Unused classes carry into next month, all through your {plan.commitment_months}-month cycle.</p>
+          <p className="mt-0.5 text-white/85">Unused classes carry into next month, all through your {plan.commitment_months ?? 3} months.</p>
         </div>
       )}
 
@@ -75,9 +75,7 @@ export function PlanCard({ plan, onSelect, disabledReason }: Props) {
           <>
             <li className="flex gap-2">
               <ClockIcon className={`mt-0.5 shrink-0 ${faint}`} width={18} height={18} />
-              <span>
-                <strong className={dark ? 'text-white' : 'text-ink'}>{plan.commitment_months}-month minimum</strong> · {formatPrice(commitmentTotalCents(plan), plan.currency)} in total, billed monthly
-              </span>
+              <span><strong className={dark ? 'text-white' : 'text-ink'}>{termLabel(plan)}</strong></span>
             </li>
             <li className="flex gap-2">
               <CheckIcon className={`mt-0.5 shrink-0 ${dark ? 'text-brand-200' : 'text-success'}`} width={18} height={18} />
@@ -108,7 +106,7 @@ export function PlanCard({ plan, onSelect, disabledReason }: Props) {
           {disabledReason ? 'Not available' : plan.cta_label ?? `Choose ${classesLabel(plan.class_count)}`}
         </button>
         {disabledReason && <p id={`plan-${plan.code}-why`} className={`mt-2 text-center text-xs ${faint}`}>{disabledReason}</p>}
-        {monthly && !disabledReason && <p className={`mt-2 text-center text-xs ${faint}`}>Renews every {plan.commitment_months} months unless cancelled</p>}
+        {monthly && !disabledReason && <p className={`mt-2 text-center text-xs ${faint}`}>Cancel any time, no penalty</p>}
       </div>
     </article>
   );

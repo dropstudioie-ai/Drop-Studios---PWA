@@ -18,15 +18,16 @@ const intro = plan({
 });
 
 describe('PlanCard', () => {
-  it('monthly plan: price per month, classes per month, price per class, commitment and total', () => {
+  it('monthly plan: price per month, classes per month, price per class and how long it runs', () => {
     const { container } = render(<PlanCard plan={plan({ name: 'Committed', price_cents: 7900, class_count: 8 })} onSelect={() => {}} />);
     expect(screen.getByText('€79')).toBeInTheDocument();
     expect(screen.getByText('/ month')).toBeInTheDocument();
     expect(screen.getByText(/8 classes every month/)).toBeInTheDocument();
     expect(screen.getByText('€9.88 per class')).toBeInTheDocument();
-    expect(container.textContent).toContain('3-month minimum · €237 in total, billed monthly');
+    expect(container.textContent).toContain('3 monthly payments, then it stops');
     expect(container.textContent).toContain('Unused classes expire at the end of each billing month. No rollover.');
-    expect(container.textContent).toContain('Renews every 3 months unless cancelled');
+    expect(container.textContent).toContain('Cancel any time, no penalty');
+    expect(container.textContent).not.toMatch(/€237|in total/);
   });
 
   it('All In highlights credit rollover and Best value', () => {
@@ -34,7 +35,7 @@ describe('PlanCard', () => {
     expect(screen.getByText('Best value')).toBeInTheDocument();
     expect(screen.getByText('Credits roll over')).toBeInTheDocument();
     expect(screen.getByText('€8.25 per class')).toBeInTheDocument();
-    expect(container.textContent).toContain('€297 in total');
+    expect(container.textContent).toContain('all through your 3 months');
   });
 
   it('the Intro Offer is a one-off that never renews', () => {

@@ -8,10 +8,11 @@ export function MembershipTerms({ settings, compact = false, monthly = false, on
   settings: AppSettings; compact?: boolean; monthly?: boolean; oneOff?: boolean;
 }) {
   const items = monthly ? [
-    'Monthly memberships are billed every month to the card you pay with. Your classes for the month are added as soon as each payment goes through.',
-    'Every monthly membership has a 3-month minimum and then renews for another 3 months unless you cancel. We remind you a week before it renews.',
-    'Cancel any time in My Membership: you keep your classes and pay until the end of your current 3-month period, and it won\u2019t renew.',
-    'Single Style, Multi-Style and Committed: unused classes expire at the end of each billing month. All In: unused classes roll over until the end of your 3-month period.',
+    'Monthly memberships last 3 months: you pay once a month (3 payments in total) and get your classes every month. After the 3rd month it stops; it doesn’t renew automatically.',
+    'Cancel any time with no penalty: in My Membership, by email, at reception, or with your bank. Cancel at least 72 hours before a payment to stop it.',
+    'Single Style, Multi-Style and Committed: unused classes expire at the end of each billing month. All In: unused classes roll over until the end of your 3 months.',
+    'Pausing your membership moves your next payment back by the paused days.',
+    'Complete all 3 months and sign up again: we add 3 free classes to use in your first 7 days.',
     `Book classes up to ${durationLabel(settings.booking_window_days)} in advance.`,
     `Cancel at least ${cutoffLabel(settings.cancellation_cutoff_minutes)} before a class to get that class back.${
       settings.late_cancel_restores_class ? '' : ' Later cancellations and no-shows use up the class.'}`,

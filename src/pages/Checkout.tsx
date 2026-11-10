@@ -6,7 +6,9 @@ import { checkout, paymentsMode } from '../lib/payments';
 import { messageFor } from '../domain/messages';
 import { formatPrice } from '../domain/money';
 import type { MembershipPlan } from '../domain/plans';
-import { classesLabel, commitmentTotalCents, creditRule, isMonthly, ordinalDay, styleAccessLabel, validityLabel } from '../domain/plans';
+import { classesLabel, creditRule, isMonthly, ordinalDay, styleAccessLabel, termLabel, validityLabel } from '../domain/plans';
+import { STUDIO } from '../config/studio';
+import { isLive } from '../domain/subscription';
 import { computeExpiry, lastValidDay } from '../domain/membership';
 import { formatKey } from '../domain/time';
 import { MembershipTerms } from '../components/Terms';
@@ -20,12 +22,13 @@ export default function Checkout() {
   const navigate = useNavigate();
   const { profile } = useAuth();
   const data = useAsync(async () => {
-    const [plan, settings, styles, firstTime] = await Promise.all([
+    const [plan, settings, styles, firstTime, subscriptions] = await Promise.all([
       api.planByCode(code), api.settings(), api.styles(), api.isFirstTimeCustomer(),
+      profile ? api.mySubscriptions(profile.id) : Promise.resolve([]),
     ]);
     const planStyleIds = plan && !plan.all_styles ? await api.planStyles(plan.id) : null;
-    return { plan, settings, styles, firstTime, planStyleIds };
-  }, [code]);
+    return { plan, settings, styles, firstTime, planStyleIds, subscriptions };
+  }, [code, profile?.id]);
 
   // Renewing a single-style plan keeps the same style (it can still be changed here).
   const [styleId, setStyleId] = useState<string | null>(search.get('style'));
@@ -41,7 +44,8 @@ export default function Checkout() {
 
   if (data.loading) return <PageSpinner />;
   if (data.error) return <div className="container-page py-8"><ErrorNotice error={data.error} onRetry={data.reload} /></div>;
-  const { plan, settings, styles, firstTime, planStyleIds } = data.data!;
+  const { plan, settings, styles, firstTime, planStyleIds, subscriptions } = data.data!;
+  const liveSub = subscriptions.find(isLive) ?? null;
   if (!plan) {
     return (
       <div className="container-page py-8">
@@ -97,7 +101,7 @@ export default function Checkout() {
         </Notice></div>
       )}
 
-      {monthly ? <MonthlySummary plan={plan} /> : (
+      {monthly ? <MonthlySummary plan={plan} upgradingFrom={liveSub?.plan_snapshot.plan_name ?? null} /> : (
         <section className="card mt-6 p-5">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -140,9 +144,9 @@ export default function Checkout() {
           <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl bg-brand-50 p-3 text-sm">
             <input type="checkbox" className="mt-0.5 h-5 w-5 accent-brand-600" checked={agreedRecurring} onChange={(e) => setAgreedRecurring(e.target.checked)} />
             <span>
-              I understand this is a <strong>monthly membership</strong>: {formatPrice(plan.price_cents, plan.currency)} is charged to my card today and then
-              every month, with a <strong>{plan.commitment_months}-month minimum ({formatPrice(commitmentTotalCents(plan), plan.currency)} in total)</strong>.
-              It <strong>renews automatically for another {plan.commitment_months} months</strong> unless I cancel in the app before the renewal date.
+              I understand this is a <strong>{plan.commitment_months ?? 3}-month membership paid monthly</strong>: {formatPrice(plan.price_cents, plan.currency)} is
+              charged to my card today and then once a month, <strong>{plan.commitment_months ?? 3} payments in total</strong>, after which it stops.
+              I can cancel at any time with no penalty, at least 72 hours before a payment.
             </span>
           </label>
         )}
@@ -194,29 +198,34 @@ export default function Checkout() {
   );
 }
 
-/** Everything a monthly member commits to, before they pay. */
-function MonthlySummary({ plan }: { plan: MembershipPlan }) {
-  const months = plan.commitment_months ?? 3;
+/** Everything a monthly member agrees to, before they pay. */
+function MonthlySummary({ plan, upgradingFrom }: { plan: MembershipPlan; upgradingFrom: string | null }) {
+  const n = plan.commitment_months ?? 3;
   const rows: [string, string][] = [
     ['Monthly price', `${formatPrice(plan.price_cents, plan.currency, { forceDecimals: true })} / month`],
-    ['Classes', `${classesLabel(plan.class_count)} every billing month · ${styleAccessLabel(plan.style_access)}`],
-    ['Minimum commitment', `${months} months`],
-    [`Initial ${months}-month total`, formatPrice(commitmentTotalCents(plan), plan.currency, { forceDecimals: true })],
+    ['Classes', `${classesLabel(plan.class_count)} every month · ${styleAccessLabel(plan.style_access)}`],
+    ['How long', `${termLabel(plan)}. It doesn’t renew automatically after that.`],
     ['Billing', `Monthly, on the ${ordinalDay(new Date())} of each month, to the card you pay with`],
     ['Unused classes', creditRule(plan)],
-    ['Renewal', `Renews automatically for another ${months} months unless you cancel. We remind you a week before.`],
-    ['Cancelling', `Cancel any time in My Membership. You keep your classes and pay until the end of your current ${months}-month period; it then stops.`],
+    ['Cancelling', `Any time, no penalty: in the app, by email (${STUDIO.email}), at reception, or with your bank. Cancel at least 72 hours before a payment to stop it; otherwise that payment is taken and the membership ends after that month.`],
+    ['Pausing', 'Pausing your membership moves your next payment back by the paused days.'],
+    ['Loyalty reward', `Complete all ${n} months and sign up again to get 3 free classes in your first 7 days.`],
   ];
   return (
     <section className="card mt-6 overflow-hidden" aria-labelledby="summary-h">
       <div className="bg-ink p-5 text-white">
         {plan.display_label && <span className="chip mb-2 bg-brand-500 text-white">{plan.display_label}</span>}
         <h2 id="summary-h" className="font-display text-2xl font-black uppercase tracking-tight">{plan.name}</h2>
-        <p className="mt-1 text-white/75">Monthly membership · {months}-month minimum</p>
+        <p className="mt-1 text-white/75">{n}-month membership · paid monthly</p>
       </div>
+      {upgradingFrom && (
+        <div className="border-b border-line bg-brand-50 px-5 py-3 text-sm text-brand-900">
+          <strong>Upgrading from {upgradingFrom}.</strong> Your {upgradingFrom} membership stops today (no more payments for it), and {plan.name} starts now with your first {plan.class_count} classes.
+        </div>
+      )}
       <dl className="divide-y divide-line">
         {rows.map(([k, v]) => (
-          <div key={k} className="grid gap-1 px-5 py-3 sm:grid-cols-[11rem_1fr]">
+          <div key={k} className="grid gap-1 px-5 py-3 sm:grid-cols-[9rem_1fr]">
             <dt className="text-sm font-semibold text-muted">{k}</dt>
             <dd className="text-sm text-ink">{v}</dd>
           </div>

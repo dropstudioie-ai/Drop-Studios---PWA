@@ -62,7 +62,9 @@ Deno.serve(async (req) => {
     const cfg = squareConfig();
     const { data: plan } = await adminClient().from('membership_plans')
       .select('id, code, name, price_cents, currency').eq('id', payment.plan_id).maybeSingle();
-    const variationId = cfg && plan ? await ensurePlanVariation(adminClient(), cfg, { ...plan, price_cents: payment.amount_cents }) : null;
+    const variationId = cfg && plan
+      ? await ensurePlanVariation(adminClient(), cfg, { ...plan, price_cents: payment.amount_cents, periods: payment.commitment_months ?? 3 })
+      : null;
     if (!variationId) return json(req, { error: 'payment_provider_error' }, 502);
     linkBody = subscriptionLinkRequest(payment, {
       locationId, siteUrl, variationId, buyerEmail: auth.user.email,

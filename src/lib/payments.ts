@@ -45,5 +45,9 @@ export async function checkout(req: CheckoutRequest): Promise<({ redirect: strin
 }
 
 /** Cancel / un-cancel a monthly membership (the server applies the 3-month commitment). */
-export const manageSubscription = (action: 'cancel' | 'undo_cancel' | 'end_now', subscriptionId: string, reason?: string) =>
+export const manageSubscription = (action: 'cancel' | 'undo_cancel' | 'end_now' | 'sync_billing', subscriptionId: string, reason?: string) =>
   invoke<{ ok: boolean; ends_on?: string; payments_left?: number }>('manage-subscription', { action, subscription_id: subscriptionId, reason });
+
+/** Admins only (checked on the server): refund a Square payment. */
+export const adminRefund = (paymentId: string, amountCents: number, reason: string) =>
+  invoke<{ ok: boolean; status: string }>('admin-refund', { payment_id: paymentId, amount_cents: amountCents, reason });

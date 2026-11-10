@@ -80,9 +80,17 @@ export const api = {
   /** Monthly memberships. Empty (not an error) on a database without them yet. */
   mySubscriptions: async (userId: string): Promise<Subscription[]> => {
     const { data, error } = await supabase.from('member_subscriptions')
-      .select('id, status, anchor_date, last_period_index, cancel_effective_on, provider_cancel_sent_at, plan_snapshot, created_at')
+      .select('id, status, end_reason, periods_paid, total_periods, next_billing_on, current_period_ends_on, cancel_effective_on, provider_cancel_sent_at, plan_snapshot, created_at')
       .eq('user_id', userId).order('created_at', { ascending: false });
     return error ? [] : (data as Subscription[]);
+  },
+
+  /** A loyalty reward added in the last hour (shown after signing up again). */
+  hasRecentReward: async (userId: string) => {
+    const { data } = await supabase.from('memberships').select('id')
+      .eq('user_id', userId).like('plan_name', 'Loyalty reward%')
+      .gte('created_at', new Date(Date.now() - 3_600_000).toISOString()).limit(1);
+    return Boolean(data?.length);
   },
 
   myMemberships: async (userId: string) =>

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { subscriptionDates } from '../../domain/subscription';
-import { manageSubscription } from '../../lib/payments';
+import { endsOn } from '../../domain/subscription';
+import { adminRefund, manageSubscription } from '../../lib/payments';
 import { supabase, AppError } from '../../lib/supabase';
 import { api, unwrap } from '../../api';
 import type { Membership, MembershipPlan, Profile } from '../../api/types';
@@ -97,11 +97,28 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
   }
 
   async function endNow(subscriptionId: string, planName: string) {
-    const reason = window.prompt(`End ${planName} after the current month, waiving the rest of the commitment? Reason (saved in the audit log):`);
+    const reason = window.prompt(`Stop ${planName} from the next payment date (no more payments)? Reason, e.g. "Asked at reception" (saved in the audit log):`);
     if (!reason?.trim()) return;
     try {
       const r = await manageSubscription('end_now', subscriptionId, reason);
-      toast(`Membership ends on ${r.ends_on}. No more payments after this month.`);
+      toast(`Done: no more payments. The membership ends on ${r.ends_on}.`);
+      void data.reload();
+    } catch (e) {
+      toast((e as Error).message, 'error');
+    }
+  }
+
+  async function refund(p: PaymentRow) {
+    const full = (p.amount_cents / 100).toFixed(2);
+    const amount = window.prompt(`Refund how much of €${full} for ${p.plan_snapshot?.plan_name}? (e.g. ${full})`, full);
+    if (amount === null) return;
+    const cents = Math.round(Number(amount.replace(',', '.')) * 100);
+    if (!(cents > 0 && cents <= p.amount_cents)) { toast('Enter an amount up to the payment amount.', 'error'); return; }
+    const reason = window.prompt('Reason for the refund (saved in the audit log and sent to Square):');
+    if (!reason?.trim()) return;
+    try {
+      await adminRefund(p.id, cents, reason);
+      toast(`Refund of €${(cents / 100).toFixed(2)} sent to Square. It appears here once Square confirms it. Adjust their classes if needed.`);
       void data.reload();
     } catch (e) {
       toast((e as Error).message, 'error');
@@ -168,24 +185,24 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
 
       {d.subscriptions.length > 0 && (
         <Section title="Monthly memberships">
-          <Table head={['Plan', 'Status', 'This period', 'Next payment', 'Ends / renews', '']} empty={false}>
+          <Table head={['Plan', 'Status', 'Payments', 'Next payment', 'Ends', '']} empty={false}>
             {d.subscriptions.map((s) => {
-              const dt = subscriptionDates(s);
+              const ends = endsOn(s);
               return (
                 <tr key={s.id}>
                   <Td className="font-semibold">{s.plan_snapshot.plan_name} · {formatPrice(s.plan_snapshot.price_cents, s.plan_snapshot.currency)}/month</Td>
-                  <Td>{s.status === 'cancel_scheduled' ? 'ending' : s.status === 'past_due' ? 'payment failed' : s.status}</Td>
-                  <Td>{s.status === 'ended' ? '—' : `Month ${dt.monthInCycle} of ${dt.commit}`}</Td>
-                  <Td>{s.status === 'ended' || (s.cancel_effective_on && dt.nextBilling >= s.cancel_effective_on) ? '—' : formatKey(dt.nextBilling)}</Td>
-                  <Td>{s.status === 'ended' ? 'Ended' : s.cancel_effective_on ? `Ends ${formatKey(s.cancel_effective_on)}` : `Renews ${formatKey(dt.cycleEnds)}`}</Td>
-                  <Td>{s.status !== 'ended' && !s.provider_cancel_sent_at && (
-                    <button className="btn-sm btn-ghost text-danger" onClick={() => void endNow(s.id, s.plan_snapshot.plan_name)}>End after this month</button>
+                  <Td>{s.status === 'cancel_scheduled' ? 'ending' : s.status === 'past_due' ? 'payment failed' : s.status === 'ended' ? `ended (${s.end_reason ?? '—'})` : s.status}</Td>
+                  <Td>{s.periods_paid} of {s.total_periods}</Td>
+                  <Td>{s.next_billing_on ? formatKey(s.next_billing_on) : '—'}</Td>
+                  <Td>{ends ? formatKey(ends) : '—'}</Td>
+                  <Td>{s.status !== 'ended' && !s.provider_cancel_sent_at && s.next_billing_on && (
+                    <button className="btn-sm btn-ghost text-danger" onClick={() => void endNow(s.id, s.plan_snapshot.plan_name)}>Stop payments now</button>
                   )}</Td>
                 </tr>
               );
             })}
           </Table>
-          <p className="mt-2 text-xs text-muted">Members cancel themselves in the app; that keeps the 3-month commitment. “End after this month” waives the rest of it (e.g. within the 14 days, injury, moving away). Refunds are issued in the Square Dashboard.</p>
+          <p className="mt-2 text-xs text-muted">Members can cancel themselves in the app (at least 72 hours before a payment). “Stop payments now” cancels from the next payment date whatever the notice, e.g. when they ask by email or at reception.</p>
         </Section>
       )}
 
@@ -251,6 +268,9 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
               <Td>
                 {p.status === 'pending' && <button className="btn-sm btn-ghost text-danger" onClick={() => void cancelCheckout(p)}>Cancel checkout</button>}
                 {p.review_reason && <button className="btn-sm btn-ghost" onClick={() => void resolveReview(p)}>Mark reviewed</button>}
+                {p.status === 'succeeded' && p.provider === 'square' && p.amount_cents > 0 && (
+                  <button className="btn-sm btn-ghost" onClick={() => void refund(p)}>Refund</button>
+                )}
               </Td>
             </tr>
           ))}

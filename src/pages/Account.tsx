@@ -10,6 +10,7 @@ import { cancellationOutcome, cutoffLabel, DEFAULT_POLICY } from '../domain/book
 import { fmt, localDateKey } from '../domain/time';
 import { validDob } from '../domain/profile';
 import { MembershipCard } from '../components/MembershipCard';
+import { manageSubscription } from '../lib/payments';
 import { BirthdayCard } from '../components/BirthdayCard';
 import { SubscriptionCard } from '../components/SubscriptionCard';
 import { OutOfClassesCard } from '../components/OutOfClasses';
@@ -59,6 +60,7 @@ export default function Account() {
     setBusy(true);
     try {
       await api.resume(m.id);
+      if (m.subscription_id) await manageSubscription('sync_billing', m.subscription_id).catch(() => {});
       toast('Pause ended. Welcome back!');
       await data.reload();
     } catch (e) {

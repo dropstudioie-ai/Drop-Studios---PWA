@@ -84,15 +84,15 @@ export function TermsContent({ rules }: { rules: Rules }) {
         </ul>
         <h3>Monthly memberships</h3>
         <ul>
-          <li><strong>Billing.</strong> Monthly memberships are charged every month, on the same day of the month as your first payment (or the last day of a shorter month), to the card you pay with. The card is stored securely by Square for these payments.</li>
+          <li><strong>Length and billing.</strong> A monthly membership lasts 3 months. You pay once a month, on the same day of the month as your first payment (or the last day of a shorter month), to the card you pay with: 3 payments in total. The card is stored securely by Square for these payments. After the third month the membership ends; it does not renew automatically.</li>
           <li><strong>Classes.</strong> Each paid month gives you the number of classes shown on your plan. They are added when that month’s payment goes through.</li>
-          <li><strong>Unused classes.</strong> On Single Style, Multi-Style and Committed, classes you don’t use expire at the end of each billing month and don’t carry over. On All In, unused classes roll over to the following month until the end of your current 3-month period; anything left then expires. A new 3-month period starts with a fresh monthly allowance.</li>
-          <li><strong>Minimum term.</strong> Every monthly membership has a minimum term of 3 months (3 monthly payments). The total of the minimum term is shown before you buy.</li>
-          <li><strong>Automatic renewal.</strong> At the end of each 3-month period your membership renews for another 3 months at the same monthly price, unless you have cancelled. We remind you by email at least 7 days before it renews.</li>
-          <li><strong>Cancelling.</strong> You can cancel at any time in My Membership. Your membership then stops at the end of your current 3-month period: you pay the remaining monthly payments of that period, keep receiving your classes until then, and it does not renew. You can also contact us at {STUDIO.email}.</li>
-          <li><strong>Failed payments.</strong> If a monthly payment fails, no classes are added for that month until it is paid. Square emails you a link to pay. Your other obligations under the minimum term continue.</li>
-          <li><strong>Pausing.</strong> Monthly memberships can’t be paused.</li>
-          <li><strong>Price changes.</strong> The monthly price is fixed for your membership. If we change our prices, they apply to new memberships only.</li>
+          <li><strong>Unused classes.</strong> On Single Style, Multi-Style and Committed, classes you don’t use expire at the end of each billing month and don’t carry over. On All In, unused classes roll over to the following month until the end of your 3 months; anything left then expires.</li>
+          <li><strong>Cancelling.</strong> You can cancel at any time with no penalty: in My Membership, by emailing {STUDIO.email}, at reception, or through your bank. If you cancel at least 72 hours before your next payment, no further payments are taken. If you cancel later, that payment is still taken and your membership ends after that month. You keep your classes until the end of the month you’ve paid for.</li>
+          <li><strong>Pausing.</strong> If you pause your membership, your next payment date (and the end of your membership) moves back by the number of paused days.</li>
+          <li><strong>Upgrading.</strong> Once you’ve used your classes for the month, you can upgrade to a plan with more classes. Your current membership stops (no further payments for it) and the new one starts straight away with its own 3 months.</li>
+          <li><strong>Failed payments.</strong> If a monthly payment fails, no classes are added for that month until it is paid. Square emails you a link to pay.</li>
+          <li><strong>Loyalty reward.</strong> If you complete all 3 months and then sign up for a monthly membership again, we add 3 free classes that you can use for any class within 7 days.</li>
+          <li><strong>Price changes.</strong> The monthly price is fixed for your membership. Price changes apply to new memberships only.</li>
         </ul>
         <h3>All memberships</h3>
         <ul>
@@ -124,7 +124,7 @@ export function TermsContent({ rules }: { rules: Rules }) {
       <section>
         <h2>5. Pausing your membership</h2>
         <ul>
-          <li>Monthly memberships can’t be paused. The following applies to the Intro Offer and other one-off memberships.</li>
+          <li>Pausing a monthly membership also moves your next payment date back by the paused days.</li>
           <li>You can pause an active membership for up to {months} months ({rules.max_pause_days_per_year} days) per calendar year. Each pause must be at least {rules.min_pause_days} days.</li>
           <li>Your expiry date moves back by the number of paused days.</li>
           <li>You can’t book classes during a pause, and a pause can’t include dates you’ve already booked.</li>
@@ -153,7 +153,7 @@ export function TermsContent({ rules }: { rules: Rules }) {
       <section>
         <h2>8. Your right to cancel a purchase</h2>
         <ul>
-          <li>You can cancel a membership bought online within <strong>14 days</strong> of buying it by emailing {STUDIO.email}. For a monthly membership, the 14 days start from your first payment; cancelling within them ends the membership without the minimum term.</li>
+          <li>You can cancel a membership bought online within <strong>14 days</strong> of buying it by emailing {STUDIO.email}. For a monthly membership, the 14 days start from your first payment.</li>
           <li>By buying, you ask us to make your membership available straight away. If you have already used classes when you cancel, we deduct their value (the price divided by the number of classes, for each class used) and refund the rest.</li>
           <li>Refunds are made to your original payment method within 14 days of your request.</li>
           <li>This right does not apply to Drop Ins or tickets, which are for a class or event on a specific date.</li>

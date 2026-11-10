@@ -1,30 +1,33 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { STUDIO } from '../config/studio';
 import { formatPrice } from '../domain/money';
 import { messageFor } from '../domain/messages';
 import { formatKey } from '../domain/time';
-import { subscriptionDates, type Subscription } from '../domain/subscription';
+import { CANCEL_NOTICE_HOURS, cancelPreview, endsOn, type Subscription } from '../domain/subscription';
 import { manageSubscription } from '../lib/payments';
 import { Notice, Sheet, Spinner, useToast } from './ui';
 
 const day = (d: string) => formatKey(d, { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
 
-/** A monthly membership: where it is in the 3-month cycle, next payment, cancelling. */
+/** A monthly membership: payment X of 3, next payment, cancelling. */
 export function SubscriptionCard({ sub, onChanged }: { sub: Subscription; onChanged: () => void }) {
   const toast = useToast();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
-  const d = subscriptionDates(sub);
   const p = sub.plan_snapshot;
   const price = formatPrice(p.price_cents, p.currency);
   const cancelling = sub.status === 'cancel_scheduled';
+  const ends = endsOn(sub);
+  const preview = cancelPreview(sub);
 
   async function run(action: 'cancel' | 'undo_cancel') {
     setBusy(true);
     try {
       const r = await manageSubscription(action, sub.id);
       toast(action === 'cancel'
-        ? `Cancelled. Your membership ends on ${day(r.ends_on ?? d.cycleEnds)} and won’t renew.`
-        : 'Great, your membership will keep renewing.');
+        ? `Cancelled. Your membership ends on ${day(r.ends_on ?? preview.endsOn ?? '')}.`
+        : 'Great, your membership continues.');
       setConfirming(false);
       onChanged();
     } catch (e) {
@@ -54,16 +57,15 @@ export function SubscriptionCard({ sub, onChanged }: { sub: Subscription; onChan
         )}
         {sub.status !== 'ended' && (
           <dl className="grid gap-3 text-sm sm:grid-cols-3">
-            <div><dt className="text-muted">This period</dt><dd className="font-semibold">Month {d.monthInCycle} of {d.commit}</dd></div>
-            {(!cancelling || d.nextBilling < (sub.cancel_effective_on ?? '')) && (
-              <div><dt className="text-muted">Next payment</dt><dd className="font-semibold">{price} on {day(d.nextBilling)}</dd></div>
-            )}
+            <div><dt className="text-muted">Payments</dt><dd className="font-semibold">{sub.periods_paid} of {sub.total_periods} paid</dd></div>
             <div>
-              <dt className="text-muted">{cancelling ? 'Ends on' : 'Renews for 3 more months on'}</dt>
-              <dd className="font-semibold">{day(cancelling ? sub.cancel_effective_on ?? d.cycleEnds : d.cycleEnds)}</dd>
+              <dt className="text-muted">Next payment</dt>
+              <dd className="font-semibold">{sub.next_billing_on ? `${price} on ${day(sub.next_billing_on)}` : 'None, all done'}</dd>
             </div>
+            {ends && <div><dt className="text-muted">Ends on</dt><dd className="font-semibold">{day(ends)}</dd></div>}
           </dl>
         )}
+        {sub.status !== 'ended' && <p className="text-xs text-muted">Pausing your membership moves your next payment back by the paused days.</p>}
 
         {sub.status !== 'ended' && !cancelling && (
           <button className="btn-ghost btn-sm text-danger" onClick={() => setConfirming(true)}>Cancel membership</button>
@@ -76,22 +78,29 @@ export function SubscriptionCard({ sub, onChanged }: { sub: Subscription; onChan
       {confirming && (
         <Sheet open onClose={() => setConfirming(false)} title="Cancel your membership?">
           <div className="space-y-4">
-            <p className="text-ink-soft">
-              Your membership has a {d.commit}-month minimum. If you cancel now, it <strong>won’t renew</strong>, and you keep dancing until the
-              end of your current {d.commit}-month period:
-            </p>
+            <p className="text-ink-soft">You can cancel any time, with no penalty. You keep your classes until the end of the month you’ve paid for.</p>
             <ul className="space-y-1 rounded-xl bg-canvas p-4 text-sm">
-              <li>Ends on <strong>{day(d.cycleEnds)}</strong></li>
-              <li>{d.paymentsLeftInCycle === 0 ? 'No more payments' : `${d.paymentsLeftInCycle} more monthly ${d.paymentsLeftInCycle === 1 ? 'payment' : 'payments'} of ${price}`}</li>
-              <li>You get your classes each month until then</li>
+              {preview.endsOn && <li>Ends on <strong>{day(preview.endsOn)}</strong></li>}
+              <li>{preview.paymentsLeft === 0
+                ? 'No more payments'
+                : `It’s less than ${CANCEL_NOTICE_HOURS} hours before your next payment, so that payment (${price}) is still taken and you get that month’s classes.`}</li>
             </ul>
-            <p className="text-xs text-muted">Just bought it? You can cancel a purchase within 14 days for a refund. Contact the studio.</p>
+            <p className="text-xs text-muted">
+              Just joined? You can cancel within 14 days for a refund if you haven’t used any classes. Contact us at {STUDIO.email} or at reception.
+            </p>
             <div className="flex gap-2">
               <button className="btn-ghost flex-1" onClick={() => setConfirming(false)}>Keep membership</button>
               <button className="btn-danger flex-1" disabled={busy} onClick={() => void run('cancel')}>{busy && <Spinner />}Yes, cancel</button>
             </div>
           </div>
         </Sheet>
+      )}
+      {sub.status === 'ended' && sub.end_reason === 'completed' && (
+        <div className="border-t border-line p-5 text-sm">
+          <p className="font-semibold">You completed your {sub.total_periods} months. 🎉</p>
+          <p className="text-ink-soft">Sign up again and get 3 free classes to use in your first 7 days.</p>
+          <Link to="/memberships" className="btn-primary btn-sm mt-3">Choose a membership</Link>
+        </div>
       )}
     </section>
   );

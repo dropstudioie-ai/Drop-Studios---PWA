@@ -79,17 +79,26 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
     case 'subscription_renewing': {
       const date = longDate(p.on);
       return {
-        subject: `Your ${p.plan_name} renews on ${date}`,
-        text: `${hi}\n\nYour ${p.plan_name} membership renews for another ${p.commitment_months} months on ${date}: ${eur(p.price_cents)} a month for ${p.class_count} classes a month.\n\nNothing to do if you'd like to keep dancing with us. If you don't want to renew, cancel in My Membership before ${date}.\n\nDrop Studios`,
+        subject: `Your next ${p.plan_name} payment is on ${date}`,
+        text: `${hi}\n\nA quick reminder: your ${p.plan_name} membership takes its next payment of ${eur(p.price_cents)} on ${date} (payment ${p.month} of ${p.of}), and your ${p.class_count} classes for the month are added straight away.\n\nWant to stop? You can cancel with no penalty in My Membership, by email or at reception, at least 72 hours before ${date}.\n\nSee you on the floor!\nDrop Studios`,
         url: '/account',
       };
     }
     case 'subscription_ending': {
       const date = longDate(p.on);
       return {
-        subject: `Your ${p.plan_name} ends on ${date}`,
-        text: `${hi}\n\nAs requested, your ${p.plan_name} membership ends on ${date} and won't renew. Make the most of your remaining classes before then!\n\nWant to keep dancing? You can choose a membership again at any time in the app.\n\nDrop Studios`,
+        subject: `Your ${p.plan_name} membership ends on ${date}`,
+        text: p.reward
+          ? `${hi}\n\nYou've danced with us for 3 months: thank you! Your ${p.plan_name} membership ends on ${date}.\n\nSign up again and, as a thank-you, we'll add 3 free classes to use in your first 7 days.\n\nDrop Studios`
+          : `${hi}\n\nYour ${p.plan_name} membership ends on ${date}. Make the most of your remaining classes before then!\n\nWant to keep dancing? You can choose a membership again at any time in the app.\n\nDrop Studios`,
         url: '/memberships',
+      };
+    }
+    case 'loyalty_reward': {
+      return {
+        subject: '🎉 3 free classes for you',
+        text: `${hi}\n\nThree months of dancing with us, and you're back for more! As a thank-you, you have 3 free classes to book any class you like in the next 7 days. They're already in your account.\n\nEnjoy!\nDrop Studios`,
+        url: '/timetable',
       };
     }
     case 'subscription_ended_unexpectedly': {

@@ -116,12 +116,13 @@ export function orderWasPaid(order: { state?: string; tenders?: unknown[] } | nu
 
 /**
  * Catalog objects for one monthly plan: a SUBSCRIPTION_PLAN and a single-phase
- * SUBSCRIPTION_PLAN_VARIATION billed MONTHLY at a static price with no end
- * (periods omitted = runs until cancelled). Body for POST /v2/catalog/batch-upsert.
+ * SUBSCRIPTION_PLAN_VARIATION billed MONTHLY at a static price for `periods`
+ * payments, after which Square completes the subscription.
+ * Body for POST /v2/catalog/batch-upsert.
  */
-export function subscriptionPlanUpsert(p: { planCode: string; planName: string; priceCents: number; currency: string }) {
+export function subscriptionPlanUpsert(p: { planCode: string; planName: string; priceCents: number; currency: string; periods: number }) {
   return {
-    idempotency_key: `drop-plan-${p.planCode}-${p.priceCents}`,
+    idempotency_key: `drop-plan-${p.planCode}-${p.priceCents}-${p.periods}`,
     batches: [{
       objects: [
         {
@@ -133,11 +134,12 @@ export function subscriptionPlanUpsert(p: { planCode: string; planName: string; 
           type: 'SUBSCRIPTION_PLAN_VARIATION',
           id: '#variation',
           subscription_plan_variation_data: {
-            name: `${p.planName} — monthly`,
+            name: `${p.planName} — monthly, ${p.periods} payments`,
             subscription_plan_id: '#plan',
             phases: [{
               cadence: 'MONTHLY',
               ordinal: 0,
+              periods: p.periods,
               pricing: { type: 'STATIC', price_money: { amount: p.priceCents, currency: p.currency.toUpperCase() } },
             }],
           },
@@ -156,7 +158,7 @@ export function subscriptionLinkRequest(
     idempotency_key: `drop-link-${p.payment_id}`,
     description: `Drop Studios ${p.payment_id}`,
     quick_pay: {
-      name: `Drop Studios — ${p.plan_name} (monthly, ${opts.commitmentMonths}-month minimum)`,
+      name: `Drop Studios — ${p.plan_name} (monthly, ${opts.commitmentMonths} payments)`,
       price_money: { amount: p.amount_cents, currency: p.currency.toUpperCase() },
       location_id: opts.locationId,
     },
@@ -212,3 +214,23 @@ export function subscriptionEvent(event: {
 
 /** Square statuses after which no more months are billed. */
 export const ENDED_SUBSCRIPTION_STATUSES = new Set(['CANCELED', 'DEACTIVATED', 'COMPLETED']);
+
+/** Body for POST /v2/subscriptions/{id}/billing-anchor (pause moved the payment day). */
+export function billingAnchorRequest(nextBillingOn: string, pendingShiftDays: number) {
+  const day = Number(nextBillingOn.slice(8, 10));
+  // Apply from the payment date Square knows (before the shift), so the change
+  // can't trigger an extra charge inside the month that's already paid.
+  const d = new Date(`${nextBillingOn}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - pendingShiftDays);
+  return { monthly_billing_anchor_date: day, effective_date: d.toISOString().slice(0, 10) };
+}
+
+/** Body for POST /v2/refunds. */
+export function refundRequest(p: { paymentId: string; squarePaymentId: string; amountCents: number; currency: string; reason: string }) {
+  return {
+    idempotency_key: `drop-refund-${p.paymentId}`,
+    payment_id: p.squarePaymentId,
+    amount_money: { amount: p.amountCents, currency: p.currency.toUpperCase() },
+    reason: p.reason.slice(0, 192),
+  };
+}

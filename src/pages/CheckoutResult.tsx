@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { Notice, Spinner } from '../components/ui';
+import { useAuth } from '../auth/AuthProvider';
+import { LoyaltyRewardPopup } from '../components/LoyaltyReward';
 
 type View = 'waiting' | 'succeeded' | 'failed' | 'timeout';
 
@@ -16,6 +18,9 @@ export function CheckoutSuccess() {
   const [isTest, setIsTest] = useState(false);
   const [isTicket, setIsTicket] = useState(false);
   const [isDropIn, setIsDropIn] = useState(false);
+  const [reward, setReward] = useState(false);
+  const { session, profile } = useAuth();
+  const uid = session?.user.id;
 
   useEffect(() => {
     if (!paymentId) return;
@@ -31,6 +36,8 @@ export function CheckoutSuccess() {
           setIsTicket(p.kind === 'ticket' || p.kind === 'drop_in');
           setIsDropIn(p.kind === 'drop_in');
           setView('succeeded');
+          // Back after completing 3 months? The loyalty reward is added with this payment.
+          if (p.kind === 'membership' && uid) api.hasRecentReward(uid).then((r) => !cancelled && setReward(r)).catch(() => {});
           return;
         }
         if (p && ['failed', 'cancelled'].includes(p.status)) {
@@ -43,7 +50,7 @@ export function CheckoutSuccess() {
     };
     void tick();
     return () => { cancelled = true; };
-  }, [paymentId]);
+  }, [paymentId, uid]);
 
   return (
     <div className="container-page max-w-lg py-12 text-center">
@@ -60,6 +67,7 @@ export function CheckoutSuccess() {
           <h1 className="mt-4 text-3xl font-black">You’re in!</h1>
           <p className="mt-2 text-ink-soft">{isDropIn ? 'Your Drop In class is booked. It’s in your upcoming bookings.' : isTicket ? 'Your ticket is confirmed. It’s in your upcoming bookings.' : 'Your membership is ready. Time to book your first class.'}</p>
           {isTest && <div className="mt-4 text-left"><Notice tone="test"><strong>TEST purchase.</strong> No real payment was taken.</Notice></div>}
+          {reward && <LoyaltyRewardPopup name={profile?.full_name?.split(' ')[0] ?? ''} onClose={() => setReward(false)} />}
           <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
             <Link to="/timetable" className="btn-primary">Book a class</Link>
             <Link to="/account" className="btn-outline">My Membership</Link>

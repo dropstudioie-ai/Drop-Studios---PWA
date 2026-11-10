@@ -88,7 +88,7 @@ export function MembershipCard({ m, styles, reminderDays, onPause, onResume, bus
         <div className="mt-4 flex gap-2">
           {currentOrNext
             ? onResume && <button className="btn-outline btn-sm" disabled={busy} onClick={onResume}>{currentOrNext.starts_on <= today ? 'End pause now' : 'Cancel scheduled pause'}</button>
-            : onPause && !m.subscription_id && m.classes_remaining > 0 && <button className="btn-outline btn-sm" disabled={busy} onClick={onPause}>Pause membership</button>}
+            : onPause && m.classes_remaining > 0 && <button className="btn-outline btn-sm" disabled={busy} onClick={onPause}>Pause membership</button>}
         </div>
       )}
     </article>

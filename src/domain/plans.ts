@@ -28,15 +28,15 @@ export interface MembershipPlan {
 
 export const isMonthly = (p: Pick<MembershipPlan, 'billing_interval'>) => p.billing_interval === 'monthly';
 
-/** Total of the initial commitment (e.g. €79 × 3 months = €237). */
-export const commitmentTotalCents = (p: Pick<MembershipPlan, 'price_cents' | 'commitment_months'>) =>
-  p.price_cents * (p.commitment_months ?? 1);
+/** "3 monthly payments, then it stops." */
+export const termLabel = (p: Pick<MembershipPlan, 'commitment_months'>) =>
+  `${p.commitment_months ?? 3} monthly payments, then it stops`;
 
 /** What happens to unused classes, in plain words. */
 export function creditRule(p: Pick<MembershipPlan, 'billing_interval' | 'credit_rollover' | 'commitment_months' | 'validity_days'>): string {
   if (!isMonthly(p)) return `Unused classes expire ${durationLabel(p.validity_days)} after activation.`;
   return p.credit_rollover
-    ? `Unused classes roll over to the next month, all through your ${p.commitment_months}-month cycle. Anything left expires when the cycle ends.`
+    ? `Unused classes roll over to the next month, all through your ${p.commitment_months ?? 3} months. Anything left expires when the membership ends.`
     : 'Unused classes expire at the end of each billing month. No rollover.';
 }
 

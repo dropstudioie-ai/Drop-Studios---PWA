@@ -2,9 +2,10 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useAsync } from '../lib/useAsync';
 import { useAuth } from '../auth/AuthProvider';
-import { classesLabel, commitmentTotalCents, durationLabel, isMonthly, pricePerClass, sortPlans, styleAccessLabel, type MembershipPlan } from '../domain/plans';
+import { classesLabel, durationLabel, isMonthly, pricePerClass, sortPlans, styleAccessLabel, type MembershipPlan } from '../domain/plans';
 import { PlanCard } from '../components/PlanCard';
 import { MembershipTerms } from '../components/Terms';
+import { isLive } from '../domain/subscription';
 import { EmptyState, ErrorNotice, PageSpinner } from '../components/ui';
 import type { DanceStyle } from '../api/types';
 import { formatPrice } from '../domain/money';
@@ -16,6 +17,9 @@ export default function Memberships() {
   const settings = useAsync(() => api.settings(), []);
   const styles = useAsync(() => api.styles(), []);
   const firstTime = useAsync(async () => (session ? api.isFirstTimeCustomer() : true), [session?.user.id]);
+  // A member with a monthly membership can only move up (upgrade).
+  const current = useAsync(async () => (session ? (await api.mySubscriptions(session.user.id)).find(isLive) ?? null : null), [session?.user.id]);
+  const live = current.data ?? null;
 
   const all = plans.data ? sortPlans(plans.data) : [];
   const intro = all.filter((p) => p.first_time_only);
@@ -35,21 +39,35 @@ export default function Memberships() {
       {plans.loading ? <PageSpinner /> : plans.error ? <ErrorNotice error={plans.error} onRetry={plans.reload} /> :
         !all.length ? <div className="mt-8"><EmptyState title="No memberships available right now">Please check back soon.</EmptyState></div> : (
           <>
-            {intro.map((p) => (
+            {!live && intro.map((p) => (
               <IntroOffer key={p.id} plan={p} disabled={firstTime.data === false} onSelect={select} />
             ))}
+
+            {live && (
+              <div className="mx-auto mt-8 max-w-3xl rounded-2xl bg-brand-50 p-4 text-center text-brand-900">
+                You’re on <strong>{live.plan_snapshot.plan_name}</strong>. Used this month’s classes? <strong>Upgrade</strong> to a bigger plan below:
+                your current membership stops and the new one starts today.
+              </div>
+            )}
 
             <section className="mt-10" aria-labelledby="memberships-h">
               <h2 id="memberships-h" className="text-center font-display text-2xl font-black uppercase tracking-tight">Memberships</h2>
               {monthly.length > 0 && (
-                <p className="mt-1 text-center text-ink-soft">Billed monthly · {monthly[0].commitment_months}-month minimum · renews every {monthly[0].commitment_months} months unless cancelled</p>
+                <p className="mx-auto mt-1 max-w-2xl text-center text-ink-soft">
+                  A {monthly[0].commitment_months ?? 3}-month membership, paid monthly: your classes renew every month for {monthly[0].commitment_months ?? 3} months, then it stops.
+                  Cancel any time with no penalty, in the app, by email or at reception.
+                </p>
               )}
               <div className="mt-8 grid items-stretch gap-5 sm:grid-cols-2 lg:grid-cols-4">
-                {memberships.map((plan) => <PlanCard key={plan.id} plan={plan} onSelect={select} />)}
+                {memberships.map((plan) => (
+                  <PlanCard key={plan.id} plan={plan} onSelect={select}
+                    disabledReason={live && isMonthly(plan) && plan.price_cents <= live.plan_snapshot.price_cents
+                      ? (plan.name === live.plan_snapshot.plan_name ? 'Your current membership.' : 'Not an upgrade on your current membership.')
+                      : null} />
+                ))}
               </div>
             </section>
 
-            {monthly.length > 0 && <CommitmentTable plans={monthly} />}
           </>
         )}
 
@@ -90,34 +108,6 @@ function IntroOffer({ plan, disabled, onSelect }: { plan: MembershipPlan; disabl
           </button>
         </div>
       </div>
-    </section>
-  );
-}
-
-/** "What you commit to": monthly price and the initial 3-month total. */
-function CommitmentTable({ plans }: { plans: MembershipPlan[] }) {
-  const months = plans[0].commitment_months ?? 3;
-  return (
-    <section className="card mx-auto mt-10 max-w-3xl overflow-hidden" aria-labelledby="commitment-h">
-      <div className="p-6 pb-3">
-        <h2 id="commitment-h" className="text-lg font-extrabold">Your first {months} months at a glance</h2>
-        <p className="mt-1 text-sm text-muted">Every membership starts with a {months}-month minimum, billed monthly. It then renews for another {months} months unless you cancel.</p>
-      </div>
-      <table className="w-full text-left text-sm">
-        <thead className="bg-canvas text-xs uppercase tracking-wide text-muted">
-          <tr><th className="px-6 py-2.5">Membership</th><th className="px-3 py-2.5 text-right">Monthly price</th><th className="hidden px-3 py-2.5 text-right sm:table-cell">Classes / month</th><th className="px-6 py-2.5 text-right">Initial {months}-month total</th></tr>
-        </thead>
-        <tbody className="divide-y divide-line">
-          {plans.map((p) => (
-            <tr key={p.id}>
-              <td className="px-6 py-3 font-semibold">{p.name}{p.credit_rollover && <span className="chip ml-2 bg-brand-50 text-brand-700">Rollover</span>}</td>
-              <td className="px-3 py-3 text-right tabular-nums">{formatPrice(p.price_cents, p.currency)}</td>
-              <td className="hidden px-3 py-3 text-right tabular-nums sm:table-cell">{p.class_count}</td>
-              <td className="px-6 py-3 text-right font-bold tabular-nums">{formatPrice(commitmentTotalCents(p), p.currency)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </section>
   );
 }
