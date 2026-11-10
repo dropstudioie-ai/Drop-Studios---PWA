@@ -61,5 +61,7 @@ Deno.test('monthly membership messages: failed payment, next payment, ending and
   const ending = render({ kind: 'subscription_ending', full_name: 'Aoife Byrne', payload: { plan_name: 'All In', on: '2027-02-10', reward: true } })!;
   assertStringIncludes(ending.text, '3 free classes');
   const reward = render({ kind: 'loyalty_reward', full_name: 'Aoife Byrne', payload: { classes: 3, days: 7 } })!;
+  assertEquals(reward.subject, "Aoife, you've found your rhythm! 💃");
+  assertStringIncludes(reward.text, "To celebrate 3 months dancing at Drop, we've added 3 free classes to your account. Book any class you like in the next 7 days. Enjoy!");
   assertEquals(reward.url, '/timetable');
 });

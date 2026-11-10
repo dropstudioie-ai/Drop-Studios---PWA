@@ -6,7 +6,7 @@ import { Link } from 'react-router-dom';
  */
 export const rewardMessage = (name: string) => ({
   title: `${name ? `${name}, you've` : "You've"} found your rhythm! 💃`,
-  body: 'To celebrate 3 months dancing at Drop, we’ve added 3 free classes to your account. Book any class you like in the next 7 days, on top of your new membership. Enjoy!',
+  body: 'To celebrate 3 months dancing at Drop, we’ve added 3 free classes to your account. Book any class you like in the next 7 days. Enjoy!',
 });
 
 export function LoyaltyRewardPopup({ name, onClose }: { name: string; onClose: () => void }) {

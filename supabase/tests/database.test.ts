@@ -1214,6 +1214,24 @@ run('database: plans, booking, allowances, pauses, security', () => {
       expect((await db.query(`select count(*)::int n from memberships where user_id = $1 and plan_name like 'Loyalty reward%'`, [c])).rows[0].n).toBe(1);
     });
 
+    it('the reward comes every time a member completes 3 months and signs up again, and its classes can be booked', async () => {
+      const { c, subId } = await subscribe('multi-5');
+      const complete = (id: string) => db.query(`update member_subscriptions set periods_paid = 3, next_billing_on = null, status = 'ended', end_reason = 'completed' where id = $1`, [id]);
+      const rewards = async () => (await db.query(`select id, classes_remaining from memberships where user_id = $1 and plan_name like 'Loyalty reward%' order by created_at`, [c])).rows;
+      await complete(subId);
+      const second = await subscribe('multi-5', c);
+      expect(await rewards()).toHaveLength(1);
+      await complete(second.subId);
+      await subscribe('multi-8', c);
+      const all = await rewards();
+      expect(all.map((r) => r.classes_remaining)).toEqual([3, 3]);
+      // The reward classes really work: book a class with them.
+      const s = await makeSession({ style: 'heels', startsInMinutes: 24 * 60 });
+      const r = await book(c, s, all[1].id);
+      expect(r.classes_remaining).toBe(2);
+      expect((await db.query(`select balance_after from credit_transactions where membership_id = $1 and kind = 'booking'`, [all[1].id])).rows[0].balance_after).toBe(2);
+    });
+
     it('no reward for a membership cancelled before its 3 payments', async () => {
       const { c, subId } = await subscribe('multi-5');
       await db.query(`update member_subscriptions set status = 'ended', end_reason = 'cancelled' where id = $1`, [subId]);

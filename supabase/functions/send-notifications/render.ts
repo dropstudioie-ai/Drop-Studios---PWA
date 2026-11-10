@@ -95,9 +95,10 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
       };
     }
     case 'loyalty_reward': {
+      const first = n.full_name?.split(' ')[0] ?? '';
       return {
-        subject: '🎉 3 free classes for you',
-        text: `${hi}\n\nThree months of dancing with us, and you're back for more! As a thank-you, you have 3 free classes to book any class you like in the next 7 days. They're already in your account.\n\nEnjoy!\nDrop Studios`,
+        subject: `${first ? `${first}, you've` : "You've"} found your rhythm! 💃`,
+        text: `${first ? `${first}, you've` : "You've"} found your rhythm! 💃\n\nTo celebrate 3 months dancing at Drop, we've added 3 free classes to your account. Book any class you like in the next 7 days. Enjoy!\n\nDrop Studios`,
         url: '/timetable',
       };
     }
