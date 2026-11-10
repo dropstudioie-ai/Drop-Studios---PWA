@@ -61,13 +61,26 @@ async function ourSubscription(db: SupabaseClient, cfg: SquareConfig | null, squ
     return byCustomer.id as string;
   }
 
-  // The first month paid without our checkout order being reported: match the
-  // member by email to their unpaid monthly checkout and complete it now.
-  if (!firstInvoice) return null;
+  // Square doesn't always put the customer on the checkout payment, so match
+  // the member by the customer's email: their newest monthly membership that
+  // isn't linked to Square yet.
   const email = await customerEmail(cfg, sq.customer_id);
   if (!email) return null;
   const { data: profile } = await db.from('profiles').select('id').ilike('email', email).maybeSingle();
   if (!profile) return null;
+  const { data: unlinked } = await db.from('member_subscriptions').select('id, initial_payment_id')
+    .eq('user_id', profile.id).is('provider_subscription_id', null).neq('status', 'ended')
+    .order('created_at', { ascending: false }).limit(1).maybeSingle();
+  if (unlinked && !ENDED_SUBSCRIPTION_STATUSES.has(sq.status ?? '')) {
+    const { data } = await db.rpc('link_provider_subscription', { p_payment_id: unlinked.initial_payment_id, p_provider_subscription_id: squareSubId, p_provider_customer_id: sq.customer_id });
+    if (sq.card_id) await db.from('member_subscriptions').update({ provider_card_id: sq.card_id }).eq('id', unlinked.id);
+    await sendCancelIfDue(db, cfg, unlinked.id, data?.send_provider_cancel);
+    return unlinked.id as string;
+  }
+
+  // The first month paid without our checkout order being reported: complete
+  // the member's unpaid monthly checkout now.
+  if (!firstInvoice) return null;
   const { data: pending } = await db.from('payments').select('id').eq('user_id', profile.id).eq('provider', 'square')
     .eq('kind', 'membership').eq('status', 'pending').eq('amount_cents', firstInvoice.amountCents)
     .contains('plan_snapshot', { billing_interval: 'monthly' }).order('created_at', { ascending: false }).limit(1).maybeSingle();
