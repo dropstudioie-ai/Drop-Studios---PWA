@@ -1,3 +1,4 @@
+import type { Subscription } from '../domain/subscription';
 import { supabase, AppError, errorCode } from '../lib/supabase';
 import { messageFor } from '../domain/messages';
 import type {
@@ -75,6 +76,14 @@ export const api = {
       await supabase.from('bookings').select(`*, session:class_sessions(${SESSION_SELECT}), payment:payments!bookings_payment_id_fkey(kind)`)
         .eq('user_id', userId).order('booked_at', { ascending: false }).limit(200),
     ) as Booking[],
+
+  /** Monthly memberships. Empty (not an error) on a database without them yet. */
+  mySubscriptions: async (userId: string): Promise<Subscription[]> => {
+    const { data, error } = await supabase.from('member_subscriptions')
+      .select('id, status, anchor_date, last_period_index, cancel_effective_on, provider_cancel_sent_at, plan_snapshot, created_at')
+      .eq('user_id', userId).order('created_at', { ascending: false });
+    return error ? [] : (data as Subscription[]);
+  },
 
   myMemberships: async (userId: string) =>
     unwrap(

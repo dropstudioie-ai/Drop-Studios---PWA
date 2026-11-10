@@ -5,7 +5,8 @@ import { useAsync } from '../lib/useAsync';
 import { checkout, paymentsMode } from '../lib/payments';
 import { messageFor } from '../domain/messages';
 import { formatPrice } from '../domain/money';
-import { classesLabel, styleAccessLabel, validityLabel } from '../domain/plans';
+import type { MembershipPlan } from '../domain/plans';
+import { classesLabel, commitmentTotalCents, creditRule, isMonthly, ordinalDay, styleAccessLabel, validityLabel } from '../domain/plans';
 import { computeExpiry, lastValidDay } from '../domain/membership';
 import { formatKey } from '../domain/time';
 import { MembershipTerms } from '../components/Terms';
@@ -29,6 +30,7 @@ export default function Checkout() {
   // Renewing a single-style plan keeps the same style (it can still be changed here).
   const [styleId, setStyleId] = useState<string | null>(search.get('style'));
   const [agreed, setAgreed] = useState(false);
+  const [agreedRecurring, setAgreedRecurring] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Shown when this checkout replaced an unfinished one, before going to Square.
@@ -56,7 +58,8 @@ export default function Checkout() {
     : null;
 
   const needsPhoto = !profile?.avatar_path;
-  const canPay = !busy && agreed && !introBlocked && !needsPhoto && (!needsStyle || styleId);
+  const monthly = isMonthly(plan);
+  const canPay = !busy && agreed && (!monthly || agreedRecurring) && !introBlocked && !needsPhoto && (!needsStyle || styleId);
 
   async function pay() {
     setBusy(true);
@@ -94,17 +97,20 @@ export default function Checkout() {
         </Notice></div>
       )}
 
-      <section className="card mt-6 p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            {plan.display_label && <span className="chip mb-2 bg-accent-500 text-ink">{plan.display_label}</span>}
-            <h2 className="text-xl font-extrabold">{plan.name}</h2>
-            <p className="mt-1 font-semibold text-brand-700">{classesLabel(plan.class_count)} · {styleAccessLabel(plan.style_access)}</p>
-            <p className="mt-1 text-sm text-ink-soft">{validityLabel(plan.validity_days)}</p>
-            {expiryPreview && <p className="mt-1 text-sm text-ink-soft">If you buy today, it’s valid until <strong>{expiryPreview}</strong>.</p>}
+      {monthly ? <MonthlySummary plan={plan} /> : (
+        <section className="card mt-6 p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              {plan.display_label && <span className="chip mb-2 bg-accent-500 text-ink">{plan.display_label}</span>}
+              <h2 className="text-xl font-extrabold">{plan.name}</h2>
+              <p className="mt-1 font-semibold text-brand-700">{classesLabel(plan.class_count)} · {styleAccessLabel(plan.style_access)}</p>
+              <p className="mt-1 text-sm text-ink-soft">{validityLabel(plan.validity_days)}</p>
+              {expiryPreview && <p className="mt-1 text-sm text-ink-soft">If you buy today, it’s valid until <strong>{expiryPreview}</strong>.</p>}
+              <p className="mt-1 text-sm text-ink-soft">One-off payment. No subscription, never renews automatically.</p>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {needsPhoto && <div className="mt-4"><Notice tone="warn">{messageFor('profile_photo_required')} <Link className="font-semibold underline" to="/account#photo">Add your photo</Link></Notice></div>}
       {introBlocked && <div className="mt-4"><Notice tone="warn">The Intro Offer is for first-time customers only. <Link className="font-semibold underline" to="/memberships">See other memberships</Link></Notice></div>}
@@ -129,7 +135,17 @@ export default function Checkout() {
 
       <section className="card mt-4 p-5">
         <h2 className="text-lg font-extrabold">Before you buy</h2>
-        <div className="mt-3"><MembershipTerms settings={settings} compact /></div>
+        <div className="mt-3"><MembershipTerms settings={settings} compact monthly={monthly} oneOff={!monthly} /></div>
+        {monthly && (
+          <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl bg-brand-50 p-3 text-sm">
+            <input type="checkbox" className="mt-0.5 h-5 w-5 accent-brand-600" checked={agreedRecurring} onChange={(e) => setAgreedRecurring(e.target.checked)} />
+            <span>
+              I understand this is a <strong>monthly membership</strong>: {formatPrice(plan.price_cents, plan.currency)} is charged to my card today and then
+              every month, with a <strong>{plan.commitment_months}-month minimum ({formatPrice(commitmentTotalCents(plan), plan.currency)} in total)</strong>.
+              It <strong>renews automatically for another {plan.commitment_months} months</strong> unless I cancel in the app before the renewal date.
+            </span>
+          </label>
+        )}
         <label className="mt-4 flex cursor-pointer items-start gap-3 text-sm">
           <input type="checkbox" className="mt-0.5 h-5 w-5 accent-brand-600" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
           <span>
@@ -141,10 +157,14 @@ export default function Checkout() {
 
       <section className="card mt-4 p-5">
         <div className="flex items-center justify-between text-lg">
-          <span className="font-semibold">Total to pay</span>
+          <span className="font-semibold">{monthly ? 'To pay today' : 'Total to pay'}</span>
           <span className="font-display text-3xl font-black">{formatPrice(plan.price_cents, plan.currency, { forceDecimals: true })}</span>
         </div>
-        <p className="mt-1 text-right text-xs text-muted">One-off charge in euro (EUR).</p>
+        <p className="mt-1 text-right text-xs text-muted">
+          {monthly
+            ? `Then ${formatPrice(plan.price_cents, plan.currency, { forceDecimals: true })} on the ${ordinalDay(new Date())} of every month. Prices in euro (EUR).`
+            : 'One-off charge in euro (EUR).'}
+        </p>
         {alreadyPaid ? (
           <div className="mt-4 space-y-3">
             <Notice tone="success">{messageFor('earlier_payment_completed')}</Notice>
@@ -164,10 +184,44 @@ export default function Checkout() {
           {busy && <Spinner />}
           {paymentsMode === 'test'
             ? 'Complete TEST purchase'
-            : `Pay ${formatPrice(plan.price_cents, plan.currency, { forceDecimals: true })} securely`}
+            : monthly
+              ? `Start membership · ${formatPrice(plan.price_cents, plan.currency, { forceDecimals: true })} today`
+              : `Pay ${formatPrice(plan.price_cents, plan.currency, { forceDecimals: true })} securely`}
         </button>}
         {paymentsMode === 'live' && <p className="mt-2 text-center text-xs text-muted">You’ll be taken to Square’s secure checkout to pay. Card details never touch our servers.</p>}
       </section>
     </div>
+  );
+}
+
+/** Everything a monthly member commits to, before they pay. */
+function MonthlySummary({ plan }: { plan: MembershipPlan }) {
+  const months = plan.commitment_months ?? 3;
+  const rows: [string, string][] = [
+    ['Monthly price', `${formatPrice(plan.price_cents, plan.currency, { forceDecimals: true })} / month`],
+    ['Classes', `${classesLabel(plan.class_count)} every billing month · ${styleAccessLabel(plan.style_access)}`],
+    ['Minimum commitment', `${months} months`],
+    [`Initial ${months}-month total`, formatPrice(commitmentTotalCents(plan), plan.currency, { forceDecimals: true })],
+    ['Billing', `Monthly, on the ${ordinalDay(new Date())} of each month, to the card you pay with`],
+    ['Unused classes', creditRule(plan)],
+    ['Renewal', `Renews automatically for another ${months} months unless you cancel. We remind you a week before.`],
+    ['Cancelling', `Cancel any time in My Membership. You keep your classes and pay until the end of your current ${months}-month period; it then stops.`],
+  ];
+  return (
+    <section className="card mt-6 overflow-hidden" aria-labelledby="summary-h">
+      <div className="bg-ink p-5 text-white">
+        {plan.display_label && <span className="chip mb-2 bg-brand-500 text-white">{plan.display_label}</span>}
+        <h2 id="summary-h" className="font-display text-2xl font-black uppercase tracking-tight">{plan.name}</h2>
+        <p className="mt-1 text-white/75">Monthly membership · {months}-month minimum</p>
+      </div>
+      <dl className="divide-y divide-line">
+        {rows.map(([k, v]) => (
+          <div key={k} className="grid gap-1 px-5 py-3 sm:grid-cols-[11rem_1fr]">
+            <dt className="text-sm font-semibold text-muted">{k}</dt>
+            <dd className="text-sm text-ink">{v}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   );
 }

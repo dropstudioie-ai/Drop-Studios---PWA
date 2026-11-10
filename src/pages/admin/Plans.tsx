@@ -48,9 +48,9 @@ export default function AdminPlans() {
                 <Td><span className="font-semibold">{p.name}</span>{p.display_label && <span className="chip ml-1 bg-accent-50">{p.display_label}</span>}{p.is_most_popular && <span className="chip ml-1 bg-brand-50">Most Popular</span>}</Td>
                 <Td className="tabular-nums">{formatPrice(p.price_cents, p.currency)}</Td>
                 <Td>{classesLabel(p.class_count)}</Td>
-                <Td>{durationLabel(p.validity_days)}</Td>
+                <Td>{p.billing_interval === 'monthly' ? `Monthly · ${p.commitment_months}-month min.` : durationLabel(p.validity_days)}</Td>
                 <Td>{styleAccessLabel(p.style_access)}{!p.all_styles && <span className="block text-xs text-muted">{d.planStyles.filter((x) => x.plan_id === p.id).length} styles</span>}</Td>
-                <Td className="text-xs">{p.first_time_only && 'First-time only. '}{d.exclusions.filter((e) => e.plan_id === p.id).length > 0 && `${d.exclusions.filter((e) => e.plan_id === p.id).length} excluded classes`}</Td>
+                <Td className="text-xs">{p.first_time_only && 'First-time only. '}{p.credit_rollover && 'Classes roll over. '}{p.highlight === 'recommended' && 'Recommended. '}{p.highlight === 'best_value' && 'Best value. '}{d.exclusions.filter((e) => e.plan_id === p.id).length > 0 && `${d.exclusions.filter((e) => e.plan_id === p.id).length} excluded classes`}</Td>
                 <Td>{p.is_active ? 'On sale' : 'Disabled'}</Td>
                 <Td><button className="btn-sm btn-ghost" onClick={() => setEditing(p)}>Edit</button></Td>
               </tr>
@@ -138,7 +138,32 @@ function PlanSheet({ value, styles, templates, selectedStyles, excluded, onClose
             ))}
           </div>
         )}
-        <label className="col-span-2 flex items-center gap-2 text-sm"><input type="checkbox" className="h-5 w-5" checked={f.first_time_only} onChange={(e) => set('first_time_only', e.target.checked)} />First-time customers only</label>
+        <Field label="Billing">
+          <select className="input" value={f.billing_interval ?? 'one_off'} onChange={(e) => {
+            const monthly = e.target.value === 'monthly';
+            setF({ ...f, billing_interval: monthly ? 'monthly' : 'one_off', commitment_months: monthly ? f.commitment_months ?? 3 : null,
+              credit_rollover: monthly ? f.credit_rollover ?? false : false, first_time_only: monthly ? false : f.first_time_only });
+          }}>
+            <option value="one_off">One-off pack</option>
+            <option value="monthly">Monthly (recurring)</option>
+          </select>
+        </Field>
+        {f.billing_interval === 'monthly' ? (
+          <Field label="Minimum commitment (months)">
+            <input className="input" type="number" min={1} max={24} value={f.commitment_months ?? 3} onChange={(e) => set('commitment_months', Number(e.target.value))} />
+          </Field>
+        ) : <div />}
+        {f.billing_interval === 'monthly' && (
+          <label className="col-span-2 flex items-center gap-2 text-sm"><input type="checkbox" className="h-5 w-5" checked={Boolean(f.credit_rollover)} onChange={(e) => set('credit_rollover', e.target.checked)} />Unused classes roll over to the next month (until the commitment period ends)</label>
+        )}
+        <Field label="Highlight">
+          <select className="input" value={f.highlight ?? ''} onChange={(e) => set('highlight', (e.target.value || null) as MembershipPlan['highlight'])}>
+            <option value="">None</option><option value="recommended">Recommended (stands out)</option><option value="best_value">Best value (dark card)</option>
+          </select>
+        </Field>
+        <Field label="Button text (optional)"><input className="input" value={f.cta_label ?? ''} onChange={(e) => set('cta_label', e.target.value || null)} placeholder="e.g. Choose Committed" /></Field>
+        {f.billing_interval !== 'monthly' && <label className="col-span-2 flex items-center gap-2 text-sm"><input type="checkbox" className="h-5 w-5" checked={f.first_time_only} onChange={(e) => set('first_time_only', e.target.checked)} />First-time customers only</label>}
+        {f.billing_interval === 'monthly' && <p className="col-span-2 text-xs text-muted">Changing the price of a monthly plan applies to new members only. Existing members keep the price they signed up at.</p>}
         <label className="col-span-2 flex items-center gap-2 text-sm"><input type="checkbox" className="h-5 w-5" checked={f.is_active} onChange={(e) => set('is_active', e.target.checked)} />On sale</label>
         <label className="col-span-2 flex items-center gap-2 text-sm"><input type="checkbox" className="h-5 w-5" checked={f.is_most_popular} onChange={(e) => set('is_most_popular', e.target.checked)} />Show “Most Popular” badge (only if backed by real sales data)</label>
         {templates.length > 0 && (

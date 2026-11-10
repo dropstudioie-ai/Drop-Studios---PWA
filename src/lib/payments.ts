@@ -43,3 +43,7 @@ export async function checkout(req: CheckoutRequest): Promise<({ redirect: strin
   const superseded = res.superseded ?? [];
   return res.url ? { redirect: res.url, superseded } : { navigate: `/checkout/success?payment_id=${res.payment_id}`, superseded };
 }
+
+/** Cancel / un-cancel a monthly membership (the server applies the 3-month commitment). */
+export const manageSubscription = (action: 'cancel' | 'undo_cancel' | 'end_now', subscriptionId: string, reason?: string) =>
+  invoke<{ ok: boolean; ends_on?: string; payments_left?: number }>('manage-subscription', { action, subscription_id: subscriptionId, reason });

@@ -71,19 +71,34 @@ export function TermsContent({ rules }: { rules: Rules }) {
 
       <section>
         <h2>3. Memberships</h2>
+        <p>We offer a one-off <strong>Intro Offer</strong> and <strong>monthly memberships</strong>. Prices are in euro and are shown, with all the conditions below, before you pay.</p>
+        <h3>Intro Offer (one-off)</h3>
         <ul>
-          <li>Memberships are prepaid class packs paid once, in euro. There is no subscription and nothing renews automatically.</li>
+          <li>The Intro Offer is for first-time customers only. It is paid once and never renews automatically.</li>
           <li>
             {rules.activation_policy === 'on_purchase'
-              ? 'A membership is activated when your payment is confirmed.'
-              : 'A membership is activated when you make your first booking with it.'}
-            {' '}It is valid for the period shown on the plan and ends at the end of its last day (Irish time).
+              ? 'It is activated when your payment is confirmed'
+              : 'It is activated when you make your first booking with it'}
+            {' '}and is valid for the period shown, ending at the end of its last day (Irish time). Classes not used by then are lost.
           </li>
-          <li>Classes not used by the expiry date are lost. Unused classes have no cash value and are not refunded, except as described in section 8.</li>
-          <li>The <strong>Intro Offer</strong> is for first-time customers only.</li>
-          <li>The <strong>Single Style</strong> plan can only be used for the dance style you choose at purchase. This can’t be changed later. Multi-style plans can be used for any eligible style.</li>
+        </ul>
+        <h3>Monthly memberships</h3>
+        <ul>
+          <li><strong>Billing.</strong> Monthly memberships are charged every month, on the same day of the month as your first payment (or the last day of a shorter month), to the card you pay with. The card is stored securely by Square for these payments.</li>
+          <li><strong>Classes.</strong> Each paid month gives you the number of classes shown on your plan. They are added when that month’s payment goes through.</li>
+          <li><strong>Unused classes.</strong> On Single Style, Multi-Style and Committed, classes you don’t use expire at the end of each billing month and don’t carry over. On All In, unused classes roll over to the following month until the end of your current 3-month period; anything left then expires. A new 3-month period starts with a fresh monthly allowance.</li>
+          <li><strong>Minimum term.</strong> Every monthly membership has a minimum term of 3 months (3 monthly payments). The total of the minimum term is shown before you buy.</li>
+          <li><strong>Automatic renewal.</strong> At the end of each 3-month period your membership renews for another 3 months at the same monthly price, unless you have cancelled. We remind you by email at least 7 days before it renews.</li>
+          <li><strong>Cancelling.</strong> You can cancel at any time in My Membership. Your membership then stops at the end of your current 3-month period: you pay the remaining monthly payments of that period, keep receiving your classes until then, and it does not renew. You can also contact us at {STUDIO.email}.</li>
+          <li><strong>Failed payments.</strong> If a monthly payment fails, no classes are added for that month until it is paid. Square emails you a link to pay. Your other obligations under the minimum term continue.</li>
+          <li><strong>Pausing.</strong> Monthly memberships can’t be paused.</li>
+          <li><strong>Price changes.</strong> The monthly price is fixed for your membership. If we change our prices, they apply to new memberships only.</li>
+        </ul>
+        <h3>All memberships</h3>
+        <ul>
+          <li>Unused classes have no cash value and are not refunded, except as described in section 8.</li>
+          <li>The <strong>Single Style</strong> membership can only be used for the dance style you choose at purchase. This can’t be changed later. Multi-style memberships can be used for any eligible style.</li>
           <li>Some classes, such as workshops and special events, are not included in memberships. The app tells you before you book.</li>
-          <li>The price, number of classes and validity are fixed when you buy. Later price changes don’t affect memberships you already have.</li>
         </ul>
       </section>
 
@@ -109,6 +124,7 @@ export function TermsContent({ rules }: { rules: Rules }) {
       <section>
         <h2>5. Pausing your membership</h2>
         <ul>
+          <li>Monthly memberships can’t be paused. The following applies to the Intro Offer and other one-off memberships.</li>
           <li>You can pause an active membership for up to {months} months ({rules.max_pause_days_per_year} days) per calendar year. Each pause must be at least {rules.min_pause_days} days.</li>
           <li>Your expiry date moves back by the number of paused days.</li>
           <li>You can’t book classes during a pause, and a pause can’t include dates you’ve already booked.</li>
@@ -137,7 +153,7 @@ export function TermsContent({ rules }: { rules: Rules }) {
       <section>
         <h2>8. Your right to cancel a purchase</h2>
         <ul>
-          <li>You can cancel a membership bought online within <strong>14 days</strong> of buying it by emailing {STUDIO.email}.</li>
+          <li>You can cancel a membership bought online within <strong>14 days</strong> of buying it by emailing {STUDIO.email}. For a monthly membership, the 14 days start from your first payment; cancelling within them ends the membership without the minimum term.</li>
           <li>By buying, you ask us to make your membership available straight away. If you have already used classes when you cancel, we deduct their value (the price divided by the number of classes, for each class used) and refund the rest.</li>
           <li>Refunds are made to your original payment method within 14 days of your request.</li>
           <li>This right does not apply to Drop Ins or tickets, which are for a class or event on a specific date.</li>

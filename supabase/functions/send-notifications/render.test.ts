@@ -50,3 +50,14 @@ Deno.test('admin is asked to review a payment made on a replaced checkout', () =
   assertStringIncludes(m.text, '€35.00 for 3-Class Intro');
   assertEquals(m.url, '/admin/customers?user=u1');
 });
+
+Deno.test('monthly membership messages: failed payment, renewal and ending', () => {
+  const failed = render({ kind: 'subscription_payment_failed', full_name: 'Aoife Byrne', payload: { plan_name: 'Committed', price_cents: 7900 } })!;
+  assertEquals(failed.subject, "We couldn't take your Committed payment");
+  assertStringIncludes(failed.text, '€79.00');
+  const renew = render({ kind: 'subscription_renewing', full_name: 'Aoife Byrne', payload: { plan_name: 'All In', price_cents: 9900, class_count: 12, commitment_months: 3, on: '2027-02-10' } })!;
+  assertEquals(renew.subject, 'Your All In renews on Wednesday, 10 February');
+  assertStringIncludes(renew.text, 'another 3 months on Wednesday, 10 February: €99.00 a month for 12 classes a month');
+  const ending = render({ kind: 'subscription_ending', full_name: 'Aoife Byrne', payload: { plan_name: 'All In', on: '2027-02-10' } })!;
+  assertEquals(ending.url, '/memberships');
+});

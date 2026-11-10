@@ -1,7 +1,7 @@
 import type { MembershipPlan } from '../domain/plans';
-import { classesLabel, planBadges, pricePerClass, styleAccessLabel, validityLabel } from '../domain/plans';
+import { classesLabel, commitmentTotalCents, creditRule, durationLabel, isMonthly, planBadges, pricePerClass, styleAccessLabel } from '../domain/plans';
 import { formatPrice } from '../domain/money';
-import { ClockIcon, LayersIcon, TargetIcon } from './icons';
+import { CheckIcon, ClockIcon, LayersIcon, TargetIcon } from './icons';
 
 interface Props {
   plan: MembershipPlan;
@@ -9,52 +9,106 @@ interface Props {
   disabledReason?: string | null;
 }
 
+/**
+ * A membership on the pricing page. Monthly plans lead with "€79 / month" and
+ * the classes per month, then the commitment, total and what happens to unused
+ * classes, so nothing important is left for the checkout to reveal.
+ */
 export function PlanCard({ plan, onSelect, disabledReason }: Props) {
-  const badges = planBadges(plan);
+  const monthly = isMonthly(plan);
   const isIntro = plan.first_time_only;
+  const bestValue = plan.highlight === 'best_value';
+  const recommended = plan.highlight === 'recommended';
+  const badges = planBadges(plan);
+  const dark = bestValue;
+
+  const frame = bestValue
+    ? 'bg-ink text-white shadow-xl ring-2 ring-brand-500'
+    : recommended
+      ? 'bg-white shadow-xl ring-2 ring-brand-600 lg:-translate-y-2'
+      : isIntro
+        ? 'bg-white ring-2 ring-accent-400'
+        : 'bg-white';
+  const soft = dark ? 'text-white/75' : 'text-ink-soft';
+  const faint = dark ? 'text-white/60' : 'text-muted';
+
   return (
-    <article
-      className={`card relative flex flex-col p-5 ${isIntro ? 'border-accent-400 ring-1 ring-accent-400' : ''}`}
-      aria-labelledby={`plan-${plan.code}`}
-    >
+    <article className={`card relative flex flex-col border-0 p-6 ${frame}`} aria-labelledby={`plan-${plan.code}`}>
       {badges.length > 0 && (
         <div className="mb-3 flex flex-wrap gap-1.5">
           {badges.map((b) => (
-            <span key={b} className={`chip ${b === 'Most Popular' ? 'bg-brand-600 text-white' : 'bg-accent-500 text-ink'}`}>{b}</span>
+            <span key={b} className={`chip uppercase tracking-wide ${
+              isIntro ? 'bg-accent-500 text-ink' : bestValue ? 'bg-brand-500 text-white' : recommended ? 'bg-brand-600 text-white' : 'bg-brand-50 text-brand-700'}`}>{b}</span>
           ))}
         </div>
       )}
-      <h3 id={`plan-${plan.code}`} className="text-base font-bold text-ink-soft">{plan.name}</h3>
 
-      <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-3">
-        <p className="font-display text-4xl font-black text-ink">{formatPrice(plan.price_cents, plan.currency)}</p>
-        <p className="whitespace-nowrap font-display text-xl font-extrabold text-brand-600">{classesLabel(plan.class_count)}</p>
+      <h3 id={`plan-${plan.code}`} className={`font-display text-xl font-black uppercase tracking-tight ${dark ? 'text-white' : 'text-ink'}`}>{plan.name}</h3>
+      {plan.short_description && <p className={`mt-1 text-sm ${soft}`}>{plan.short_description}</p>}
+
+      <div className="mt-5">
+        <p className="flex items-baseline gap-1">
+          <span className={`font-display text-5xl font-black ${dark ? 'text-white' : 'text-ink'}`}>{formatPrice(plan.price_cents, plan.currency)}</span>
+          <span className={`text-base font-semibold ${faint}`}>{monthly ? '/ month' : 'one-off'}</span>
+        </p>
+        <p className={`mt-1 font-display text-lg font-extrabold ${dark ? 'text-brand-200' : isIntro ? 'text-accent-600' : 'text-brand-600'}`}>
+          {classesLabel(plan.class_count)}{monthly ? ' every month' : ''}
+        </p>
+        <p className={`text-sm font-semibold ${faint}`}>{pricePerClass(plan)} per class</p>
       </div>
 
-      <ul className="mt-4 space-y-2 text-sm text-ink-soft">
-        <li className="flex items-center gap-2">
-          {plan.style_access === 'single'
-            ? <TargetIcon className="shrink-0 text-accent-600" width={18} height={18} />
-            : <LayersIcon className="shrink-0 text-brand-600" width={18} height={18} />}
-          <span className="font-semibold text-ink">{styleAccessLabel(plan.style_access)}</span>
-        </li>
-        <li className="flex items-center gap-2">
-          <ClockIcon className="shrink-0 text-muted" width={18} height={18} />
-          <span>{validityLabel(plan.validity_days)}</span>
-        </li>
-      </ul>
-      <p className="mt-2 text-xs text-muted">{pricePerClass(plan)} per class</p>
+      {bestValue && plan.credit_rollover && (
+        <div className="mt-4 rounded-xl bg-brand-600 p-3 text-sm">
+          <p className="font-extrabold uppercase tracking-wide">Credits roll over</p>
+          <p className="mt-0.5 text-white/85">Unused classes carry into next month, all through your {plan.commitment_months}-month cycle.</p>
+        </div>
+      )}
 
-      <div className="mt-auto pt-5">
+      <ul className={`mt-5 space-y-2.5 text-sm ${soft}`}>
+        <li className="flex gap-2">
+          {plan.style_access === 'single'
+            ? <TargetIcon className={`mt-0.5 shrink-0 ${dark ? 'text-brand-200' : 'text-accent-600'}`} width={18} height={18} />
+            : <LayersIcon className={`mt-0.5 shrink-0 ${dark ? 'text-brand-200' : 'text-brand-600'}`} width={18} height={18} />}
+          <span className={`font-semibold ${dark ? 'text-white' : 'text-ink'}`}>{styleAccessLabel(plan.style_access)}</span>
+        </li>
+        {monthly ? (
+          <>
+            <li className="flex gap-2">
+              <ClockIcon className={`mt-0.5 shrink-0 ${faint}`} width={18} height={18} />
+              <span>
+                <strong className={dark ? 'text-white' : 'text-ink'}>{plan.commitment_months}-month minimum</strong> · {formatPrice(commitmentTotalCents(plan), plan.currency)} in total, billed monthly
+              </span>
+            </li>
+            <li className="flex gap-2">
+              <CheckIcon className={`mt-0.5 shrink-0 ${dark ? 'text-brand-200' : 'text-success'}`} width={18} height={18} />
+              <span>{creditRule(plan)}</span>
+            </li>
+          </>
+        ) : (
+          <>
+            <li className="flex gap-2">
+              <ClockIcon className={`mt-0.5 shrink-0 ${faint}`} width={18} height={18} />
+              <span>Valid for {durationLabel(plan.validity_days)} after activation</span>
+            </li>
+            <li className="flex gap-2">
+              <CheckIcon className="mt-0.5 shrink-0 text-success" width={18} height={18} />
+              <span>{isIntro ? 'New customers only · ' : ''}No commitment, never renews automatically</span>
+            </li>
+          </>
+        )}
+      </ul>
+
+      <div className="mt-auto pt-6">
         <button
-          className={`${isIntro ? 'btn-accent' : 'btn-primary'} w-full whitespace-nowrap px-3`}
+          className={`${isIntro ? 'btn-accent' : 'btn-primary'} w-full px-3 uppercase tracking-wide ${bestValue ? 'bg-brand-500 hover:bg-brand-400' : ''}`}
           onClick={() => onSelect(plan)}
           disabled={Boolean(disabledReason)}
           aria-describedby={disabledReason ? `plan-${plan.code}-why` : undefined}
         >
-          {disabledReason ? 'Not available' : `Choose ${classesLabel(plan.class_count)}`}
+          {disabledReason ? 'Not available' : plan.cta_label ?? `Choose ${classesLabel(plan.class_count)}`}
         </button>
-        {disabledReason && <p id={`plan-${plan.code}-why`} className="mt-2 text-center text-xs text-muted">{disabledReason}</p>}
+        {disabledReason && <p id={`plan-${plan.code}-why`} className={`mt-2 text-center text-xs ${faint}`}>{disabledReason}</p>}
+        {monthly && !disabledReason && <p className={`mt-2 text-center text-xs ${faint}`}>Renews every {plan.commitment_months} months unless cancelled</p>}
       </div>
     </article>
   );

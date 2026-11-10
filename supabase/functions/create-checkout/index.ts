@@ -2,7 +2,8 @@
 // workshop ticket or a Drop In class. The price comes from the database
 // (create_checkout / create_ticket_checkout RPC), never from the client.
 import { adminClient, corsHeaders, dbErrorCode, json, readCheckoutBody, startCheckout, userClient } from '../_shared/http.ts';
-import { orderWasPaid, paymentLinkRequest, SQUARE_VERSION, squareBaseUrl } from '../_shared/square.ts';
+import { orderWasPaid, paymentLinkRequest, SQUARE_VERSION, squareBaseUrl, subscriptionLinkRequest } from '../_shared/square.ts';
+import { ensurePlanVariation, squareConfig } from '../_shared/squareApi.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(req) });
@@ -54,18 +55,35 @@ Deno.serve(async (req) => {
   if (payment.status === 'succeeded') return json(req, { payment_id: payment.payment_id, status: 'succeeded' });
   if (payment.status !== 'pending') return json(req, { error: 'payment_not_pending' }, 409);
 
-  // The idempotency key is derived from our payment id, so a retry gets the
-  // same Square link back: one payment record can never be paid twice.
-  const res = await fetch(`${squareApi}/v2/online-checkout/payment-links`, {
-    method: 'POST',
-    headers: squareHeaders,
-    body: JSON.stringify(paymentLinkRequest(payment, {
+  // Monthly memberships are sold as a Square subscription (card saved and
+  // charged each month by Square); everything else is a one-off payment.
+  let linkBody: unknown;
+  if (body.kind !== 'ticket' && payment.billing_interval === 'monthly') {
+    const cfg = squareConfig();
+    const { data: plan } = await adminClient().from('membership_plans')
+      .select('id, code, name, price_cents, currency').eq('id', payment.plan_id).maybeSingle();
+    const variationId = cfg && plan ? await ensurePlanVariation(adminClient(), cfg, { ...plan, price_cents: payment.amount_cents }) : null;
+    if (!variationId) return json(req, { error: 'payment_provider_error' }, 502);
+    linkBody = subscriptionLinkRequest(payment, {
+      locationId, siteUrl, variationId, buyerEmail: auth.user.email,
+      supportEmail: Deno.env.get('SUPPORT_EMAIL'), commitmentMonths: payment.commitment_months ?? 3,
+    });
+  } else {
+    linkBody = paymentLinkRequest(payment, {
       locationId,
       siteUrl,
       buyerEmail: auth.user.email,
       kind: body.kind === 'ticket' ? (payment.kind === 'drop_in' ? 'drop_in' : 'ticket') : 'membership',
       supportEmail: Deno.env.get('SUPPORT_EMAIL'),
-    })),
+    });
+  }
+
+  // The idempotency key is derived from our payment id, so a retry gets the
+  // same Square link back: one payment record can never be paid twice.
+  const res = await fetch(`${squareApi}/v2/online-checkout/payment-links`, {
+    method: 'POST',
+    headers: squareHeaders,
+    body: JSON.stringify(linkBody),
   });
   const result = await res.json().catch(() => null);
   const link = result?.payment_link;

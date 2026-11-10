@@ -10,6 +10,7 @@ interface RenewableMembership {
   state: string;
   selected_style_id: string | null;
   purchase: { plan_code: string; first_time_only: boolean } | null;
+  subscription_id?: string | null;
 }
 
 export interface RenewalOffer {
@@ -31,8 +32,11 @@ export function renewalOffer(memberships: RenewableMembership[], plans: Membersh
   const usable = memberships.some((m) => m.admin_status === 'valid' && m.classes_remaining > 0
     && ['active', 'pending_activation', 'paused'].includes(m.state));
   if (usable) return null;
+  // Monthly members get new classes with their next payment; renewing early
+  // would start a second subscription.
+  if (memberships.some((m) => m.subscription_id && m.state !== 'expired')) return null;
   const used = memberships
-    .filter((m) => m.state === 'used_up' && m.admin_status === 'valid' && (!m.expires_at || new Date(m.expires_at) > now))
+    .filter((m) => !m.subscription_id && m.state === 'used_up' && m.admin_status === 'valid' && (!m.expires_at || new Date(m.expires_at) > now))
     .sort((a, b) => (b.expires_at ?? '').localeCompare(a.expires_at ?? ''))[0];
   if (!used) return null;
   const plan = used.purchase && !used.purchase.first_time_only

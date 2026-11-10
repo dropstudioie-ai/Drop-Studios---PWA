@@ -76,21 +76,21 @@ export async function verifySquareSignature(
 interface Money { amount?: number; currency?: string }
 
 export type WebhookAction =
-  | { kind: 'fulfil'; orderId: string; squarePaymentId: string; amountCents: number; currency: string }
+  | { kind: 'fulfil'; orderId: string; squarePaymentId: string; amountCents: number; currency: string; customerId: string | null }
   | { kind: 'refund'; squarePaymentId: string; refundId: string; amountCents: number; currency: string }
   | { kind: 'ignore'; reason: string };
 
 /** Decides what a Square event means for the app. */
 export function webhookAction(event: {
   type?: string;
-  data?: { object?: { payment?: { id?: string; order_id?: string; status?: string; amount_money?: Money }; refund?: { id?: string; payment_id?: string; status?: string; amount_money?: Money } } };
+  data?: { object?: { payment?: { id?: string; order_id?: string; status?: string; amount_money?: Money; customer_id?: string }; refund?: { id?: string; payment_id?: string; status?: string; amount_money?: Money } } };
 }): WebhookAction {
   const type = event.type ?? '';
   if (type === 'payment.created' || type === 'payment.updated') {
     const p = event.data?.object?.payment;
     if (!p?.id || !p.order_id) return { kind: 'ignore', reason: 'payment without order' };
     if (p.status !== 'COMPLETED') return { kind: 'ignore', reason: `payment status ${p.status}` };
-    return { kind: 'fulfil', orderId: p.order_id, squarePaymentId: p.id, amountCents: p.amount_money?.amount ?? -1, currency: p.amount_money?.currency ?? '' };
+    return { kind: 'fulfil', orderId: p.order_id, squarePaymentId: p.id, amountCents: p.amount_money?.amount ?? -1, currency: p.amount_money?.currency ?? '', customerId: p.customer_id ?? null };
   }
   if (type === 'refund.created' || type === 'refund.updated') {
     const r = event.data?.object?.refund;
@@ -109,3 +109,106 @@ export function orderWasPaid(order: { state?: string; tenders?: unknown[] } | nu
   if (!order) return false;
   return order.state === 'COMPLETED' || (Array.isArray(order.tenders) && order.tenders.length > 0);
 }
+
+// ---------------------------------------------------------------------------
+// Monthly memberships (Square Subscriptions via subscription plan checkout)
+// ---------------------------------------------------------------------------
+
+/**
+ * Catalog objects for one monthly plan: a SUBSCRIPTION_PLAN and a single-phase
+ * SUBSCRIPTION_PLAN_VARIATION billed MONTHLY at a static price with no end
+ * (periods omitted = runs until cancelled). Body for POST /v2/catalog/batch-upsert.
+ */
+export function subscriptionPlanUpsert(p: { planCode: string; planName: string; priceCents: number; currency: string }) {
+  return {
+    idempotency_key: `drop-plan-${p.planCode}-${p.priceCents}`,
+    batches: [{
+      objects: [
+        {
+          type: 'SUBSCRIPTION_PLAN',
+          id: '#plan',
+          subscription_plan_data: { name: `Drop Studios — ${p.planName}` },
+        },
+        {
+          type: 'SUBSCRIPTION_PLAN_VARIATION',
+          id: '#variation',
+          subscription_plan_variation_data: {
+            name: `${p.planName} — monthly`,
+            subscription_plan_id: '#plan',
+            phases: [{
+              cadence: 'MONTHLY',
+              ordinal: 0,
+              pricing: { type: 'STATIC', price_money: { amount: p.priceCents, currency: p.currency.toUpperCase() } },
+            }],
+          },
+        },
+      ],
+    }],
+  };
+}
+
+/** Body for POST /v2/online-checkout/payment-links for a monthly plan (quick pay + subscription_plan_id). */
+export function subscriptionLinkRequest(
+  p: CheckoutPayment,
+  opts: { locationId: string; siteUrl: string; variationId: string; buyerEmail?: string | null; supportEmail?: string | null; commitmentMonths: number },
+) {
+  return {
+    idempotency_key: `drop-link-${p.payment_id}`,
+    description: `Drop Studios ${p.payment_id}`,
+    quick_pay: {
+      name: `Drop Studios — ${p.plan_name} (monthly, ${opts.commitmentMonths}-month minimum)`,
+      price_money: { amount: p.amount_cents, currency: p.currency.toUpperCase() },
+      location_id: opts.locationId,
+    },
+    checkout_options: {
+      subscription_plan_id: opts.variationId,
+      redirect_url: `${opts.siteUrl}/checkout/success?payment_id=${p.payment_id}`,
+      allow_tipping: false,
+      ask_for_shipping_address: false,
+      ...(opts.supportEmail ? { merchant_support_email: opts.supportEmail } : {}),
+    },
+    ...(opts.buyerEmail ? { pre_populated_data: { buyer_email: opts.buyerEmail } } : {}),
+    payment_note: `Drop Studios app payment ${p.payment_id}`,
+  };
+}
+
+export type SubscriptionEvent =
+  | { kind: 'invoice_paid'; subscriptionId: string; invoiceId: string; amountCents: number; currency: string; paidAt: string }
+  | { kind: 'invoice_failed'; subscriptionId: string; invoiceId: string }
+  | { kind: 'subscription'; subscriptionId: string; customerId: string | null; planVariationId: string | null; status: string }
+  | { kind: 'none' };
+
+interface Invoice {
+  id?: string;
+  subscription_id?: string;
+  status?: string;
+  updated_at?: string;
+  payment_requests?: { total_completed_amount_money?: Money; computed_amount_money?: Money }[];
+}
+
+/** Subscription-related events (monthly charges and status changes). */
+export function subscriptionEvent(event: {
+  type?: string;
+  created_at?: string;
+  data?: { object?: { invoice?: Invoice; subscription?: { id?: string; customer_id?: string; plan_variation_id?: string; status?: string } } };
+}): SubscriptionEvent {
+  const type = event.type ?? '';
+  const inv = event.data?.object?.invoice;
+  if (type === 'invoice.payment_made' && inv?.id && inv.subscription_id) {
+    const paid = inv.payment_requests?.reduce((sum, r) => sum + (r.total_completed_amount_money?.amount ?? 0), 0) ?? 0;
+    const currency = inv.payment_requests?.find((r) => r.total_completed_amount_money)?.total_completed_amount_money?.currency
+      ?? inv.payment_requests?.[0]?.computed_amount_money?.currency ?? '';
+    return { kind: 'invoice_paid', subscriptionId: inv.subscription_id, invoiceId: inv.id, amountCents: paid, currency, paidAt: inv.updated_at ?? event.created_at ?? new Date().toISOString() };
+  }
+  if (type === 'invoice.scheduled_charge_failed' && inv?.id && inv.subscription_id) {
+    return { kind: 'invoice_failed', subscriptionId: inv.subscription_id, invoiceId: inv.id };
+  }
+  const sub = event.data?.object?.subscription;
+  if ((type === 'subscription.created' || type === 'subscription.updated') && sub?.id) {
+    return { kind: 'subscription', subscriptionId: sub.id, customerId: sub.customer_id ?? null, planVariationId: sub.plan_variation_id ?? null, status: sub.status ?? '' };
+  }
+  return { kind: 'none' };
+}
+
+/** Square statuses after which no more months are billed. */
+export const ENDED_SUBSCRIPTION_STATUSES = new Set(['CANCELED', 'DEACTIVATED', 'COMPLETED']);

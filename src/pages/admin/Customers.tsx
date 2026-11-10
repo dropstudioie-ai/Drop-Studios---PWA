@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { subscriptionDates } from '../../domain/subscription';
+import { manageSubscription } from '../../lib/payments';
 import { supabase, AppError } from '../../lib/supabase';
 import { api, unwrap } from '../../api';
 import type { Membership, MembershipPlan, Profile } from '../../api/types';
 import { useAsync } from '../../lib/useAsync';
 import { formatPrice, parseEurosToCents } from '../../domain/money';
-import { fmt } from '../../domain/time';
+import { fmt, formatKey } from '../../domain/time';
 import { MembershipCard } from '../../components/MembershipCard';
 import { PauseSheet } from '../../components/PauseSheet';
 import { ErrorNotice, Field, Notice, PageSpinner, Sheet, Spinner, TestBadge, useToast } from '../../components/ui';
@@ -60,7 +62,7 @@ interface PaymentRow { id: string; amount_cents: number; currency: string; provi
 function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void }) {
   const toast = useToast();
   const data = useAsync(async () => {
-    const [profile, memberships, bookings, styles, ledger, payments, allowance, plans] = await Promise.all([
+    const [profile, memberships, bookings, styles, ledger, payments, allowance, plans, subscriptions] = await Promise.all([
       api.profile(userId),
       api.myMemberships(userId),
       api.myBookings(userId),
@@ -69,8 +71,9 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
       unwrap(await supabase.from('payments').select('*').eq('user_id', userId).order('created_at', { ascending: false })) as PaymentRow[],
       api.pauseAllowance(userId),
       unwrap(await supabase.from('membership_plans').select('*').order('sort_order')) as MembershipPlan[],
+      api.mySubscriptions(userId),
     ]);
-    return { profile, memberships, bookings, styles, ledger, payments, allowance, plans };
+    return { profile, memberships, bookings, styles, ledger, payments, allowance, plans, subscriptions };
   }, [userId]);
 
   const [adjusting, setAdjusting] = useState<Membership | null>(null);
@@ -87,6 +90,18 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
     try {
       await api.resume(m.id, reason || 'Admin resumed');
       toast('Pause ended.');
+      void data.reload();
+    } catch (e) {
+      toast((e as Error).message, 'error');
+    }
+  }
+
+  async function endNow(subscriptionId: string, planName: string) {
+    const reason = window.prompt(`End ${planName} after the current month, waiving the rest of the commitment? Reason (saved in the audit log):`);
+    if (!reason?.trim()) return;
+    try {
+      const r = await manageSubscription('end_now', subscriptionId, reason);
+      toast(`Membership ends on ${r.ends_on}. No more payments after this month.`);
       void data.reload();
     } catch (e) {
       toast((e as Error).message, 'error');
@@ -150,6 +165,29 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
           <button className="btn-sm btn-primary" onClick={() => setSelling(true)}>Record in-studio sale</button>
         </div>
       </div>
+
+      {d.subscriptions.length > 0 && (
+        <Section title="Monthly memberships">
+          <Table head={['Plan', 'Status', 'This period', 'Next payment', 'Ends / renews', '']} empty={false}>
+            {d.subscriptions.map((s) => {
+              const dt = subscriptionDates(s);
+              return (
+                <tr key={s.id}>
+                  <Td className="font-semibold">{s.plan_snapshot.plan_name} · {formatPrice(s.plan_snapshot.price_cents, s.plan_snapshot.currency)}/month</Td>
+                  <Td>{s.status === 'cancel_scheduled' ? 'ending' : s.status === 'past_due' ? 'payment failed' : s.status}</Td>
+                  <Td>{s.status === 'ended' ? '—' : `Month ${dt.monthInCycle} of ${dt.commit}`}</Td>
+                  <Td>{s.status === 'ended' || (s.cancel_effective_on && dt.nextBilling >= s.cancel_effective_on) ? '—' : formatKey(dt.nextBilling)}</Td>
+                  <Td>{s.status === 'ended' ? 'Ended' : s.cancel_effective_on ? `Ends ${formatKey(s.cancel_effective_on)}` : `Renews ${formatKey(dt.cycleEnds)}`}</Td>
+                  <Td>{s.status !== 'ended' && !s.provider_cancel_sent_at && (
+                    <button className="btn-sm btn-ghost text-danger" onClick={() => void endNow(s.id, s.plan_snapshot.plan_name)}>End after this month</button>
+                  )}</Td>
+                </tr>
+              );
+            })}
+          </Table>
+          <p className="mt-2 text-xs text-muted">Members cancel themselves in the app; that keeps the 3-month commitment. “End after this month” waives the rest of it (e.g. within the 14 days, injury, moving away). Refunds are issued in the Square Dashboard.</p>
+        </Section>
+      )}
 
       <Section title="Memberships">
         <div className="grid gap-4 lg:grid-cols-2">

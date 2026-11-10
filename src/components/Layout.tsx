@@ -3,6 +3,7 @@ import { useAuth } from '../auth/AuthProvider';
 import { Logo } from './Logo';
 import { CalendarIcon, HomeIcon, ShieldIcon, TicketIcon, UserIcon, UsersIcon } from './icons';
 import { InstallPrompt, OfflineBanner, UpdatePrompt } from './pwa';
+import { OutOfClassesPrompt } from './OutOfClasses';
 import { STUDIO } from '../config/studio';
 
 const navCls = ({ isActive }: { isActive: boolean }) =>
@@ -13,6 +14,7 @@ export function Layout() {
   return (
     <div className="flex min-h-dvh flex-col">
       <UpdatePrompt />
+      <OutOfClassesPrompt />
       <OfflineBanner />
       <header className="sticky top-0 z-30 border-b border-line bg-white/90 pt-[env(safe-area-inset-top)] backdrop-blur">
         <div className="container-page flex h-14 items-center justify-between md:h-16">

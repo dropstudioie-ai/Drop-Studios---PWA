@@ -26,6 +26,10 @@ const day = (iso: unknown) => {
   return new Intl.DateTimeFormat('en-IE', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long' }).format(d);
 };
 
+const eur = (cents: unknown) => new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR' }).format(Number(cents) / 100);
+const longDate = (d: unknown) => new Intl.DateTimeFormat('en-IE', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long' })
+  .format(new Date(`${String(d)}T12:00:00Z`));
+
 export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Message | null {
   const hi = n.full_name ? `Hi ${n.full_name.split(' ')[0]},` : 'Hi,';
   const p = n.payload;
@@ -63,6 +67,37 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
           text: `${hi}\n\n${p.member_name}${turning} is booked into your ${p.title} class on ${when(p.starts_at)}, and it's their birthday that day.\n\nDrop Studios`,
           url: '/teach',
         };
+    }
+    case 'subscription_payment_failed': {
+      const price = eur(p.price_cents);
+      return {
+        subject: `We couldn't take your ${p.plan_name} payment`,
+        text: `${hi}\n\nYour monthly ${p.plan_name} payment of ${price} didn't go through, so this month's classes haven't been added yet.\n\nSquare has emailed you a link to pay. Once it's paid, your classes appear in the app straight away. If your card has changed, please pay with the new card from that email or contact us at ${Deno.env.get('SUPPORT_EMAIL') ?? 'the studio'}.\n\nDrop Studios`,
+        url: '/account',
+      };
+    }
+    case 'subscription_renewing': {
+      const date = longDate(p.on);
+      return {
+        subject: `Your ${p.plan_name} renews on ${date}`,
+        text: `${hi}\n\nYour ${p.plan_name} membership renews for another ${p.commitment_months} months on ${date}: ${eur(p.price_cents)} a month for ${p.class_count} classes a month.\n\nNothing to do if you'd like to keep dancing with us. If you don't want to renew, cancel in My Membership before ${date}.\n\nDrop Studios`,
+        url: '/account',
+      };
+    }
+    case 'subscription_ending': {
+      const date = longDate(p.on);
+      return {
+        subject: `Your ${p.plan_name} ends on ${date}`,
+        text: `${hi}\n\nAs requested, your ${p.plan_name} membership ends on ${date} and won't renew. Make the most of your remaining classes before then!\n\nWant to keep dancing? You can choose a membership again at any time in the app.\n\nDrop Studios`,
+        url: '/memberships',
+      };
+    }
+    case 'subscription_ended_unexpectedly': {
+      return {
+        subject: `Membership stopped by Square: ${p.member_name ?? 'a member'}`,
+        text: `${hi}\n\n${p.member_name ?? 'A member'}'s ${p.plan_name} monthly membership was stopped by Square (status ${p.provider_status}), not by the member or the studio. This usually means their customer details or card on file need attention in the Square Dashboard.\n\nDrop Studios`,
+        url: `/admin/customers?user=${p.user_id}`,
+      };
     }
     case 'payment_review': {
       const amount = new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR' }).format(Number(p.amount_cents) / 100);

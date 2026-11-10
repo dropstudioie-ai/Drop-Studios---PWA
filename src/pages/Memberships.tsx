@@ -2,7 +2,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useAsync } from '../lib/useAsync';
 import { useAuth } from '../auth/AuthProvider';
-import { sortPlans } from '../domain/plans';
+import { classesLabel, commitmentTotalCents, durationLabel, isMonthly, pricePerClass, sortPlans, styleAccessLabel, type MembershipPlan } from '../domain/plans';
 import { PlanCard } from '../components/PlanCard';
 import { MembershipTerms } from '../components/Terms';
 import { EmptyState, ErrorNotice, PageSpinner } from '../components/ui';
@@ -17,39 +17,108 @@ export default function Memberships() {
   const styles = useAsync(() => api.styles(), []);
   const firstTime = useAsync(async () => (session ? api.isFirstTimeCustomer() : true), [session?.user.id]);
 
+  const all = plans.data ? sortPlans(plans.data) : [];
+  const intro = all.filter((p) => p.first_time_only);
+  const memberships = all.filter((p) => !p.first_time_only);
+  const monthly = memberships.filter(isMonthly);
+  const select = (p: MembershipPlan) => navigate(`/checkout/${p.code}`);
+
   return (
     <div className="container-page py-8 sm:py-12 xl:max-w-7xl">
-      <header className="mx-auto max-w-2xl text-center">
-        <h1 className="text-3xl font-black sm:text-5xl">Choose Your Monthly Membership</h1>
-        <p className="mt-3 text-lg text-ink-soft">Find your rhythm. Choose your classes.</p>
+      <header className="mx-auto max-w-3xl text-center">
+        <h1 className="font-display text-4xl font-black uppercase leading-[0.95] tracking-tight sm:text-6xl">
+          Find your rhythm.<br /><span className="text-brand-600">Choose your Drop membership.</span>
+        </h1>
+        <p className="mx-auto mt-4 max-w-xl text-lg text-ink-soft">Discover new styles, meet amazing people and make movement part of your routine.</p>
       </header>
 
-      <section className="mt-8" aria-label="Membership plans">
-        {plans.loading ? <PageSpinner /> : plans.error ? <ErrorNotice error={plans.error} onRetry={plans.reload} /> :
-          !plans.data?.length ? <EmptyState title="No memberships available right now">Please check back soon.</EmptyState> : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-              {sortPlans(plans.data).map((plan) => (
-                <PlanCard
-                  key={plan.id}
-                  plan={plan}
-                  disabledReason={plan.first_time_only && firstTime.data === false ? 'For first-time customers only.' : null}
-                  onSelect={(p) => navigate(`/checkout/${p.code}`)}
-                />
-              ))}
-            </div>
-          )}
-      </section>
+      {plans.loading ? <PageSpinner /> : plans.error ? <ErrorNotice error={plans.error} onRetry={plans.reload} /> :
+        !all.length ? <div className="mt-8"><EmptyState title="No memberships available right now">Please check back soon.</EmptyState></div> : (
+          <>
+            {intro.map((p) => (
+              <IntroOffer key={p.id} plan={p} disabled={firstTime.data === false} onSelect={select} />
+            ))}
+
+            <section className="mt-10" aria-labelledby="memberships-h">
+              <h2 id="memberships-h" className="text-center font-display text-2xl font-black uppercase tracking-tight">Memberships</h2>
+              {monthly.length > 0 && (
+                <p className="mt-1 text-center text-ink-soft">Billed monthly · {monthly[0].commitment_months}-month minimum · renews every {monthly[0].commitment_months} months unless cancelled</p>
+              )}
+              <div className="mt-8 grid items-stretch gap-5 sm:grid-cols-2 lg:grid-cols-4">
+                {memberships.map((plan) => <PlanCard key={plan.id} plan={plan} onSelect={select} />)}
+              </div>
+            </section>
+
+            {monthly.length > 0 && <CommitmentTable plans={monthly} />}
+          </>
+        )}
 
       {styles.data && <DropInPrices styles={styles.data} />}
 
       {settings.data && (
         <section className="card mx-auto mt-10 max-w-3xl p-6" aria-labelledby="good-to-know">
           <h2 id="good-to-know" className="text-lg font-extrabold">Good to know</h2>
-          <div className="mt-3"><MembershipTerms settings={settings.data} /></div>
-          <p className="mt-4 text-sm text-muted">You can cancel a membership within 14 days of buying it. See the full <Link to="/terms" className="font-semibold text-brand-700 underline">Terms &amp; Conditions</Link>.</p>
+          <div className="mt-3"><MembershipTerms settings={settings.data} monthly={monthly.length > 0} /></div>
+          <p className="mt-4 text-sm text-muted">You can cancel a purchase within 14 days of buying it. See the full <Link to="/terms" className="font-semibold text-brand-700 underline">Terms &amp; Conditions</Link>.</p>
         </section>
       )}
     </div>
+  );
+}
+
+/** The Intro Offer: a wide orange strip above the memberships. */
+function IntroOffer({ plan, disabled, onSelect }: { plan: MembershipPlan; disabled: boolean; onSelect: (p: MembershipPlan) => void }) {
+  return (
+    <section className="mt-10 overflow-hidden rounded-3xl bg-accent-50 ring-2 ring-accent-400" aria-labelledby={`plan-${plan.code}`}>
+      <div className="grid gap-6 p-6 sm:p-8 md:grid-cols-[1fr_auto] md:items-center">
+        <div>
+          <span className="chip bg-accent-500 uppercase tracking-wide text-ink">{plan.display_label ?? 'Intro offer'}</span>
+          <h2 id={`plan-${plan.code}`} className="mt-3 font-display text-2xl font-black uppercase tracking-tight sm:text-3xl">{plan.name}</h2>
+          {plan.short_description && <p className="mt-2 max-w-xl text-ink-soft">{plan.short_description}</p>}
+          <ul className="mt-4 flex flex-wrap gap-x-5 gap-y-1.5 text-sm font-semibold text-ink">
+            <li>{classesLabel(plan.class_count)}</li>
+            <li>{styleAccessLabel(plan.style_access)}</li>
+            <li>Valid {durationLabel(plan.validity_days)} after activation</li>
+            <li>One-off payment · never renews</li>
+          </ul>
+        </div>
+        <div className="md:text-right">
+          <p className="font-display text-5xl font-black">{formatPrice(plan.price_cents, plan.currency)}</p>
+          <p className="text-sm text-muted">one-off · {pricePerClass(plan)} per class</p>
+          <button className="btn-accent mt-4 w-full uppercase tracking-wide md:w-auto" disabled={disabled} onClick={() => onSelect(plan)}>
+            {disabled ? 'For first-time customers only' : plan.cta_label ?? 'Get the intro offer'}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** "What you commit to": monthly price and the initial 3-month total. */
+function CommitmentTable({ plans }: { plans: MembershipPlan[] }) {
+  const months = plans[0].commitment_months ?? 3;
+  return (
+    <section className="card mx-auto mt-10 max-w-3xl overflow-hidden" aria-labelledby="commitment-h">
+      <div className="p-6 pb-3">
+        <h2 id="commitment-h" className="text-lg font-extrabold">Your first {months} months at a glance</h2>
+        <p className="mt-1 text-sm text-muted">Every membership starts with a {months}-month minimum, billed monthly. It then renews for another {months} months unless you cancel.</p>
+      </div>
+      <table className="w-full text-left text-sm">
+        <thead className="bg-canvas text-xs uppercase tracking-wide text-muted">
+          <tr><th className="px-6 py-2.5">Membership</th><th className="px-3 py-2.5 text-right">Monthly price</th><th className="hidden px-3 py-2.5 text-right sm:table-cell">Classes / month</th><th className="px-6 py-2.5 text-right">Initial {months}-month total</th></tr>
+        </thead>
+        <tbody className="divide-y divide-line">
+          {plans.map((p) => (
+            <tr key={p.id}>
+              <td className="px-6 py-3 font-semibold">{p.name}{p.credit_rollover && <span className="chip ml-2 bg-brand-50 text-brand-700">Rollover</span>}</td>
+              <td className="px-3 py-3 text-right tabular-nums">{formatPrice(p.price_cents, p.currency)}</td>
+              <td className="hidden px-3 py-3 text-right tabular-nums sm:table-cell">{p.class_count}</td>
+              <td className="px-6 py-3 text-right font-bold tabular-nums">{formatPrice(commitmentTotalCents(p), p.currency)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
   );
 }
 

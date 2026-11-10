@@ -99,6 +99,21 @@ online and in-studio sales share one dashboard and payout. Test in Square's
 7. To go live, repeat steps 2–4 with the **Production** token, location ID and a
    production webhook subscription, and set `SQUARE_ENVIRONMENT=production`.
 
+### Monthly memberships (before switching them on)
+
+1. Apply migrations `20261111000001_recurring_ledger_kinds.sql` and
+   `20261111000002_recurring_memberships.sql`. This turns Single Style,
+   Multi-Style, Committed and All In into monthly plans (existing members keep
+   what they bought).
+2. In Square → Webhooks → your subscription, also tick `invoice.payment_made`,
+   `invoice.scheduled_charge_failed`, `subscription.created` and
+   `subscription.updated`.
+3. Deploy `create-checkout`, `square-webhook` and the new `manage-subscription`.
+4. Notifications must be working (section 7): the Terms promise a renewal
+   reminder 7 days before each renewal.
+5. Test in the Sandbox: buy each monthly plan, then in Square's sandbox
+   dashboard check the subscription and its invoices.
+
 How it works: the app creates a Square payment link priced from the database;
 Square's signed `payment.*` webhook activates the membership once the payment is
 `COMPLETED`. Square sends webhooks for every payment on the account, including

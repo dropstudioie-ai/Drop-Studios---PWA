@@ -11,6 +11,9 @@ import { fmt, localDateKey } from '../domain/time';
 import { validDob } from '../domain/profile';
 import { MembershipCard } from '../components/MembershipCard';
 import { BirthdayCard } from '../components/BirthdayCard';
+import { SubscriptionCard } from '../components/SubscriptionCard';
+import { OutOfClassesCard } from '../components/OutOfClasses';
+import { isLive, outOfClasses } from '../domain/subscription';
 import { renewalLink, renewalOffer } from '../domain/renewal';
 import { formatPrice } from '../domain/money';
 import { ProfilePhotoCard } from '../components/ProfilePhotoCard';
@@ -26,10 +29,10 @@ export default function Account() {
   const toast = useToast();
   const uid = session!.user.id;
   const data = useAsync(async () => {
-    const [memberships, bookings, styles, settings, allowance, plans] = await Promise.all([
-      api.myMemberships(uid), api.myBookings(uid), api.styles(), api.settings(), api.pauseAllowance(), api.plans(),
+    const [memberships, bookings, styles, settings, allowance, plans, subscriptions] = await Promise.all([
+      api.myMemberships(uid), api.myBookings(uid), api.styles(), api.settings(), api.pauseAllowance(), api.plans(), api.mySubscriptions(uid),
     ]);
-    return { memberships, bookings, styles, settings, allowance, plans };
+    return { memberships, bookings, styles, settings, allowance, plans, subscriptions };
   }, [uid]);
 
   const [pausing, setPausing] = useState<Membership | null>(null);
@@ -38,8 +41,10 @@ export default function Account() {
 
   if (data.loading && !data.data) return <PageSpinner />;
   if (data.error) return <div className="container-page py-8"><ErrorNotice error={data.error} onRetry={data.reload} /></div>;
-  const { memberships, bookings, styles, settings, allowance, plans } = data.data!;
+  const { memberships, bookings, styles, settings, allowance, plans, subscriptions } = data.data!;
   const renewal = renewalOffer(memberships, plans);
+  const liveSubs = subscriptions.filter(isLive);
+  const out = outOfClasses(memberships, subscriptions);
 
   const current = memberships.filter((m) => ['active', 'paused', 'pending_activation'].includes(m.state));
   const past = memberships.filter((m) => !current.includes(m));
@@ -79,6 +84,8 @@ export default function Account() {
 
       <section className="mt-6 space-y-4" aria-labelledby="current-h">
         <h2 id="current-h" className="sr-only">Current memberships</h2>
+        {out?.kind === 'subscription' && <OutOfClassesCard out={out} />}
+        {liveSubs.map((s) => <SubscriptionCard key={s.id} sub={s} onChanged={() => void data.reload()} />)}
         {renewal && (
           <div className="card border-2 border-accent-500 p-5">
             <h3 className="text-lg font-extrabold">You’ve used all your classes</h3>
@@ -94,7 +101,7 @@ export default function Account() {
             </div>
           </div>
         )}
-        {current.length === 0 && renewal ? null : current.length === 0 ? (
+        {current.length === 0 && (renewal || liveSubs.length) ? null : current.length === 0 ? (
           <EmptyState title={past.length ? 'No active membership' : 'You don’t have a membership yet'}
             action={<Link to="/memberships" className="btn-accent">Explore plans</Link>}>
             Choose a class pack to start booking.

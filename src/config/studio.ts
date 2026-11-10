@@ -17,7 +17,7 @@ export const STUDIO = {
 } as const;
 
 /** Date shown on the Terms and Privacy pages. Update it whenever they change. */
-export const POLICIES_UPDATED = '2026-11-07';
+export const POLICIES_UPDATED = '2026-11-10';
 
 /**
  * Third parties that process customer data, as listed in the Privacy Policy.

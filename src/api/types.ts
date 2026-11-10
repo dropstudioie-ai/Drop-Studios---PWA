@@ -175,6 +175,8 @@ export interface Membership {
   admin_status: 'valid' | 'cancelled';
   is_test: boolean;
   created_at: string;
+  /** Set for monthly memberships (one row per billing month or 3-month cycle). */
+  subscription_id?: string | null;
   state: MembershipState;
   purchase: MembershipPurchase;
   pauses: MembershipPause[];

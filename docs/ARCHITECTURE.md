@@ -118,6 +118,40 @@ every booking follows the same membership rules. `queue_birthday_alerts`
 staff functions until they add it; `queue_instructor_birthday_alerts` (cron,
 every 15 min, from 09:00 Dublin) tells every admin a week before and on the day.
 
+## Monthly memberships (3-month cycle)
+
+Plans have `billing_interval` (`one_off` / `monthly`), `commitment_months` and
+`credit_rollover`. The Intro Offer is one-off; the other four are monthly.
+
+- **Checkout.** `create-checkout` creates (once per plan, price and Square
+  environment) a Square SUBSCRIPTION_PLAN + single-phase MONTHLY variation,
+  stored in `square_plan_variations`, and a payment link with
+  `checkout_options.subscription_plan_id`. Square saves the card, creates the
+  subscription and charges month 1.
+- **Month 1.** `payment.updated` for our link's order → `fulfill_payment` →
+  `_start_subscription` (`member_subscriptions`, anchor = Dublin date of the
+  first payment) → `_issue_period(0)`. The webhook then finds the Square
+  subscription by the payment's customer and links it.
+- **Later months.** `invoice.payment_made` (invoice with `subscription_id`) →
+  `fulfill_subscription_charge`, idempotent per invoice, period = latest month
+  that has started. `subscription_periods (subscription_id, period_index)` is
+  unique, so a month's classes can never be issued twice.
+- **Credits.** No rollover: each month is its own `memberships` row valid to the
+  next billing date (+ that day); paying the next month expires what's left
+  (`period_expired`). Rollover (All In): one row per 3-month cycle; months 2–3
+  add classes (`grant_renewal`); a new cycle expires the old row.
+- **Failures.** `invoice.scheduled_charge_failed` → `past_due`, member notified,
+  no classes until the invoice is paid.
+- **Cancelling.** `request_subscription_cancel` (member) keeps the commitment:
+  billing stops at the end of the current 3-month cycle. Square's cancel stops
+  after the current month, so it is sent (`manage-subscription` or the webhook)
+  once the cycle's last month is paid. `admin_end_subscription_now` ends after
+  the current month. `subscription.updated` with CANCELED / DEACTIVATED /
+  COMPLETED → `ended`.
+- **Reminders.** `queue_subscription_reminders` (daily) — 7 days before a cycle
+  renews or a cancelled membership ends.
+- Monthly memberships can't be paused; one live subscription per member.
+
 ## Early renewal
 
 When every class on a membership is used but its dates haven't run out (and no

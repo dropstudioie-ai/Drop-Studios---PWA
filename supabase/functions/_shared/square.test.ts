@@ -1,6 +1,6 @@
 // deno test --allow-env _shared/square.test.ts
 import { assert, assertEquals } from 'jsr:@std/assert@1';
-import { orderWasPaid, paymentLinkRequest, squareBaseUrl, squareSignature, verifySquareSignature, webhookAction } from './square.ts';
+import { orderWasPaid, paymentLinkRequest, subscriptionEvent, subscriptionLinkRequest, subscriptionPlanUpsert, squareBaseUrl, squareSignature, verifySquareSignature, webhookAction } from './square.ts';
 
 Deno.test('signature matches the HMAC-SHA256(url + body) scheme used by Square', async () => {
   const body = '{"merchant_id":"M1","type":"payment.updated","event_id":"e1"}';
@@ -41,7 +41,7 @@ Deno.test('payment link labels Drop Ins and tickets', () => {
 
 Deno.test('only COMPLETED payments activate anything', () => {
   const ev = (status: string) => ({ type: 'payment.updated', data: { object: { payment: { id: 'sq1', order_id: 'ord1', status, amount_money: { amount: 3500, currency: 'EUR' } } } } });
-  assertEquals(webhookAction(ev('COMPLETED')), { kind: 'fulfil', orderId: 'ord1', squarePaymentId: 'sq1', amountCents: 3500, currency: 'EUR' });
+  assertEquals(webhookAction(ev('COMPLETED')), { kind: 'fulfil', orderId: 'ord1', squarePaymentId: 'sq1', amountCents: 3500, currency: 'EUR', customerId: null });
   for (const s of ['APPROVED', 'PENDING', 'CANCELED', 'FAILED']) assertEquals(webhookAction(ev(s)).kind, 'ignore');
   assertEquals(webhookAction({ type: 'payment.updated', data: { object: { payment: { id: 'pos', status: 'COMPLETED' } } } }).kind, 'ignore');
   assertEquals(webhookAction({ type: 'customer.created' }).kind, 'ignore');
@@ -65,4 +65,39 @@ Deno.test('an unpaid payment-link order is OPEN with no tenders', () => {
   assertEquals(orderWasPaid({ state: 'OPEN', tenders: [{ id: 't1' }] }), true);
   assertEquals(orderWasPaid({ state: 'COMPLETED' }), true);
   assertEquals(orderWasPaid(null), false);
+});
+
+Deno.test('monthly plan: one MONTHLY phase at a static price, no end date', () => {
+  const body = subscriptionPlanUpsert({ planCode: 'multi-8', planName: 'Committed', priceCents: 7900, currency: 'eur' });
+  const variation = body.batches[0].objects[1];
+  assertEquals(variation.type, 'SUBSCRIPTION_PLAN_VARIATION');
+  assertEquals(variation.subscription_plan_variation_data!.subscription_plan_id, '#plan');
+  assertEquals(variation.subscription_plan_variation_data!.phases, [
+    { cadence: 'MONTHLY', ordinal: 0, pricing: { type: 'STATIC', price_money: { amount: 7900, currency: 'EUR' } } },
+  ]);
+  assertEquals(body.idempotency_key, 'drop-plan-multi-8-7900');
+});
+
+Deno.test('subscription checkout link: quick pay at the plan price with the variation id', () => {
+  const body = subscriptionLinkRequest(
+    { payment_id: 'pay1', amount_cents: 7900, currency: 'eur', plan_name: 'Committed', class_count: 8 },
+    { locationId: 'L1', siteUrl: 'https://x.ie', variationId: 'VAR1', buyerEmail: 'a@b.ie', commitmentMonths: 3 },
+  );
+  assertEquals(body.quick_pay.price_money, { amount: 7900, currency: 'EUR' });
+  assertEquals(body.checkout_options.subscription_plan_id, 'VAR1');
+  assertEquals(body.checkout_options.allow_tipping, false);
+  assertEquals(body.idempotency_key, 'drop-link-pay1');
+});
+
+Deno.test('reads monthly invoice payments, failures and subscription status changes', () => {
+  assertEquals(subscriptionEvent({ type: 'invoice.payment_made', data: { object: { invoice: {
+    id: 'inv1', subscription_id: 's1', updated_at: '2026-12-10T09:00:00Z',
+    payment_requests: [{ total_completed_amount_money: { amount: 7900, currency: 'EUR' } }] } } } }),
+    { kind: 'invoice_paid', subscriptionId: 's1', invoiceId: 'inv1', amountCents: 7900, currency: 'EUR', paidAt: '2026-12-10T09:00:00Z' });
+  assertEquals(subscriptionEvent({ type: 'invoice.scheduled_charge_failed', data: { object: { invoice: { id: 'inv2', subscription_id: 's1' } } } }),
+    { kind: 'invoice_failed', subscriptionId: 's1', invoiceId: 'inv2' });
+  assertEquals(subscriptionEvent({ type: 'subscription.updated', data: { object: { subscription: { id: 's1', customer_id: 'C1', plan_variation_id: 'V', status: 'CANCELED' } } } }),
+    { kind: 'subscription', subscriptionId: 's1', customerId: 'C1', planVariationId: 'V', status: 'CANCELED' });
+  // An invoice that isn't for a subscription (e.g. a manual invoice) is not ours.
+  assertEquals(subscriptionEvent({ type: 'invoice.payment_made', data: { object: { invoice: { id: 'inv3' } } } }), { kind: 'none' });
 });
