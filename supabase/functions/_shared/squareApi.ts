@@ -1,6 +1,6 @@
 // Calls to Square's API for monthly memberships (server side only).
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.118.0';
-import { billingAnchorRequest, refundRequest, SQUARE_VERSION, squareBaseUrl, subscriptionPlanUpsert } from './square.ts';
+import { refundRequest, restartSubscriptionRequest, SQUARE_VERSION, squareBaseUrl, subscriptionPlanUpsert } from './square.ts';
 
 export interface SquareConfig {
   base: string;
@@ -57,7 +57,7 @@ export async function ensurePlanVariation(
   return variationId;
 }
 
-export interface SquareSubscription { id: string; customer_id?: string; plan_variation_id?: string; status?: string; created_at?: string }
+export interface SquareSubscription { id: string; customer_id?: string; plan_variation_id?: string; status?: string; created_at?: string; card_id?: string }
 
 /** The member's newest subscription to this plan variation (just created by checkout). */
 export async function findSubscription(cfg: SquareConfig, customerId: string, variationId: string | null): Promise<SquareSubscription | null> {
@@ -99,16 +99,52 @@ export async function sendCancelIfDue(db: SupabaseClient, cfg: SquareConfig | nu
   }
 }
 
-/** Tell Square about a payment date moved by a pause, and remember it's done. */
+/**
+ * A pause moved the next payment: stop the Square subscription at the end of
+ * the paid month (no charge on the old date). subscription-jobs starts a new
+ * one on the new date.
+ */
 export async function syncBillingIfNeeded(db: SupabaseClient, cfg: SquareConfig | null, subscriptionId: string) {
   if (!cfg) return;
   const { data: sub } = await db.from('member_subscriptions')
-    .select('provider_subscription_id, billing_sync_needed, next_billing_on, pending_shift_days').eq('id', subscriptionId).maybeSingle();
-  if (!sub?.billing_sync_needed || !sub.provider_subscription_id || !sub.next_billing_on) return;
-  const r = await call(cfg, `/v2/subscriptions/${encodeURIComponent(sub.provider_subscription_id)}/billing-anchor`, {
-    method: 'POST', body: JSON.stringify(billingAnchorRequest(sub.next_billing_on, sub.pending_shift_days)),
-  });
-  if (r.ok) await db.rpc('mark_billing_synced', { p_subscription_id: subscriptionId });
+    .select('provider_subscription_id, provider_card_id, billing_sync_needed, pending_restart').eq('id', subscriptionId).maybeSingle();
+  if (!sub?.billing_sync_needed || !sub.provider_subscription_id || sub.pending_restart) return;
+  if (!sub.provider_card_id) {
+    const sq = await retrieveSubscription(cfg, sub.provider_subscription_id);
+    if (sq?.card_id) await db.from('member_subscriptions').update({ provider_card_id: sq.card_id }).eq('id', subscriptionId);
+  }
+  if (await cancelSubscription(cfg, sub.provider_subscription_id)) {
+    await db.rpc('mark_billing_synced', { p_subscription_id: subscriptionId });
+  }
+}
+
+/** Start Square again for paused memberships whose new payment date is today. */
+export async function restartDueSubscriptions(db: SupabaseClient, cfg: SquareConfig): Promise<{ restarted: number; failed: number }> {
+  const { data: due } = await db.rpc('subscriptions_due_restart');
+  let restarted = 0, failed = 0;
+  for (const s of (due ?? []) as { subscription_id: string; provider_subscription_id: string | null; provider_customer_id: string | null;
+    provider_card_id: string | null; plan_id: string; price_cents: number; payments_left: number; next_billing_on: string }[]) {
+    let cardId = s.provider_card_id;
+    let customerId = s.provider_customer_id;
+    if ((!cardId || !customerId) && s.provider_subscription_id) {
+      const old = await retrieveSubscription(cfg, s.provider_subscription_id);
+      cardId ??= old?.card_id ?? null;
+      customerId ??= old?.customer_id ?? null;
+    }
+    const { data: plan } = await db.from('membership_plans').select('id, code, name, currency').eq('id', s.plan_id).maybeSingle();
+    const variationId = plan ? await ensurePlanVariation(db, cfg, { ...plan, price_cents: s.price_cents, periods: s.payments_left }) : null;
+    if (!cardId || !customerId || !variationId) { failed++; console.error('cannot restart subscription', s.subscription_id); continue; }
+    const r = await call<{ subscription?: SquareSubscription }>(cfg, '/v2/subscriptions', {
+      method: 'POST',
+      body: JSON.stringify(restartSubscriptionRequest({
+        subscriptionId: s.subscription_id, nextBillingOn: s.next_billing_on, locationId: cfg.locationId, variationId, customerId, cardId,
+      })),
+    });
+    if (!r.ok || !r.body.subscription?.id) { failed++; continue; }
+    await db.rpc('replace_provider_subscription', { p_subscription_id: s.subscription_id, p_provider_subscription_id: r.body.subscription.id });
+    restarted++;
+  }
+  return { restarted, failed };
 }
 
 /** Square's payment id for one of our payments (invoice payments are looked up through the invoice's order). */

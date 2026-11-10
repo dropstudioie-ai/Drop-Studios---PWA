@@ -34,7 +34,7 @@ jobs:
           deno-version: v2.x
       - name: Typecheck edge functions
         working-directory: supabase/functions
-        run: deno check create-checkout/index.ts square-webhook/index.ts dev-checkout/index.ts send-notifications/index.ts manage-subscription/index.ts admin-refund/index.ts
+        run: deno check create-checkout/index.ts square-webhook/index.ts dev-checkout/index.ts send-notifications/index.ts manage-subscription/index.ts admin-refund/index.ts subscription-jobs/index.ts
       - name: Test edge functions
         working-directory: supabase/functions
         run: deno test --allow-env _shared/square.test.ts send-notifications/render.test.ts

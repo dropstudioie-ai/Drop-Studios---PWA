@@ -16,7 +16,11 @@
 -- Cancel:    any time, no penalty. It takes effect at the next payment date if
 --            asked at least 72 hours before it; otherwise after the next payment.
 -- Pause:     pausing a monthly membership moves the next payment date (and the
---            end date) back by the paused days.
+--            end date) back by the paused days. Square can't move a payment
+--            day safely, so the Square subscription is stopped at the end of
+--            the paid month and a new one (same saved card, remaining payments)
+--            is started on the new payment date by the subscription-jobs
+--            function (pending_restart).
 -- Upgrade:   a member with no classes left can move to a dearer plan; the old
 --            membership stops and the new one starts.
 -- Reward:    members who complete all 3 payments and sign up again get 3 free
@@ -154,10 +158,13 @@ create table public.member_subscriptions (
   next_billing_on date,
   -- When the last paid month ends (moves with pauses).
   current_period_ends_on date,
-  -- Set when a pause moved the payment date and Square still has to be told;
-  -- pending_shift_days says by how many days since Square was last told.
+  -- Set when a pause moved the payment date and Square's subscription still
+  -- has to be stopped at the end of the paid month.
   billing_sync_needed boolean not null default false,
-  pending_shift_days int not null default 0,
+  -- Square's subscription was stopped for a pause; a new one starts on
+  -- next_billing_on with the saved card for the remaining payments.
+  pending_restart boolean not null default false,
+  provider_card_id text,
   cancel_requested_at timestamptz,
   cancel_requested_by uuid references public.profiles (id),
   -- Payments stop from this date (a payment date).
@@ -711,8 +718,7 @@ begin
   set next_billing_on = next_billing_on + v_delta,
       current_period_ends_on = current_period_ends_on + v_delta,
       cancel_effective_on = cancel_effective_on + v_delta,
-      billing_sync_needed = next_billing_on is not null,
-      pending_shift_days = pending_shift_days + v_delta
+      billing_sync_needed = next_billing_on is not null and not pending_restart
   where id = sub.id;
   perform public._audit('subscription_billing_moved', 'subscription', sub.id::text,
     jsonb_build_object('days', v_delta, 'pause_id', new.id, 'next_billing_on', sub.next_billing_on + v_delta));
@@ -722,14 +728,49 @@ $$;
 create trigger membership_pauses_move_billing after insert or update on public.membership_pauses
   for each row execute function public._pause_moves_billing();
 
--- Square was told about the new payment date.
+-- Square's subscription was stopped at the end of the paid month (pause).
 create or replace function public.mark_billing_synced(p_subscription_id uuid)
 returns void
 language sql
 security definer
 set search_path = public, pg_temp
 as $$
-  update public.member_subscriptions set billing_sync_needed = false, pending_shift_days = 0 where id = p_subscription_id;
+  update public.member_subscriptions set billing_sync_needed = false, pending_restart = true where id = p_subscription_id;
+$$;
+
+-- The new Square subscription started after a pause (or found by the webhook).
+create or replace function public.replace_provider_subscription(p_subscription_id uuid, p_provider_subscription_id text)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_old text;
+begin
+  select provider_subscription_id into v_old from public.member_subscriptions where id = p_subscription_id for update;
+  update public.member_subscriptions
+  set provider_subscription_id = p_provider_subscription_id, pending_restart = false
+  where id = p_subscription_id;
+  perform public._audit('subscription_restarted', 'subscription', p_subscription_id::text,
+    jsonb_build_object('previous', v_old, 'provider_subscription_id', p_provider_subscription_id));
+end;
+$$;
+
+-- Paused memberships whose new payment date has come: start Square again.
+create or replace function public.subscriptions_due_restart()
+returns table (subscription_id uuid, provider_subscription_id text, provider_customer_id text, provider_card_id text,
+               plan_id uuid, price_cents int, payments_left int, next_billing_on date)
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select id, provider_subscription_id, provider_customer_id, provider_card_id, plan_id,
+         (plan_snapshot ->> 'price_cents')::int, total_periods - periods_paid, next_billing_on
+  from public.member_subscriptions
+  where pending_restart and status in ('active', 'past_due') and next_billing_on is not null
+    and next_billing_on <= public._local_date(now()) and periods_paid < total_periods;
 $$;
 
 -- ---------------------------------------------------------------------------
@@ -881,6 +922,8 @@ begin
   select * into sub from public.member_subscriptions where provider_subscription_id = p_provider_subscription_id for update;
   if not found then perform public._fail('subscription_not_found'); end if;
   if sub.status = 'ended' then return jsonb_build_object('ok', true, 'duplicate', true); end if;
+  -- Stopped by us for a pause: the membership carries on with a new Square subscription.
+  if sub.pending_restart then return jsonb_build_object('ok', true, 'ignored', 'paused'); end if;
   v_reason := public._end_reason(sub);
   update public.member_subscriptions set status = 'ended', end_reason = v_reason, ended_at = now(), next_billing_on = null where id = sub.id;
   perform public._audit('subscription_ended', 'subscription', sub.id::text,
@@ -1086,7 +1129,8 @@ revoke execute on function public._add_month(date), public._end_of_day(date), pu
   public._grant_membership(uuid, public.payments, jsonb, int, timestamptz, uuid, public.ledger_kind, text, text),
   public._issue_period(uuid, int, public.payments), public._grant_loyalty_reward(public.member_subscriptions, public.payments),
   public._start_subscription(public.payments), public._end_reason(public.member_subscriptions),
-  public.mark_billing_synced(uuid), public.link_provider_subscription(uuid, text, text),
+  public.mark_billing_synced(uuid), public.replace_provider_subscription(uuid, text), public.subscriptions_due_restart(),
+  public.link_provider_subscription(uuid, text, text),
   public.fulfill_subscription_charge(text, text, text, int, text, timestamptz),
   public.subscription_charge_failed(text, text), public.subscription_provider_ended(text, text),
   public.mark_provider_cancel_sent(uuid), public.request_subscription_cancel(uuid), public.undo_subscription_cancel(uuid),
@@ -1094,7 +1138,8 @@ revoke execute on function public._add_month(date), public._end_of_day(date), pu
   from public, anon, authenticated;
 grant execute on function public.request_subscription_cancel(uuid), public.undo_subscription_cancel(uuid),
   public.admin_end_subscription_now(uuid, text), public.admin_can_refund(uuid) to authenticated;
-grant execute on function public.mark_billing_synced(uuid), public.link_provider_subscription(uuid, text, text),
+grant execute on function public.mark_billing_synced(uuid), public.replace_provider_subscription(uuid, text),
+  public.subscriptions_due_restart(), public.link_provider_subscription(uuid, text, text),
   public.fulfill_subscription_charge(text, text, text, int, text, timestamptz),
   public.subscription_charge_failed(text, text), public.subscription_provider_ended(text, text),
   public.mark_provider_cancel_sent(uuid), public.queue_subscription_reminders() to service_role;

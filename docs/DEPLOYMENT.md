@@ -108,8 +108,9 @@ online and in-studio sales share one dashboard and payout. Test in Square's
 2. In Square → Webhooks → your subscription, also tick `invoice.payment_made`,
    `invoice.scheduled_charge_failed`, `subscription.created` and
    `subscription.updated`.
-3. Deploy `create-checkout`, `square-webhook` and the new `manage-subscription`
-   and `admin-refund`.
+3. Deploy `create-checkout`, `square-webhook` and the new `manage-subscription`,
+   `admin-refund` and `subscription-jobs` (`--no-verify-jwt`; schedule it hourly
+   with the same cron secret as send-notifications, see section 7).
 4. Notifications must be working (section 7) so members get the payment
    reminders (5 days before each payment) and the end-of-membership message.
 5. Test in the Sandbox: buy each monthly plan, then in Square's sandbox

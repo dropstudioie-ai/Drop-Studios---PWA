@@ -1185,6 +1185,25 @@ run('database: plans, booking, allowances, pauses, security', () => {
       await expect(as(db, user(c), `select pause_membership($1, $2::date, $3::date)`, [membershipId, day(40), day(47)])).rejects.toThrow(/pause_after_next_payment|pause_after_expiry/);
     });
 
+    it('paused: Square is stopped for the paid month, restarted on the new date, and billing carries on', async () => {
+      const { subId, provider } = await subscribe('multi-5');
+      await db.query(`update member_subscriptions set billing_sync_needed = true where id = $1`, [subId]);
+      await as(db, service, `select mark_billing_synced($1)`, [subId]); // Square subscription stopped
+      // The stopped Square subscription ends: the membership itself carries on.
+      await as(db, service, `select subscription_provider_ended($1, 'CANCELED')`, [provider]);
+      expect((await subRow(subId)).status).toBe('active');
+      // Not due yet → nothing to restart; on the new payment date → due.
+      expect((await as(db, service, `select * from subscriptions_due_restart() where subscription_id = $1`, [subId]))).toHaveLength(0);
+      await db.query(`update member_subscriptions set next_billing_on = _local_date(now()) where id = $1`, [subId]);
+      const [due] = await as<{ payments_left: number }>(db, service, `select * from subscriptions_due_restart() where subscription_id = $1`, [subId]);
+      expect(due.payments_left).toBe(2);
+      const fresh = `sqsub_${randomUUID()}`;
+      await as(db, service, `select replace_provider_subscription($1, $2)`, [subId, fresh]);
+      const [r] = await as<{ r: { period_index: number } }>(db, service, `select fulfill_subscription_charge($1, 'inv:after-pause', 'evt_ap', 5500, 'EUR') r`, [fresh]);
+      expect(r.r.period_index).toBe(1);
+      await expect(as(db, user(admin), `select * from subscriptions_due_restart()`)).rejects.toThrow(/permission denied/);
+    });
+
     it('upgrade: once the classes run out, a member can move to a dearer plan; the old one stops', async () => {
       const { c, subId, membershipId } = await subscribe('multi-5');
       const tryCheckout = async (planUuid: string, style: string | null = null) =>

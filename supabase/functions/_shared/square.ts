@@ -215,14 +215,20 @@ export function subscriptionEvent(event: {
 /** Square statuses after which no more months are billed. */
 export const ENDED_SUBSCRIPTION_STATUSES = new Set(['CANCELED', 'DEACTIVATED', 'COMPLETED']);
 
-/** Body for POST /v2/subscriptions/{id}/billing-anchor (pause moved the payment day). */
-export function billingAnchorRequest(nextBillingOn: string, pendingShiftDays: number) {
-  const day = Number(nextBillingOn.slice(8, 10));
-  // Apply from the payment date Square knows (before the shift), so the change
-  // can't trigger an extra charge inside the month that's already paid.
-  const d = new Date(`${nextBillingOn}T12:00:00Z`);
-  d.setUTCDate(d.getUTCDate() - pendingShiftDays);
-  return { monthly_billing_anchor_date: day, effective_date: d.toISOString().slice(0, 10) };
+/**
+ * Body for POST /v2/subscriptions: restart a paused membership on its new
+ * payment date with the saved card, for the payments that are left. It starts
+ * today, so Square charges straight away; the key makes retries safe.
+ */
+export function restartSubscriptionRequest(p: { subscriptionId: string; nextBillingOn: string; locationId: string; variationId: string; customerId: string; cardId: string }) {
+  return {
+    idempotency_key: `drop-restart-${p.subscriptionId}-${p.nextBillingOn}`,
+    location_id: p.locationId,
+    plan_variation_id: p.variationId,
+    customer_id: p.customerId,
+    card_id: p.cardId,
+    timezone: 'Europe/Dublin',
+  };
 }
 
 /** Body for POST /v2/refunds. */

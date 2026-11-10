@@ -18,6 +18,7 @@ async function linkSubscription(db: SupabaseClient, cfg: SquareConfig | null, pa
   const sq = await findSubscription(cfg, customerId, v?.variation_id ?? null);
   if (!sq) return; // subscription.created will link it
   const { data } = await db.rpc('link_provider_subscription', { p_payment_id: paymentId, p_provider_subscription_id: sq.id, p_provider_customer_id: customerId });
+  if (sq.card_id) await db.from('member_subscriptions').update({ provider_card_id: sq.card_id }).eq('id', subscriptionId);
   await sendCancelIfDue(db, cfg, subscriptionId, data?.send_provider_cancel);
   await syncBillingIfNeeded(db, cfg, subscriptionId);
 }
@@ -42,10 +43,20 @@ async function ourSubscription(db: SupabaseClient, cfg: SquareConfig | null, squ
   const sq = await retrieveSubscription(cfg, squareSubId);
   if (!sq?.customer_id) return null;
 
+  // A paused membership restarted by subscription-jobs (reply raced the webhook).
+  const { data: restarting } = await db.from('member_subscriptions').select('id')
+    .eq('provider_customer_id', sq.customer_id).eq('pending_restart', true).neq('status', 'ended')
+    .order('created_at', { ascending: false }).limit(1).maybeSingle();
+  if (restarting && !ENDED_SUBSCRIPTION_STATUSES.has(sq.status ?? '')) {
+    await db.rpc('replace_provider_subscription', { p_subscription_id: restarting.id, p_provider_subscription_id: squareSubId });
+    return restarting.id as string;
+  }
+
   const { data: byCustomer } = await db.from('member_subscriptions').select('id, initial_payment_id')
     .eq('provider_customer_id', sq.customer_id).is('provider_subscription_id', null).order('created_at', { ascending: false }).limit(1).maybeSingle();
   if (byCustomer) {
     const { data } = await db.rpc('link_provider_subscription', { p_payment_id: byCustomer.initial_payment_id, p_provider_subscription_id: squareSubId, p_provider_customer_id: sq.customer_id });
+    if (sq.card_id) await db.from('member_subscriptions').update({ provider_card_id: sq.card_id }).eq('id', byCustomer.id);
     await sendCancelIfDue(db, cfg, byCustomer.id, data?.send_provider_cancel);
     return byCustomer.id as string;
   }

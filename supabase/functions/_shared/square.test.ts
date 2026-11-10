@@ -1,6 +1,6 @@
 // deno test --allow-env _shared/square.test.ts
 import { assert, assertEquals } from 'jsr:@std/assert@1';
-import { billingAnchorRequest, orderWasPaid, paymentLinkRequest, refundRequest, subscriptionEvent, subscriptionLinkRequest, subscriptionPlanUpsert, squareBaseUrl, squareSignature, verifySquareSignature, webhookAction } from './square.ts';
+import { orderWasPaid, restartSubscriptionRequest, paymentLinkRequest, refundRequest, subscriptionEvent, subscriptionLinkRequest, subscriptionPlanUpsert, squareBaseUrl, squareSignature, verifySquareSignature, webhookAction } from './square.ts';
 
 Deno.test('signature matches the HMAC-SHA256(url + body) scheme used by Square', async () => {
   const body = '{"merchant_id":"M1","type":"payment.updated","event_id":"e1"}';
@@ -102,10 +102,10 @@ Deno.test('reads monthly invoice payments, failures and subscription status chan
   assertEquals(subscriptionEvent({ type: 'invoice.payment_made', data: { object: { invoice: { id: 'inv3' } } } }), { kind: 'none' });
 });
 
-Deno.test('pause: the payment day moves, applied from the old payment date', () => {
-  // Was due on the 20th; a 7-day pause moves it to the 27th.
-  assertEquals(billingAnchorRequest('2026-12-27', 7), { monthly_billing_anchor_date: 27, effective_date: '2026-12-20' });
-  assertEquals(billingAnchorRequest('2027-01-03', 7), { monthly_billing_anchor_date: 3, effective_date: '2026-12-27' });
+Deno.test('pause: restart on the new payment date with the saved card, once per date', () => {
+  assertEquals(restartSubscriptionRequest({ subscriptionId: 's1', nextBillingOn: '2026-12-17', locationId: 'L1', variationId: 'V2', customerId: 'C1', cardId: 'ccof:1' }), {
+    idempotency_key: 'drop-restart-s1-2026-12-17', location_id: 'L1', plan_variation_id: 'V2', customer_id: 'C1', card_id: 'ccof:1', timezone: 'Europe/Dublin',
+  });
 });
 
 Deno.test('refund: Square payment id, exact amount, one refund per payment', () => {

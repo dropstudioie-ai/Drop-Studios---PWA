@@ -146,9 +146,12 @@ one-off; the other four are monthly.
   payment is taken and the cancel is sent once it's paid.
   `admin_end_subscription_now` stops from the next payment date regardless.
 - **Pause.** A trigger on `membership_pauses` moves `next_billing_on` by the
-  paused days (and back if a pause is shortened); `manage-subscription`
-  (`sync_billing`) changes Square's billing anchor day, effective from the old
-  payment date.
+  paused days (and back if a pause is shortened). Square can't move a monthly
+  payment day without risking a double charge (tested in the sandbox), so
+  `manage-subscription` (`sync_billing`) cancels the Square subscription at the
+  end of the paid month (`pending_restart`), and the scheduled
+  `subscription-jobs` function starts a new one on the new payment date with the
+  saved card for the payments left (charged that day; idempotent per date).
 - **Upgrade.** With no classes left, `create_checkout` allows a dearer monthly
   plan (`upgrade_from`); on payment the old subscription ends (`upgraded`) and
   its Square subscription is cancelled.
