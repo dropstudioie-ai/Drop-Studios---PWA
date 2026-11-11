@@ -50,3 +50,9 @@ Deno.test('admin is asked to review a payment made on a replaced checkout', () =
   assertStringIncludes(m.text, '€35.00 for 3-Class Intro');
   assertEquals(m.url, '/admin/customers?user=u1');
 });
+
+Deno.test('test message for checking delivery', () => {
+  const m = render({ kind: 'test_message', full_name: 'Jorge dos Santos', payload: {} })!;
+  assertEquals(m.subject, 'Drop Studios: notifications are working ✅');
+  assertStringIncludes(m.text, 'Hi Jorge,');
+});

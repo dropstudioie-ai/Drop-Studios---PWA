@@ -89,6 +89,12 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
           url: '/admin/instructors',
         };
     }
+    case 'test_message':
+      return {
+        subject: 'Drop Studios: notifications are working ✅',
+        text: `${hi}\n\nThis is a test message from the Drop Studios app. If you can read it, email (and, if enabled, phone) notifications are set up correctly.\n\nDrop Studios`,
+        url: '/account',
+      };
     default:
       return null;
   }
