@@ -189,6 +189,9 @@ export interface Profile {
   marketing_opt_in: boolean;
   avatar_path: string | null;
   date_of_birth: string | null;
+  /** Reminders by email / phone notifications (on by default). */
+  notify_email?: boolean;
+  notify_push?: boolean;
   created_at: string;
 }
 

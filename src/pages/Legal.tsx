@@ -230,6 +230,7 @@ export function PrivacyContent() {
           <li><strong>To let teachers see who is booked into their class</strong> (name, photo, whether it’s your first class, birthdays): our legitimate interest in running safe, welcoming classes. Teachers only see the lists for the classes they teach.</li>
           <li><strong>To process payments and keep accounting records</strong>: contract and legal obligation (tax law).</li>
           <li><strong>To keep the service secure, prevent misuse and understand how classes are used</strong> (for example attendance totals): our legitimate interests in running the studio.</li>
+          <li><strong>To send you reminders and updates</strong> about your classes, bookings and membership, by email and (if you allow them on your device) phone notifications. These are on by default; you can turn either off at any time in My Membership.</li>
           <li><strong>To send you news and offers</strong>: only with your consent, which you can withdraw at any time in My Membership.</li>
           <li><strong>To send app notifications</strong>: only if you turn them on, and you can turn them off in your device settings.</li>
         </ul>

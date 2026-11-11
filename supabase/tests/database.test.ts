@@ -1030,6 +1030,23 @@ run('database: plans, booking, allowances, pauses, security', () => {
 
   // ---------------------------------------------------------------- notifications
   describe('notifications', () => {
+    it('are on by default; a member who turns email off gets none', async () => {
+      const id = randomUUID();
+      await db.query(`insert into auth.users (id, email, raw_user_meta_data) values ($1, 'quiet@example.com', $2)`, [id, { full_name: 'Quiet One' }]);
+      expect((await db.query(`select notify_email, notify_push from profiles where id = $1`, [id])).rows[0]).toEqual({ notify_email: true, notify_push: true });
+      const off = randomUUID();
+      await db.query(`insert into auth.users (id, email, raw_user_meta_data) values ($1, 'nonotify@example.com', $2)`, [off, { notifications: false }]);
+      expect((await db.query(`select notify_email, notify_push from profiles where id = $1`, [off])).rows[0]).toEqual({ notify_email: false, notify_push: false });
+      // The member can change it themselves.
+      await as(db, user(id), `update profiles set notify_email = false where id = $1`, [id]);
+      await db.query(`insert into notification_outbox (user_id, kind, payload) values ($1, 'test_message', '{}')`, [id]);
+      const claimed = await as<{ user_id: string; email: string | null }>(db, service, `select user_id, email from claim_notifications(500)`);
+      expect(claimed.find((r) => r.user_id === id)?.email).toBeNull();
+      // Leave the outbox as the next tests expect.
+      await db.query(`delete from notification_outbox where user_id = $1`, [id]);
+      await db.query(`update notification_outbox set claimed_at = null, attempts = 0 where sent_at is null`);
+    });
+
     it('studio cancellations queue a notification per booked customer', async () => {
       const c = await createUser(db, 'Notified');
       await buy(c, 'multi-5');

@@ -4,7 +4,7 @@ import { api } from '../api';
 import type { Booking, Membership } from '../api/types';
 import { useAsync } from '../lib/useAsync';
 import { AppError } from '../lib/supabase';
-import { pushSupported, subscribeToPush } from '../lib/push';
+import { NotificationSettings } from '../components/NotificationSettings';
 import { useAuth } from '../auth/AuthProvider';
 import { cancellationOutcome, cutoffLabel, DEFAULT_POLICY } from '../domain/booking';
 import { fmt, localDateKey } from '../domain/time';
@@ -157,6 +157,7 @@ export default function Account() {
         </section>
       )}
 
+      <NotificationSettings />
       <ProfileSection uid={uid} onSaved={refreshProfile} />
 
       <div className="mt-10 flex justify-center">
@@ -247,11 +248,6 @@ function ProfileSection({ uid, onSaved }: { uid: string; onSaved: () => Promise<
         </label>
         <div className="flex flex-wrap gap-2 sm:col-span-2">
           <button className="btn-primary" disabled={busy}>{busy && <Spinner />}Save details</button>
-          {pushSupported() && (
-            <button type="button" className="btn-outline" onClick={() => subscribeToPush(uid).then(() => toast('Notifications enabled.')).catch((e) => toast((e as Error).message, 'error'))}>
-              Enable notifications
-            </button>
-          )}
         </div>
       </form>
       {profile?.role !== 'customer' && <p className="mt-2 text-xs text-muted">Account role: {profile?.role}</p>}

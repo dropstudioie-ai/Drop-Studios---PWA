@@ -29,3 +29,23 @@ export async function subscribeToPush(userId: string) {
   });
   if (error && error.code !== '23505') throw error;
 }
+
+/** Is this device already subscribed? */
+export async function currentSubscription(): Promise<PushSubscription | null> {
+  if (!pushSupported()) return null;
+  const reg = await navigator.serviceWorker.ready;
+  return reg.pushManager.getSubscription();
+}
+
+/** iPhone/iPad only allow notifications for the installed app (Home Screen). */
+export const needsInstallForPush = () =>
+  /iphone|ipad|ipod/i.test(navigator.userAgent)
+  && !(window.matchMedia('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone);
+
+/** Turn phone notifications off on this device. */
+export async function unsubscribeFromPush() {
+  const sub = await currentSubscription();
+  if (!sub) return;
+  await supabase.from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
+  await sub.unsubscribe();
+}
