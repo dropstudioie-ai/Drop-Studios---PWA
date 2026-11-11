@@ -130,7 +130,7 @@ export const api = {
   profile: async (userId: string) =>
     unwrap(await supabase.from('profiles').select('*').eq('id', userId).single()) as Profile,
 
-  updateProfile: async (userId: string, patch: Partial<Pick<Profile, 'full_name' | 'phone' | 'marketing_opt_in' | 'date_of_birth'>>) =>
+  updateProfile: async (userId: string, patch: Partial<Pick<Profile, 'full_name' | 'phone' | 'marketing_opt_in' | 'date_of_birth' | 'notify_email' | 'notify_push'>>) =>
     unwrap(await supabase.from('profiles').update(patch).eq('id', userId).select().single()) as Profile,
 
   paymentStatus: async (paymentId: string) =>

@@ -61,6 +61,7 @@ export function Register() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const [form, setForm] = useState({ full_name: '', email: '', phone: '', password: '', date_of_birth: '' });
+  const [notifications, setNotifications] = useState(true);
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -83,7 +84,7 @@ export function Register() {
       email: form.email.trim(),
       password: form.password,
       options: {
-        data: { full_name: form.full_name.trim(), phone: form.phone.trim() || null, date_of_birth: form.date_of_birth },
+        data: { full_name: form.full_name.trim(), phone: form.phone.trim() || null, date_of_birth: form.date_of_birth, notifications },
         emailRedirectTo: `${window.location.origin}${next}`,
       },
     });
@@ -110,6 +111,10 @@ export function Register() {
         <Field label="Date of birth" hint="So your teacher can wish you a happy birthday. Only studio staff see it."><input className="input" type="date" required autoComplete="bday" min="1900-01-01" max={todayKey()} value={form.date_of_birth} onChange={set('date_of_birth')} /></Field>
         <Field label="Mobile (optional)" hint="Only used if we need to reach you about a class."><input className="input" type="tel" autoComplete="tel" value={form.phone} onChange={set('phone')} /></Field>
         <Field label="Password" hint="At least 8 characters."><input className="input" type="password" autoComplete="new-password" required minLength={8} value={form.password} onChange={set('password')} /></Field>
+        <label className="flex items-start gap-3 text-sm">
+          <input type="checkbox" className="mt-0.5 h-5 w-5 accent-brand-600" checked={notifications} onChange={(e) => setNotifications(e.target.checked)} />
+          <span>Send me class reminders and updates by email and phone notification. You can change this any time in My Membership.</span>
+        </label>
         <label className="flex items-start gap-3 text-sm">
           <input type="checkbox" required className="mt-0.5 h-5 w-5 accent-brand-600" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
           <span>
