@@ -44,7 +44,11 @@ Deno.serve(async (req) => {
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json', 'Idempotency-Key': `outbox-${n.id}` },
-        body: JSON.stringify({ from: emailFrom, to: n.email, subject: msg.subject, text: msg.text }),
+        body: JSON.stringify({
+          from: emailFrom, to: n.email, subject: msg.subject, text: msg.text,
+          // Replies go to the studio's inbox (the sending domain doesn't receive mail).
+          ...(Deno.env.get('SUPPORT_EMAIL') ? { reply_to: Deno.env.get('SUPPORT_EMAIL') } : {}),
+        }),
       });
       if (res.ok) delivered = true;
       else errors.push(`email ${res.status}: ${(await res.text()).slice(0, 200)}`);
