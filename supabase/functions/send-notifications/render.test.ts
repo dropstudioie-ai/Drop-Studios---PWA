@@ -65,3 +65,9 @@ Deno.test('monthly membership messages: failed payment, next payment, ending and
   assertStringIncludes(reward.text, "To celebrate 3 months dancing at Drop, we've added 3 free classes to your account. Book any class you like in the next 7 days. Enjoy!");
   assertEquals(reward.url, '/timetable');
 });
+
+Deno.test('test message for checking delivery', () => {
+  const m = render({ kind: 'test_message', full_name: 'Jorge dos Santos', payload: {} })!;
+  assertEquals(m.subject, 'Drop Studios: notifications are working ✅');
+  assertStringIncludes(m.text, 'Hi Jorge,');
+});
