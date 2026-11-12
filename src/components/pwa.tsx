@@ -86,7 +86,7 @@ export function InstallPrompt() {
   if (dismissed || (!evt && !iosHint)) return null;
 
   return (
-    <div className="fixed inset-x-3 bottom-[5.5rem] z-40 rounded-2xl bg-ink p-4 text-white shadow-xl md:bottom-6 md:left-auto md:right-6 md:max-w-sm">
+    <div className="fixed inset-x-3 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-40 rounded-2xl bg-ink p-4 text-white shadow-xl md:bottom-6 md:left-auto md:right-6 md:max-w-sm">
       <div className="flex items-start gap-3">
         <DownloadIcon className="mt-0.5 shrink-0 text-accent-400" />
         <div className="flex-1 text-sm">
@@ -117,7 +117,7 @@ export function UpdatePrompt() {
   const { needRefresh: [needRefresh, setNeedRefresh], updateServiceWorker } = useRegisterSW();
   if (!needRefresh) return null;
   return (
-    <div className="fixed inset-x-3 top-3 z-[70] mx-auto flex max-w-md items-center justify-between gap-3 rounded-2xl bg-brand-700 p-3 pl-4 text-sm text-white shadow-xl">
+    <div className="fixed inset-x-3 top-[calc(env(safe-area-inset-top)+0.75rem)] z-[70] mx-auto flex max-w-md items-center justify-between gap-3 rounded-2xl bg-brand-700 p-3 pl-4 text-sm text-white shadow-xl">
       <span>A new version is available.</span>
       <span className="flex gap-1">
         <button className="btn-sm btn text-white/80" onClick={() => setNeedRefresh(false)}>Later</button>

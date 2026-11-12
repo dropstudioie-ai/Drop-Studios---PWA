@@ -105,7 +105,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastCtx.Provider value={push}>
       {children}
-      <div className="pointer-events-none fixed inset-x-0 bottom-24 z-[60] flex flex-col items-center gap-2 px-4 md:bottom-6" aria-live="polite">
+      <div className="pointer-events-none fixed inset-x-0 bottom-[calc(6rem+env(safe-area-inset-bottom))] z-[60] flex flex-col items-center gap-2 px-4 md:bottom-6" aria-live="polite">
         {toasts.map((t) => (
           <div key={t.id} className={`pointer-events-auto max-w-md rounded-xl px-4 py-3 text-sm font-semibold shadow-lg ${
             t.tone === 'error' ? 'bg-danger text-white' : t.tone === 'info' ? 'bg-ink text-white' : 'bg-success text-white'}`}>

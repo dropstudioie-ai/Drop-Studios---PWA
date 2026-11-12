@@ -49,7 +49,7 @@ export function NotificationsPrompt() {
 
   if (!show) return null;
   return (
-    <div className="fixed inset-x-3 bottom-[5.5rem] z-40 rounded-2xl bg-brand-600 p-4 text-white shadow-xl md:bottom-6 md:left-auto md:right-6 md:max-w-sm" role="dialog" aria-labelledby="push-title">
+    <div className="fixed inset-x-3 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-40 rounded-2xl bg-brand-600 p-4 text-white shadow-xl md:bottom-6 md:left-auto md:right-6 md:max-w-sm" role="dialog" aria-labelledby="push-title">
       <div className="flex items-start gap-3">
         <BellIcon className="mt-0.5 shrink-0" />
         <div className="flex-1 text-sm">
