@@ -85,3 +85,13 @@ Deno.test('payment receipt: plan, month, amount, next payment, business name', (
   assertStringIncludes(intro.text, 'Paid by: at the studio');
   assertEquals(intro.text.includes('next payment'), false);
 });
+
+Deno.test('class changed: new time and instructor', () => {
+  const m = render({ kind: 'class_changed', full_name: 'Aoife Byrne', payload: {
+    title: 'Heels', old_title: 'Heels', starts_at: '2026-11-12T19:00:00Z', old_starts_at: '2026-11-12T18:30:00Z',
+    time_changed: true, instructor_changed: true, instructor: 'Vini Martins', old_instructor: 'Talita Lima', note: 'Sorry!' } })!;
+  assertEquals(m.subject, 'Change to your class: Heels, Thursday, 12 November at 19:00');
+  assertStringIncludes(m.text, 'New time: Thursday, 12 November at 19:00 (was Thursday, 12 November at 18:30)');
+  assertStringIncludes(m.text, 'New instructor: Vini Martins (was Talita Lima)');
+  assertStringIncludes(m.text, 'Sorry!');
+});

@@ -6,6 +6,7 @@ import { supabase, AppError } from '../lib/supabase';
 import { unwrap } from '../api';
 import { fmt, ordinal } from '../domain/time';
 import { Avatar } from './Avatar';
+import { CancelSessionSheet, EditSessionSheet } from './SessionAdminSheets';
 import { ErrorNotice, Notice, PageSpinner, Sheet, Spinner, useToast } from './ui';
 
 const KIND_LABEL: Record<RosterEntry['kind'], string> = { membership: 'Membership', drop_in: 'Drop In', ticket: 'Ticket', staff: 'Instructor · free' };
@@ -25,6 +26,8 @@ export function StaffRoster({ sessionId, onClose, onChanged, isAdmin = false }: 
 }) {
   const toast = useToast();
   const roster = useAsync(() => api.roster(sessionId), [sessionId]);
+  const [editing, setEditing] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const r = roster.data;
   const started = r ? new Date(r.starts_at).getTime() - 3_600_000 <= Date.now() : false;
 
@@ -69,6 +72,13 @@ export function StaffRoster({ sessionId, onClose, onChanged, isAdmin = false }: 
             </div>
           </div>
 
+          {isAdmin && r.status === 'scheduled' && new Date(r.ends_at) > new Date() && (
+            <div className="flex gap-2">
+              <button className="btn-outline btn-sm flex-1" onClick={() => setEditing(true)}>Edit class</button>
+              <button className="btn-ghost btn-sm flex-1 text-danger" onClick={() => setCancelling(true)}>Cancel class</button>
+            </div>
+          )}
+
           {birthdays.length > 0 && (
             <Notice tone="warn">
               🎂 It’s {birthdays.map((b) => `${b.full_name.split(' ')[0]}’s${b.turning ? ` ${ordinal(b.turning)}` : ''}`).join(' and ')} birthday today!
@@ -109,6 +119,10 @@ export function StaffRoster({ sessionId, onClose, onChanged, isAdmin = false }: 
           )}
         </div>
       )}
+      {editing && <EditSessionSheet sessionId={sessionId} onClose={() => setEditing(false)}
+        onDone={(n) => { toast(n ? `Class updated. ${n} member(s) notified.` : 'Class updated.'); void roster.reload(); onChanged?.(); }} />}
+      {cancelling && r && <CancelSessionSheet session={{ id: sessionId, title: r.title, starts_at: r.starts_at, booked_count: r.booked_count }} onClose={() => setCancelling(false)}
+        onDone={(n) => { toast(`Class cancelled. ${n} member(s) notified and given their class back.`); void roster.reload(); onChanged?.(); }} />}
     </Sheet>
   );
 }

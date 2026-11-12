@@ -134,6 +134,17 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
           url: '/admin/instructors',
         };
     }
+    case 'class_changed': {
+      const changes: string[] = [];
+      if (p.time_changed) changes.push(`New time: ${when(p.starts_at)} (was ${when(p.old_starts_at)})`);
+      if (p.instructor_changed) changes.push(`New instructor: ${p.instructor ?? 'to be confirmed'}${p.old_instructor ? ` (was ${p.old_instructor})` : ''}`);
+      if (p.title !== p.old_title) changes.push(`Class: ${p.title} (was ${p.old_title})`);
+      return {
+        subject: `Change to your class: ${p.title}, ${when(p.starts_at)}`,
+        text: `${hi}\n\nThere's a change to a class you're booked into:\n\n${changes.join('\n')}\n${p.note ? `\n${p.note}\n` : ''}\nYou're still booked in. Can't make it now? You can cancel in the app (My Membership) and, if it's in time, your class is returned.\n\nDrop Studios`,
+        url: '/account',
+      };
+    }
     case 'payment_receipt': {
       const paid = new Intl.DateTimeFormat('en-IE', { timeZone: TZ, day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(String(p.paid_at)));
       const lines = [

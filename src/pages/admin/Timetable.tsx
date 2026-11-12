@@ -5,9 +5,10 @@ import type { ClassTemplate, DanceStyle, Instructor, StaffSession } from '../../
 import { useAsync } from '../../lib/useAsync';
 import { addDaysToKey, fmt, localDateKey, weekStartKey, zonedTime } from '../../domain/time';
 import { formatPrice, parseEurosToCents } from '../../domain/money';
-import { ErrorNotice, Field, Notice, PageSpinner, Sheet, Spinner, useToast } from '../../components/ui';
+import { ErrorNotice, Field, PageSpinner, Sheet, Spinner, useToast } from '../../components/ui';
 import { Section, Table, Td, WEEKDAYS } from './shared';
 import { StaffRoster } from '../../components/StaffRoster';
+import { CancelSessionSheet, EditSessionSheet } from '../../components/SessionAdminSheets';
 
 type TemplateForm = Omit<ClassTemplate, 'id'> & { id?: string };
 
@@ -36,6 +37,7 @@ export default function AdminTimetable() {
   const [editing, setEditing] = useState<TemplateForm | null>(null);
   const [roster, setRoster] = useState<StaffSession | null>(null);
   const [cancelling, setCancelling] = useState<StaffSession | null>(null);
+  const [editingSession, setEditingSession] = useState<string | null>(null);
   const [newSession, setNewSession] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -111,6 +113,7 @@ export default function AdminTimetable() {
                 <Td>{s.status === 'cancelled' ? `Cancelled${s.cancel_reason ? `: ${s.cancel_reason}` : ''}` : 'Scheduled'}</Td>
                 <Td className="whitespace-nowrap text-right">
                   <button className="btn-sm btn-ghost" onClick={() => setRoster(s)}>Roster</button>
+                  {s.status === 'scheduled' && <button className="btn-sm btn-ghost" onClick={() => setEditingSession(s.id)}>Edit</button>}
                   {s.status === 'scheduled' && <button className="btn-sm btn-ghost text-danger" onClick={() => setCancelling(s)}>Cancel class</button>}
                 </Td>
               </tr>
@@ -122,6 +125,7 @@ export default function AdminTimetable() {
       {editing && <TemplateSheet value={editing} styles={styles} instructors={instructors} onClose={() => setEditing(null)} onSaved={() => { toast('Saved.'); void templates.reload(); }} />}
       {newSession && <SessionSheet styles={styles} instructors={instructors} onClose={() => setNewSession(false)} onSaved={() => { toast('Class added.'); void sessions.reload(); }} />}
       {roster && <StaffRoster sessionId={roster.id} isAdmin onClose={() => setRoster(null)} onChanged={() => void sessions.reload()} />}
+      {editingSession && <EditSessionSheet sessionId={editingSession} onClose={() => setEditingSession(null)} onDone={(n) => { toast(n ? `Class updated. ${n} member(s) notified.` : 'Class updated.'); void sessions.reload(); }} />}
       {cancelling && <CancelSessionSheet session={cancelling} onClose={() => setCancelling(null)} onDone={(n) => { toast(`Class cancelled. ${n} booking(s) refunded.`); void sessions.reload(); }} />}
     </>
   );
@@ -209,30 +213,6 @@ function SessionSheet({ styles, instructors, onClose, onSaved }: { styles: Dance
   );
 }
 
-function CancelSessionSheet({ session, onClose, onDone }: { session: StaffSession; onClose: () => void; onDone: (n: number) => void }) {
-  const [reason, setReason] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  return (
-    <Sheet open onClose={onClose} title="Cancel this class?">
-      <p className="text-sm">{session.title} · {fmt.dateTime(session.starts_at)}</p>
-      <div className="mt-3"><Notice tone="warn">All {session.booked_count} booking(s) will be cancelled and every customer gets their class back.</Notice></div>
-      <div className="mt-3"><Field label="Reason (shown to customers)"><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Instructor unwell" /></Field></div>
-      {error && <div className="mt-3"><ErrorNotice error={error} /></div>}
-      <button className="btn-danger mt-4 w-full" disabled={!reason.trim() || busy} onClick={async () => {
-        setBusy(true);
-        try {
-          const n = unwrap(await supabase.rpc('admin_cancel_session', { p_session_id: session.id, p_reason: reason })) as number;
-          onDone(n);
-          onClose();
-        } catch (e) {
-          setError((e as Error).message);
-          setBusy(false);
-        }
-      }}>{busy && <Spinner />}Cancel class</button>
-    </Sheet>
-  );
-}
 
 
 /** null = no online sales; undefined = invalid input. */

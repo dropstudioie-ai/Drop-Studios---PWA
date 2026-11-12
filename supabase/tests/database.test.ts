@@ -1302,6 +1302,24 @@ run('database: plans, booking, allowances, pauses, security', () => {
   });
 
   describe('notifications', () => {
+    it('admins can change a class; everyone booked is told what changed', async () => {
+      const c = await createUser(db, 'MovedClass');
+      await buy(c, 'intro-3');
+      const s = await makeSession({ style: 'heels', startsInMinutes: 600 });
+      await book(c, s);
+      const { rows: [inst] } = await db.query(`insert into instructors (full_name) values ('Substitute Teacher') returning id`);
+      const later = new Date(Date.now() + 660 * 60_000).toISOString();
+      const end = new Date(Date.now() + 720 * 60_000).toISOString();
+      await expectError(as(db, user(c), `select admin_update_session($1, $2, $3, $4, 'Heels', null)`, [s, later, end, inst.id]), 'forbidden');
+      const [r] = await as<{ r: { notified: number } }>(db, user(admin), `select admin_update_session($1, $2, $3, $4, 'Heels', 'Sorry for the change!') r`, [s, later, end, inst.id]);
+      expect(r.r.notified).toBe(1);
+      const { rows: [n] } = await db.query(`select payload from notification_outbox where user_id = $1 and kind = 'class_changed'`, [c]);
+      expect(n.payload).toMatchObject({ time_changed: true, instructor_changed: true, instructor: 'Substitute Teacher', note: 'Sorry for the change!' });
+      // The booking stays.
+      expect((await db.query(`select status from bookings where session_id = $1 and user_id = $2`, [s, c])).rows[0].status).toBe('booked');
+      await expectError(as(db, user(admin), `select admin_update_session($1, $2, $2, $3, 'Heels', null)`, [s, later, inst.id]), 'invalid_session_times');
+    });
+
     it('are on by default; a member who turns email off gets none', async () => {
       const id = randomUUID();
       await db.query(`insert into auth.users (id, email, raw_user_meta_data) values ($1, 'quiet@example.com', $2)`, [id, { full_name: 'Quiet One' }]);
