@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 // Real class photos from the studio (public/studio), edited to one standard Drop look.
-export const STUDIO_PHOTOS = Array.from({ length: 14 }, (_, i) => `/studio/class-${i + 1}.webp`);
+export const STUDIO_PHOTOS = [1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 13, 14].map((n) => `/studio/class-${n}.webp`);
 
 /** A random studio photo, picked once per visit to the page. `index` is kept as the first choice for screenshots/tests. */
 export function StudioPhoto({ index, className = '', children }: { index?: number; className?: string; children?: React.ReactNode }) {
