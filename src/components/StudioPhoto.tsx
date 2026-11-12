@@ -1,5 +1,5 @@
 // Real class photos from the studio (public/studio), edited to the Drop look.
-export const STUDIO_PHOTOS = Array.from({ length: 8 }, (_, i) => `/studio/class-${i + 1}.webp`);
+export const STUDIO_PHOTOS = Array.from({ length: 14 }, (_, i) => `/studio/class-${i + 1}.webp`);
 
 /** A different photo per page, the same one each visit, so pages don't flicker between photos. */
 export function StudioPhoto({ index, className = '', children }: { index: number; className?: string; children?: React.ReactNode }) {

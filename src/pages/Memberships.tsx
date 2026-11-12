@@ -30,7 +30,7 @@ export default function Memberships() {
 
   return (
     <div className="container-page py-8 sm:py-12 xl:max-w-7xl">
-      <StudioPhoto index={5} className="mb-8 aspect-[16/7] sm:aspect-[16/5] lg:aspect-[16/4]" />
+      <StudioPhoto index={8} className="mb-8 aspect-[16/7] sm:aspect-[16/5] lg:aspect-[16/4]" />
       <header className="mx-auto max-w-3xl text-center">
         <h1 className="font-display text-4xl font-black uppercase leading-[0.95] tracking-tight sm:text-6xl">
           Find your rhythm.<br /><span className="text-brand-600">Choose your Drop membership.</span>
