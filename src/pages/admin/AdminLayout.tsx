@@ -5,7 +5,7 @@ const TABS = [
   ['timetable', 'Timetable'],
   ['bookings', 'Bookings'],
   ['events', 'Events'],
-  ['customers', 'Customers'],
+  ['customers', 'Members'],
   ['plans', 'Plans'],
   ['styles', 'Styles'],
   ['instructors', 'Instructors'],

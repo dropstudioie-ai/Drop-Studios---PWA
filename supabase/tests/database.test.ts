@@ -828,6 +828,19 @@ run('database: plans, booking, allowances, pauses, security', () => {
     });
   });
 
+  it('admins can edit a member’s profile, and every change is audited', async () => {
+    const m = await createUser(db, 'EditMe');
+    await expectError(as(db, user(m), `select admin_update_member($1, 'Hacker', null, null, false, true, true)`, [m]), 'forbidden');
+    await expectError(as(db, user(admin), `select admin_update_member($1, '  ', null, null, false, true, true)`, [m]), 'name_required');
+    await expectError(as(db, user(admin), `select admin_update_member($1, 'Edit Me', null, '2999-01-01', false, true, true)`, [m]), 'invalid_date_of_birth');
+    await as(db, user(admin), `select admin_update_member($1, 'Edit Me Too', '087 123 4567', '1995-06-01', true, false, true, true)`, [m]);
+    const { rows: [p] } = await db.query(`select full_name, phone, date_of_birth::text dob, marketing_opt_in, notify_email, notify_push, avatar_path from profiles where id = $1`, [m]);
+    expect(p).toMatchObject({ full_name: 'Edit Me Too', phone: '087 123 4567', dob: '1995-06-01', marketing_opt_in: true, notify_email: false, notify_push: true, avatar_path: null });
+    const { rows: [a] } = await db.query(`select details from audit_log where action = 'member_updated' and entity_id = $1`, [m]);
+    expect(a.details.full_name).toEqual({ from: 'EditMe', to: 'Edit Me Too' });
+    await expect(as(db, user(admin), `select admin_record_member_email($1, 'x@y.ie', $1)`, [m])).rejects.toThrow(/permission denied/);
+  });
+
   describe('instructor view', () => {
     async function teacher(name: string) {
       const uid = await createUser(db, name);

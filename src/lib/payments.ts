@@ -51,3 +51,7 @@ export const manageSubscription = (action: 'cancel' | 'undo_cancel' | 'end_now' 
 /** Admins only (checked on the server): refund a Square payment. */
 export const adminRefund = (paymentId: string, amountCents: number, reason: string) =>
   invoke<{ ok: boolean; status: string }>('admin-refund', { payment_id: paymentId, amount_cents: amountCents, reason });
+
+/** Admin: change a member's sign-in email (auth account and profile). */
+export const adminMemberEmail = (userId: string, email: string) =>
+  invoke<{ ok: boolean; email: string }>('admin-member-email', { user_id: userId, email });

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { endsOn } from '../../domain/subscription';
-import { adminRefund, manageSubscription } from '../../lib/payments';
+import { adminMemberEmail, adminRefund, manageSubscription } from '../../lib/payments';
+import { messageFor } from '../../domain/messages';
 import { supabase, AppError } from '../../lib/supabase';
 import { api, unwrap } from '../../api';
 import type { Membership, MembershipPlan, Profile } from '../../api/types';
@@ -30,17 +31,37 @@ export default function AdminCustomers() {
   if (selected) return <CustomerDetail userId={selected} onBack={() => setSelected(null)} />;
 
   return (
-    <Section title="Customers">
-      <input className="input mb-3 max-w-md" placeholder="Search name, email or phone" value={q} onChange={(e) => setQ(e.target.value)} />
+    <Section title="Members">
+      <input className="input mb-3 w-full md:max-w-md" type="search" placeholder="Search name, email or phone" value={q} onChange={(e) => setQ(e.target.value)} />
       {list.loading && !list.data ? <PageSpinner /> : list.error ? <ErrorNotice error={list.error} /> : (
+        <>
+          {/* Phone: tap a member card */}
+          <ul className="space-y-2 md:hidden">
+            {list.data?.length === 0 && <li className="card p-6 text-center text-sm text-muted">No members found.</li>}
+            {list.data?.map((p) => (
+              <li key={p.id}>
+                <button onClick={() => setSelected(p.id)} className="card flex w-full items-center gap-3 p-3 text-left active:bg-canvas">
+                  <Avatar path={p.avatar_path} name={p.full_name} size={44} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-bold">{p.full_name || '—'}</span>
+                    <span className="block truncate text-xs text-muted">{p.email}{p.phone ? ` · ${p.phone}` : ''}</span>
+                    <span className="mt-1 flex flex-wrap gap-1 text-[11px]">
+                      <span className="chip bg-canvas capitalize">{p.role}</span>
+                      <span className="chip bg-brand-50 text-brand-700">{availableClasses(p.memberships)} classes</span>
+                      {!p.avatar_path && <span className="chip bg-accent-50">No photo</span>}
+                    </span>
+                  </span>
+                  <span aria-hidden="true" className="text-muted">›</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          <div className="hidden md:block">
         <Table head={['Name', 'Email', 'Role', 'Classes available', 'Joined', '']} empty={!list.data?.length}>
           {list.data?.map((p) => {
-            const now = new Date();
-            const available = p.memberships
-              .filter((m) => m.admin_status === 'valid' && (!m.expires_at || new Date(m.expires_at) > now))
-              .reduce((s, m) => s + m.classes_remaining, 0);
+            const available = availableClasses(p.memberships);
             return (
-              <tr key={p.id}>
+              <tr key={p.id} className="cursor-pointer hover:bg-canvas" onClick={() => setSelected(p.id)}>
                 <Td className="font-semibold"><span className="flex items-center gap-2"><Avatar path={p.avatar_path} name={p.full_name} size={28} />{p.full_name || '—'}{!p.avatar_path && <span className="chip bg-accent-50 text-xs font-medium">No photo</span>}</span></Td>
                 <Td>{p.email}</Td>
                 <Td className="capitalize">{p.role}</Td>
@@ -51,9 +72,16 @@ export default function AdminCustomers() {
             );
           })}
         </Table>
+          </div>
+        </>
       )}
     </Section>
   );
+}
+
+function availableClasses(ms: Pick<Membership, 'classes_remaining' | 'expires_at' | 'admin_status'>[]) {
+  const now = new Date();
+  return ms.filter((m) => m.admin_status === 'valid' && (!m.expires_at || new Date(m.expires_at) > now)).reduce((n, m) => n + m.classes_remaining, 0);
 }
 
 interface LedgerRow { id: number; membership_id: string; delta: number; balance_after: number; kind: string; reason: string | null; created_at: string }
@@ -79,6 +107,7 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
   const [adjusting, setAdjusting] = useState<Membership | null>(null);
   const [pausing, setPausing] = useState<Membership | null>(null);
   const [selling, setSelling] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   if (data.loading && !data.data) return <PageSpinner />;
   if (data.error) return <ErrorNotice error={data.error} />;
@@ -163,23 +192,34 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
 
   return (
     <>
-      <button className="mb-4 text-sm font-semibold text-brand-700" onClick={onBack}>← All customers</button>
-      <div className="card mb-6 flex flex-wrap items-start justify-between gap-4 p-5">
-        <div>
-          <div className="flex items-center gap-3">
-            <Avatar path={d.profile.avatar_path} name={d.profile.full_name} size={56} />
-            <h2 className="text-xl font-black">{d.profile.full_name || d.profile.email}</h2>
+      <button className="mb-4 text-sm font-semibold text-brand-700" onClick={onBack}>← All members</button>
+      <div className="card mb-6 overflow-hidden">
+        <div className="flex flex-wrap items-center gap-4 border-b border-line p-5">
+          <Avatar path={d.profile.avatar_path} name={d.profile.full_name} size={72} />
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-2xl font-black">{d.profile.full_name || d.profile.email}</h2>
+            <p className="text-sm text-muted">Member since {fmt.date(d.profile.created_at)} · <span className="capitalize">{d.profile.role}</span></p>
           </div>
-          <p className="text-sm text-muted">{d.profile.email}{d.profile.phone ? ` · ${d.profile.phone}` : ''} · joined {fmt.date(d.profile.created_at)}</p>
-          <p className="mt-1 text-sm">Pause days used in {d.allowance.year}: {d.allowance.used_days} / {d.allowance.max_days}</p>
+          <button className="btn-primary btn-sm w-full sm:w-auto" onClick={() => setEditing(true)}>Edit profile</button>
         </div>
-        <div className="flex flex-wrap items-end gap-2">
+        <dl className="grid gap-x-6 gap-y-3 p-5 text-sm sm:grid-cols-2 lg:grid-cols-3">
+          <Info label="Email">{d.profile.email ? <a className="text-brand-700 underline" href={`mailto:${d.profile.email}`}>{d.profile.email}</a> : '—'}</Info>
+          <Info label="Phone">{d.profile.phone ? <a className="text-brand-700 underline" href={`tel:${d.profile.phone.replace(/\s/g, '')}`}>{d.profile.phone}</a> : '—'}</Info>
+          <Info label="Date of birth">{d.profile.date_of_birth ? `${formatKey(d.profile.date_of_birth, { day: 'numeric', month: 'long', year: 'numeric' })} (${ageOn(d.profile.date_of_birth)})` : '—'}</Info>
+          <Info label="Classes available">{availableClasses(d.memberships)}</Info>
+          <Info label={`Pause days used in ${d.allowance.year}`}>{d.allowance.used_days} of {d.allowance.max_days}</Info>
+          <Info label="Profile photo">{d.profile.avatar_path ? 'Added' : <span className="text-danger">Missing (needed to book)</span>}</Info>
+          <Info label="Notifications">{[d.profile.notify_email !== false && 'Email', d.profile.notify_push !== false && 'Phone'].filter(Boolean).join(' + ') || 'Off'}</Info>
+          <Info label="Marketing emails">{d.profile.marketing_opt_in ? 'Yes' : 'No'}</Info>
+          <Info label="Bookings">{d.bookings.filter((b) => b.status === 'attended').length} attended · {d.bookings.filter((b) => b.status === 'booked').length} upcoming</Info>
+        </dl>
+        <div className="flex flex-wrap items-end gap-2 border-t border-line bg-canvas p-4">
           <label className="text-sm"><span className="label">Role</span>
             <select className="input" value={d.profile.role} onChange={(e) => void setRole(e.target.value as Profile['role'])}>
               <option value="customer">Customer</option><option value="instructor">Instructor</option><option value="admin">Admin</option>
             </select>
           </label>
-          <button className="btn-sm btn-primary" onClick={() => setSelling(true)}>Record in-studio sale</button>
+          <button className="btn-sm btn-outline" onClick={() => setSelling(true)}>Record in-studio sale</button>
         </div>
       </div>
 
@@ -277,6 +317,7 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
         </Table>
       </Section>
 
+      {editing && <EditMemberSheet profile={d.profile} onClose={() => setEditing(false)} onDone={() => { setEditing(false); void data.reload(); }} />}
       {adjusting && <AdjustSheet m={adjusting} onClose={() => setAdjusting(null)} onDone={() => { toast('Classes updated.'); void data.reload(); }} />}
       {pausing && <PauseSheet membership={pausing} allowance={d.allowance} adminOverride onClose={() => setPausing(null)} onDone={() => { toast('Membership paused.'); void data.reload(); }} />}
       {selling && <ManualSaleSheet userId={userId} plans={d.plans} styles={d.styles as { id: string; name: string }[]} onClose={() => setSelling(false)} onDone={() => { toast('Sale recorded.'); void data.reload(); }} />}
@@ -348,6 +389,81 @@ function ManualSaleSheet({ userId, plans, styles, onClose, onDone }: {
             setBusy(false);
           }
         }}>{busy && <Spinner />}Record sale</button>
+      </div>
+    </Sheet>
+  );
+}
+
+function Info({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs font-bold uppercase tracking-wide text-muted">{label}</dt>
+      <dd className="mt-0.5 break-words font-semibold">{children}</dd>
+    </div>
+  );
+}
+
+function ageOn(dob: string) {
+  const [y, m, d] = dob.split('-').map(Number);
+  const now = new Date();
+  let age = now.getFullYear() - y;
+  if (now.getMonth() + 1 < m || (now.getMonth() + 1 === m && now.getDate() < d)) age--;
+  return `${age} years`;
+}
+
+/** Admin: edit a member's details. Email changes also update their sign-in. */
+function EditMemberSheet({ profile, onClose, onDone }: { profile: Profile; onClose: () => void; onDone: () => void }) {
+  const toast = useToast();
+  const [f, setF] = useState({
+    full_name: profile.full_name ?? '', email: profile.email ?? '', phone: profile.phone ?? '', dob: profile.date_of_birth ?? '',
+    marketing: profile.marketing_opt_in, notifyEmail: profile.notify_email !== false, notifyPush: profile.notify_push !== false, removePhoto: false,
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const emailChanged = f.email.trim().toLowerCase() !== (profile.email ?? '').toLowerCase();
+
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try {
+      if (emailChanged) {
+        if (!window.confirm(`Change ${profile.full_name || 'this member'}’s login email to ${f.email.trim()}? They’ll sign in with the new address from now on.`)) { setBusy(false); return; }
+        await adminMemberEmail(profile.id, f.email.trim());
+      }
+      unwrap(await supabase.rpc('admin_update_member', {
+        p_user_id: profile.id, p_full_name: f.full_name, p_phone: f.phone || null, p_date_of_birth: f.dob || null,
+        p_marketing_opt_in: f.marketing, p_notify_email: f.notifyEmail, p_notify_push: f.notifyPush, p_remove_photo: f.removePhoto,
+      }));
+      toast('Profile saved.');
+      onDone();
+    } catch (e) {
+      const code = (e as { code?: string }).code ?? (e as Error).message;
+      setError(messageFor(code, (e as Error).message));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Sheet open onClose={onClose} title="Edit profile">
+      <div className="space-y-3">
+        <Field label="Full name"><input className="input" value={f.full_name} onChange={(e) => setF({ ...f, full_name: e.target.value })} autoComplete="off" /></Field>
+        <Field label="Email (login)" hint={emailChanged ? 'This changes the email they log in with.' : undefined}>
+          <input className="input" type="email" inputMode="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} autoComplete="off" />
+        </Field>
+        <Field label="Phone"><input className="input" type="tel" inputMode="tel" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} autoComplete="off" /></Field>
+        <Field label="Date of birth"><input className="input" type="date" max={new Date().toISOString().slice(0, 10)} value={f.dob} onChange={(e) => setF({ ...f, dob: e.target.value })} /></Field>
+        <fieldset className="space-y-2 rounded-xl bg-canvas p-3 text-sm">
+          <legend className="sr-only">Preferences</legend>
+          <label className="flex items-center gap-2"><input type="checkbox" className="h-5 w-5" checked={f.notifyEmail} onChange={(e) => setF({ ...f, notifyEmail: e.target.checked })} />Email reminders and receipts</label>
+          <label className="flex items-center gap-2"><input type="checkbox" className="h-5 w-5" checked={f.notifyPush} onChange={(e) => setF({ ...f, notifyPush: e.target.checked })} />Phone notifications</label>
+          <label className="flex items-center gap-2"><input type="checkbox" className="h-5 w-5" checked={f.marketing} onChange={(e) => setF({ ...f, marketing: e.target.checked })} />Marketing emails</label>
+          {profile.avatar_path && (
+            <label className="flex items-center gap-2 text-danger"><input type="checkbox" className="h-5 w-5" checked={f.removePhoto} onChange={(e) => setF({ ...f, removePhoto: e.target.checked })} />Remove profile photo (they’ll need to add a new one to book)</label>
+          )}
+        </fieldset>
+        <p className="text-xs text-muted">Changes are saved in the audit log.</p>
+        {error && <ErrorNotice error={error} />}
+        <button className="btn-primary w-full" disabled={busy || !f.full_name.trim()} onClick={() => void save()}>{busy && <Spinner />}Save changes</button>
       </div>
     </Sheet>
   );
