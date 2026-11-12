@@ -141,7 +141,7 @@ as $$
   update public.payments set provider_fee_cents = p_fee_cents where id = p_payment_id and p_fee_cents >= 0;
 $$;
 
-alter table public.app_settings add column workshop_instructor_share_pct int not null default 60
+alter table public.app_settings add column workshop_instructor_share_pct int not null default 70
   check (workshop_instructor_share_pct between 0 and 100);
 
 create table public.studio_events (
@@ -164,7 +164,7 @@ create table public.studio_events (
   price_cents int check (price_cents >= 0),
   member_price_cents int check (member_price_cents >= 0),
   admin_note text,
-  instructor_share_pct int not null default 60 check (instructor_share_pct between 0 and 100),
+  instructor_share_pct int not null default 70 check (instructor_share_pct between 0 and 100),
   announced_to int not null default 0,
   decided_by uuid references public.profiles (id),
   created_at timestamptz not null default now(),

@@ -188,7 +188,7 @@ export function OrganiseEvent() {
   const themes = useAsync(() => events.themes(), []);
   const styles = useAsync(() => api.styles(), []);
   const settings = useAsync(() => api.settings(), []);
-  const share = settings.data?.workshop_instructor_share_pct ?? 60;
+  const share = settings.data?.workshop_instructor_share_pct ?? 70;
   const instructors = useAsync(() => (isAdmin ? api.instructors() : Promise.resolve([])), [isAdmin]);
   const classes = useAsync(async () => {
     const [list, mine] = await Promise.all([

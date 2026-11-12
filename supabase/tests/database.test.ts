@@ -980,7 +980,7 @@ run('database: plans, booking, allowances, pauses, security', () => {
       expect(await price(member)).toBe(2000);
       expect(await price(guest)).toBe(3000);
 
-      // What's left after Square's fee is split 60/40 between the instructor and the studio.
+      // What's left after Square's fee is split 70/30 between the instructor and the studio.
       for (const u of [member, guest]) {
         const { rows: [pay] } = await db.query(`select id, amount_cents from payments where user_id = $1 and session_id = $2`, [u, d.r.session_id]);
         await as(db, service, `select fulfill_payment($1, 'square', $2, $3, $4, 'EUR')`, [pay.id, `pi_${randomUUID()}`, `evt_${randomUUID()}`, pay.amount_cents]);
@@ -988,14 +988,14 @@ run('database: plans, booking, allowances, pauses, security', () => {
       const [mine] = await as<{ r: { status: string; session: { id: string }; tickets_sold: number; ticket_revenue_cents: number; instructor_share_pct: number;
         instructor_earnings_cents: number; studio_earnings_cents: number }[] }>(db, user(t.uid), `select my_events() r`);
       expect(mine.r[0]).toMatchObject({ status: 'published', session: { id: d.r.session_id }, tickets_sold: 2, ticket_revenue_cents: 5000,
-        fees_pending: 2, instructor_share_pct: 60, instructor_earnings_cents: 3000, studio_earnings_cents: 2000 });
+        fees_pending: 2, instructor_share_pct: 70, instructor_earnings_cents: 3500, studio_earnings_cents: 1500 });
       const pays = (await db.query(`select id from payments where session_id = $1 and status = 'succeeded' order by amount_cents`, [d.r.session_id])).rows;
       await as(db, service, `select record_payment_fee($1, 53)`, [pays[0].id]);  // member €20
       await as(db, service, `select record_payment_fee($1, 67)`, [pays[1].id]);  // guest €30
       await expect(as(db, user(t.uid), `select record_payment_fee($1, 0)`, [pays[0].id])).rejects.toThrow(/permission denied/);
       const [after] = await as<{ r: { fees_cents: number; fees_pending: number; net_revenue_cents: number; instructor_earnings_cents: number; studio_earnings_cents: number }[] }>(
         db, user(t.uid), `select my_events() r`);
-      expect(after.r[0]).toMatchObject({ fees_cents: 120, fees_pending: 0, net_revenue_cents: 4880, instructor_earnings_cents: 2928, studio_earnings_cents: 1952 });
+      expect(after.r[0]).toMatchObject({ fees_cents: 120, fees_pending: 0, net_revenue_cents: 4880, instructor_earnings_cents: 3416, studio_earnings_cents: 1464 });
       await expectError(as(db, user(t.uid), `select cancel_event($1)`, [w.r.event_id]), 'workshop_cancel_by_admin');
     });
 
