@@ -71,6 +71,7 @@ const MESSAGES: Record<string, string> = {
   invalid_pause_dates: 'Please check the pause dates.',
   pause_start_in_past: 'A pause cannot start in the past.',
   pause_after_expiry: 'The pause must start before your membership expires.',
+  pause_cooldown: 'You can pause again 10 days after your last pause ended.',
   pause_too_short: 'That pause is too short.',
   pause_already_scheduled: 'You already have a pause scheduled for this membership.',
   pause_limit_exceeded: 'That’s more than your remaining pause allowance for this year (3 months).',

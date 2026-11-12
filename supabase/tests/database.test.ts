@@ -881,6 +881,17 @@ run('database: plans, booking, allowances, pauses, security', () => {
     expect(b.secs).toBeLessThanOrEqual(300);
   });
 
+  it('after unpausing, a member waits 10 days before pausing again (admins can still pause)', async () => {
+    const m = await createUser(db, 'Cooldown');
+    const { membershipId } = await buy(m, 'intro-3');
+    // A pause that started 5 days ago, ended early today.
+    await db.query(`insert into membership_pauses (membership_id, user_id, starts_on, ends_on, original_ends_on) values ($1, $2, current_date - 5, current_date + 5, current_date + 5)`, [membershipId, m]);
+    await as(db, user(m), `select resume_membership($1)`, [membershipId]);
+    await expectError(as(db, user(m), `select pause_membership($1, current_date + 1, current_date + 8)`, [membershipId]), 'pause_cooldown');
+    await expectError(as(db, user(m), `select pause_membership($1, current_date + 9, current_date + 16)`, [membershipId]), 'pause_cooldown');
+    await as(db, user(admin), `select pause_membership($1, current_date + 1, current_date + 8, 'Injury', true)`, [membershipId]);
+  });
+
   describe('instructor view', () => {
     async function teacher(name: string) {
       const uid = await createUser(db, name);

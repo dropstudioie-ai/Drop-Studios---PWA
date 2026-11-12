@@ -16,8 +16,11 @@ export function PauseSheet({ membership, allowance, onClose, onDone, adminOverri
 }) {
   const today = localDateKey(new Date());
   const minDays = allowance?.min_days ?? 7;
-  const [start, setStart] = useState(today);
-  const [end, setEnd] = useState(addDaysToKey(today, minDays - 1));
+  // After a pause ends, members wait 10 days before the next one can start (admins aren't limited).
+  const lastEnd = (membership.pauses ?? []).filter((p) => !p.is_cancelled && p.starts_on <= today).map((p) => p.ends_on).sort().pop();
+  const earliest = !adminOverride && lastEnd && addDaysToKey(lastEnd, 11) > today ? addDaysToKey(lastEnd, 11) : today;
+  const [start, setStart] = useState(earliest);
+  const [end, setEnd] = useState(addDaysToKey(earliest, minDays - 1));
   const [reason, setReason] = useState('');
   const [override, setOverride] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -25,7 +28,7 @@ export function PauseSheet({ membership, allowance, onClose, onDone, adminOverri
 
   const expiresOnKey = membership.expires_at ? localDateKey(new Date(membership.expires_at)) : today;
   const days = start && end && end >= start ? daysInclusive(start, end) : 0;
-  const clientError = override ? null : validatePause(start, end, {
+  const clientError = start < earliest ? `You can pause again from ${formatKey(earliest, { weekday: 'short', day: 'numeric', month: 'short' })} (10 days after your last pause ended).` : override ? null : validatePause(start, end, {
     todayKey: today, expiresOnKey, minDays, remainingAllowance: allowance?.remaining_days ?? 90,
   });
 
@@ -51,13 +54,16 @@ export function PauseSheet({ membership, allowance, onClose, onDone, adminOverri
         <p className="text-sm text-ink-soft">
           While paused you can’t book classes. Your expiry date moves back by the number of paused days.
         </p>
+        {earliest > today && (
+          <Notice tone="info">Your last pause ended recently. You can start a new pause from <strong>{formatKey(earliest, { weekday: 'long', day: 'numeric', month: 'long' })}</strong>.</Notice>
+        )}
         {allowance && (
           <Notice tone="info">
             You have <strong>{allowance.remaining_days} of {allowance.max_days}</strong> pause days left in {allowance.year}. Minimum pause: {allowance.min_days} days.
           </Notice>
         )}
         <div className="grid grid-cols-2 gap-3">
-          <Field label="First paused day"><input className="input" type="date" min={today} value={start} onChange={(e) => setStart(e.target.value)} /></Field>
+          <Field label="First paused day"><input className="input" type="date" min={earliest} value={start} onChange={(e) => setStart(e.target.value)} /></Field>
           <Field label="Last paused day"><input className="input" type="date" min={start} value={end} onChange={(e) => setEnd(e.target.value)} /></Field>
         </div>
         {days > 0 && <p className="text-sm font-semibold">{days} {days === 1 ? 'day' : 'days'} · back on {formatKey(addDaysToKey(end, 1), { weekday: 'short', day: 'numeric', month: 'short' })}</p>}

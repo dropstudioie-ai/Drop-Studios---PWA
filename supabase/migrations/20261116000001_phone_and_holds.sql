@@ -272,3 +272,29 @@ revoke execute on function public._require_phone_for_checkout() from public, ano
 grant execute on function public._phone_key(text) to anon, authenticated;  -- used by the profiles.phone_key column
 revoke execute on function public.admin_shared_phone(uuid), public.admin_shared_phone_users() from public, anon;
 grant execute on function public.admin_shared_phone(uuid), public.admin_shared_phone_users() to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- After a pause ends (or is ended early), members wait 10 days before the
+-- next pause can start. Admins aren't limited.
+-- ---------------------------------------------------------------------------
+create or replace function public._pause_cooldown()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare v_last date;
+begin
+  if public.is_admin() then return new; end if;
+  select max(ends_on) into v_last from public.membership_pauses
+  where membership_id = new.membership_id and not is_cancelled and id <> new.id and starts_on <= new.starts_on;
+  if v_last is not null and new.starts_on <= v_last + 10 then
+    perform public._fail('pause_cooldown', to_char(v_last + 11, 'YYYY-MM-DD'));
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists membership_pauses_cooldown on public.membership_pauses;
+create trigger membership_pauses_cooldown before insert on public.membership_pauses
+  for each row execute function public._pause_cooldown();
+revoke execute on function public._pause_cooldown() from public, anon, authenticated;

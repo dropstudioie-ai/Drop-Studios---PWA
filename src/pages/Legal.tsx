@@ -127,6 +127,7 @@ export function TermsContent({ rules }: { rules: Rules }) {
           <li>Pausing a monthly membership also moves your next payment date back by the paused days.</li>
           <li>You can pause an active membership for up to {months} months ({rules.max_pause_days_per_year} days) per calendar year. Each pause must be at least {rules.min_pause_days} days.</li>
           <li>Your expiry date moves back by the number of paused days.</li>
+          <li>You can’t book classes while paused. After a pause ends (including if you end it early), you can start a new pause 10 days later.</li>
           <li>You can’t book classes during a pause, and a pause can’t include dates you’ve already booked.</li>
           <li>You can end a pause early. Your expiry date is then recalculated.</li>
         </ul>
