@@ -9,6 +9,7 @@ import { ClassCard } from '../components/ClassCard';
 import { BookingSheet } from '../components/BookingSheet';
 import { ChevronLeft, ChevronRight } from '../components/icons';
 import { EmptyState, ErrorNotice, PageSpinner } from '../components/ui';
+import { classImage } from '../config/classImages';
 
 export default function Timetable() {
   const { session: authSession } = useAuth();
@@ -107,6 +108,10 @@ export default function Timetable() {
             </button>
           ))}
         </div>
+      )}
+      {classImage(styleFilter) && (
+        <img src={classImage(styleFilter)!.wide} alt="" width={1600} height={900}
+          className="mt-4 aspect-[16/9] w-full rounded-2xl object-cover sm:max-w-2xl" />
       )}
 
       {/* Mobile: day tabs */}

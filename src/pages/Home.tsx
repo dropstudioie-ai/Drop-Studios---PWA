@@ -9,6 +9,7 @@ import { STUDIO } from '../config/studio';
 import { useAuth } from '../auth/AuthProvider';
 import { CalendarIcon, PinIcon, TicketIcon, UserIcon } from '../components/icons';
 import { isStandalone } from '../components/pwa';
+import { classImage } from '../config/classImages';
 import StaffHome from './StaffHome';
 
 export default function Home() {
@@ -93,16 +94,28 @@ function MemberHome() {
       </section>
 
       {styles.data && styles.data.length > 0 && (
-        <section className="bg-white py-12">
+        <section className="bg-ink py-12 text-white" aria-labelledby="styles-h">
           <div className="container-page">
-            <h2 className="text-2xl font-black sm:text-3xl">Our styles</h2>
-            <div className="mt-5 flex flex-wrap gap-2">
-              {styles.data.map((s) => (
-                <Link key={s.id} to={`/timetable?style=${s.slug}`} className="rounded-full px-5 py-3 font-display text-lg font-extrabold text-white transition hover:scale-105" style={{ background: s.color }}>
-                  {s.name}
-                </Link>
-              ))}
+            <div className="flex items-end justify-between gap-3">
+              <h2 id="styles-h" className="text-2xl font-black sm:text-3xl">Our classes</h2>
+              <Link to="/timetable" className="text-sm font-semibold text-accent-400">Full timetable →</Link>
             </div>
+            <ul className="-mx-4 mt-5 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0 lg:grid-cols-4">
+              {styles.data.map((s) => {
+                const art = classImage(s.slug);
+                return (
+                  <li key={s.id} className="w-[64%] shrink-0 snap-start sm:w-auto">
+                    <Link to={`/timetable?style=${s.slug}`} className="group block overflow-hidden rounded-2xl ring-1 ring-white/10 transition hover:-translate-y-1 hover:ring-white/40">
+                      {art ? (
+                        <img src={art.card} alt={`${s.name} class`} loading="lazy" width={720} height={900} className="aspect-[4/5] w-full object-cover" />
+                      ) : (
+                        <span className="flex aspect-[4/5] w-full items-end p-5 font-display text-4xl font-black uppercase" style={{ background: s.color }}>{s.name}</span>
+                      )}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         </section>
       )}
