@@ -28,6 +28,9 @@ export interface StudioEvent {
   session: { id: string; title: string; starts_at: string; ends_at: string; booked_count: number; capacity: number; status: string } | null;
   tickets_sold: number;
   ticket_revenue_cents: number;
+  instructor_share_pct: number;
+  instructor_earnings_cents: number;
+  studio_earnings_cents: number;
 }
 
 export interface BusySlot { title: string; starts_at: string; ends_at: string; pending: boolean }

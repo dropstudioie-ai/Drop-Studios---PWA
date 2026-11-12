@@ -980,8 +980,15 @@ run('database: plans, booking, allowances, pauses, security', () => {
       expect(await price(member)).toBe(2000);
       expect(await price(guest)).toBe(3000);
 
-      const [mine] = await as<{ r: { status: string; session: { id: string } }[] }>(db, user(t.uid), `select my_events() r`);
-      expect(mine.r[0]).toMatchObject({ status: 'published', session: { id: d.r.session_id } });
+      // Paid tickets are split 60/40 between the instructor and the studio.
+      for (const u of [member, guest]) {
+        const { rows: [pay] } = await db.query(`select id, amount_cents from payments where user_id = $1 and session_id = $2`, [u, d.r.session_id]);
+        await as(db, service, `select fulfill_payment($1, 'square', $2, $3, $4, 'EUR')`, [pay.id, `pi_${randomUUID()}`, `evt_${randomUUID()}`, pay.amount_cents]);
+      }
+      const [mine] = await as<{ r: { status: string; session: { id: string }; tickets_sold: number; ticket_revenue_cents: number; instructor_share_pct: number;
+        instructor_earnings_cents: number; studio_earnings_cents: number }[] }>(db, user(t.uid), `select my_events() r`);
+      expect(mine.r[0]).toMatchObject({ status: 'published', session: { id: d.r.session_id }, tickets_sold: 2, ticket_revenue_cents: 5000,
+        instructor_share_pct: 60, instructor_earnings_cents: 3000, studio_earnings_cents: 2000 });
       await expectError(as(db, user(t.uid), `select cancel_event($1)`, [w.r.event_id]), 'workshop_cancel_by_admin');
     });
 

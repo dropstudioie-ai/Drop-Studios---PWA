@@ -104,6 +104,14 @@ export function EventCard({ e, onEdit, admin }: { e: StudioEvent; onEdit?: () =>
         {e.kind === 'workshop' && e.status === 'published' && (
           <div><dt className="inline text-muted">Tickets sold: </dt><dd className="inline">{e.tickets_sold} · {formatPrice(e.ticket_revenue_cents)}</dd></div>
         )}
+        {e.kind === 'workshop' && e.status !== 'declined' && e.status !== 'cancelled' && (
+          <div className="sm:col-span-2">
+            <dt className="inline text-muted">Split {e.instructor_share_pct}/{100 - e.instructor_share_pct}: </dt>
+            <dd className="inline">
+              {admin ? e.instructor ?? 'Instructor' : 'You'} <strong>{formatPrice(e.instructor_earnings_cents)}</strong> · Studio {formatPrice(e.studio_earnings_cents)}
+            </dd>
+          </div>
+        )}
         {e.status !== 'pending' && e.announced_to > 0 && <div><dt className="inline text-muted">Told: </dt><dd className="inline">{e.announced_to} people</dd></div>}
       </dl>
       {e.admin_note && <p className="mt-2 text-sm"><span className="text-muted">Note from the studio:</span> {e.admin_note}</p>}
@@ -176,6 +184,8 @@ export function OrganiseEvent() {
 
   const themes = useAsync(() => events.themes(), []);
   const styles = useAsync(() => api.styles(), []);
+  const settings = useAsync(() => api.settings(), []);
+  const share = settings.data?.workshop_instructor_share_pct ?? 60;
   const instructors = useAsync(() => (isAdmin ? api.instructors() : Promise.resolve([])), [isAdmin]);
   const classes = useAsync(async () => {
     const [list, mine] = await Promise.all([
@@ -338,6 +348,7 @@ export function OrganiseEvent() {
               <Field label="Members (€)"><input className="input" inputMode="decimal" value={w.memberPrice} onChange={(e) => setW({ ...w, memberPrice: e.target.value })} placeholder="20" /></Field>
             </div>
             <p className="text-xs text-muted">Anyone can buy a ticket in the app. Members with an active membership pay the member price (leave it empty for one price for everyone).</p>
+            <WorkshopEarnings share={share} price={euroToCents(w.price)} capacity={Number(w.capacity) || 0} />
           </div>
         </Step>
       )}
@@ -383,5 +394,20 @@ function Choice({ active, onClick, title, text }: { active: boolean; onClick: ()
       <p className="font-display text-lg font-extrabold">{title}</p>
       <p className="mt-1 text-sm text-ink-soft">{text}</p>
     </button>
+  );
+}
+
+function WorkshopEarnings({ share, price, capacity }: { share: number; price: number | null; capacity: number }) {
+  const full = price != null && !Number.isNaN(price) && capacity > 0 ? price * capacity : null;
+  return (
+    <div className="rounded-xl border-2 border-success/40 bg-green-50/60 p-3 text-sm">
+      <p className="font-bold">💶 You keep {share}% of ticket sales. The studio keeps {100 - share}% for the space, payments and promotion.</p>
+      {full != null && (
+        <p className="mt-1 text-ink-soft">
+          Sold out at full price: {formatPrice(full)} in tickets, so <strong>{formatPrice(Math.round((full * share) / 100))}</strong> for you
+          {' '}(less if members buy at the member price).
+        </p>
+      )}
+    </div>
   );
 }

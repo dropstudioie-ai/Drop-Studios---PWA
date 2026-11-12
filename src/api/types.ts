@@ -14,6 +14,8 @@ export interface AppSettings {
   min_pause_days: number;
   expiry_reminder_days: number;
   expiry_reminders_enabled: boolean;
+  /** Instructor's % of workshop ticket sales (the rest is the studio's). */
+  workshop_instructor_share_pct?: number;
 }
 
 export interface DanceStyle {

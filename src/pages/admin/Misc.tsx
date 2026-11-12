@@ -112,6 +112,9 @@ export function AdminSettings() {
         <Field label="Max pause days per calendar year"><input className="input" type="number" min={0} value={f.max_pause_days_per_year} onChange={(e) => set('max_pause_days_per_year', Number(e.target.value))} /></Field>
         <Field label="Minimum pause length (days)"><input className="input" type="number" min={1} value={f.min_pause_days} onChange={(e) => set('min_pause_days', Number(e.target.value))} /></Field>
         <Field label="Expiry reminder (days before)"><input className="input" type="number" min={0} value={f.expiry_reminder_days} onChange={(e) => set('expiry_reminder_days', Number(e.target.value))} /></Field>
+        <Field label="Workshop split: instructor’s % of ticket sales" hint="The rest goes to the studio. New workshop requests use this; existing ones keep theirs.">
+          <input className="input" type="number" min={0} max={100} value={f.workshop_instructor_share_pct ?? 60} onChange={(e) => set('workshop_instructor_share_pct', Math.min(100, Math.max(0, Number(e.target.value))))} />
+        </Field>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-5 w-5" checked={f.late_cancel_restores_class} onChange={(e) => set('late_cancel_restores_class', e.target.checked)} />Late cancellations get the class back</label>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-5 w-5" checked={f.no_show_restores_class} onChange={(e) => set('no_show_restores_class', e.target.checked)} />No-shows get the class back</label>
         <label className="flex items-center gap-2 text-sm sm:col-span-2"><input type="checkbox" className="h-5 w-5" checked={f.expiry_reminders_enabled} onChange={(e) => set('expiry_reminders_enabled', e.target.checked)} />Send expiry reminders (needs email or push set up — see deployment docs)</label>

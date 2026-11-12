@@ -126,6 +126,11 @@ insert into public.important_dates (name, emoji, month, day, easter_offset, idea
 -- ---------------------------------------------------------------------------
 alter table public.class_sessions add column member_ticket_price_cents int check (member_ticket_price_cents >= 0);
 
+-- Workshop ticket money: the instructor's share (the rest is the studio's).
+-- Each workshop keeps the share it was requested under.
+alter table public.app_settings add column workshop_instructor_share_pct int not null default 60
+  check (workshop_instructor_share_pct between 0 and 100);
+
 create table public.studio_events (
   id uuid primary key default gen_random_uuid(),
   kind text not null check (kind in ('special_class', 'workshop')),
@@ -146,6 +151,7 @@ create table public.studio_events (
   price_cents int check (price_cents >= 0),
   member_price_cents int check (member_price_cents >= 0),
   admin_note text,
+  instructor_share_pct int not null default 60 check (instructor_share_pct between 0 and 100),
   announced_to int not null default 0,
   decided_by uuid references public.profiles (id),
   created_at timestamptz not null default now(),
@@ -408,10 +414,10 @@ begin
   if v_clash is not null then perform public._fail('studio_busy'); end if;
 
   insert into public.studio_events (kind, status, instructor_id, created_by, important_date_id, title, description, dress_code,
-    decorations, extras, starts_at, ends_at, style_id, capacity, price_cents, member_price_cents)
+    decorations, extras, starts_at, ends_at, style_id, capacity, price_cents, member_price_cents, instructor_share_pct)
   values ('workshop', 'pending', v_instr, auth.uid(), p_important_date_id, btrim(p_title), public._clean(p_description),
     public._clean(p_dress_code), public._clean(p_decorations), public._clean(p_extras), p_starts_at, p_ends_at, p_style_id,
-    p_capacity, p_price_cents, p_member_price_cents)
+    p_capacity, p_price_cents, p_member_price_cents, (public._settings()).workshop_instructor_share_pct)
   returning id into v_id;
 
   insert into public.notification_outbox (user_id, kind, payload, dedupe_key)
@@ -625,15 +631,22 @@ stable
 security definer
 set search_path = public, pg_temp
 as $$
+  with money as (
+    select count(*) as sold, coalesce(sum(p.amount_cents), 0)::int as revenue
+    from public.payments p
+    where e.kind = 'workshop' and p.session_id = e.session_id and p.status = 'succeeded' and not p.is_test
+  )
   select to_jsonb(e) || jsonb_build_object(
     'instructor', (select full_name from public.instructors where id = e.instructor_id),
     'theme', (select jsonb_build_object('name', d.name, 'emoji', d.emoji) from public.important_dates d where d.id = e.important_date_id),
     'session', (select jsonb_build_object('id', s.id, 'title', s.title, 'starts_at', s.starts_at, 'ends_at', s.ends_at,
                   'booked_count', s.booked_count, 'capacity', s.capacity, 'status', s.status)
                 from public.class_sessions s where s.id = e.session_id),
-    'tickets_sold', (select count(*) from public.payments p where p.session_id = e.session_id and p.status = 'succeeded' and e.kind = 'workshop'),
-    'ticket_revenue_cents', (select coalesce(sum(p.amount_cents), 0) from public.payments p
-                             where p.session_id = e.session_id and p.status = 'succeeded' and e.kind = 'workshop' and not p.is_test));
+    'tickets_sold', m.sold,
+    'ticket_revenue_cents', m.revenue,
+    'instructor_earnings_cents', round(m.revenue * e.instructor_share_pct / 100.0)::int,
+    'studio_earnings_cents', m.revenue - round(m.revenue * e.instructor_share_pct / 100.0)::int)
+  from money m;
 $$;
 
 create or replace function public.my_events()
