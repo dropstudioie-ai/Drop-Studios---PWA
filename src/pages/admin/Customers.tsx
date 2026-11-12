@@ -28,6 +28,7 @@ export default function AdminCustomers() {
     return unwrap(await query) as (Profile & { memberships: Pick<Membership, 'id' | 'classes_remaining' | 'expires_at' | 'admin_status'>[] })[];
   }, [q]);
 
+  const shared = useAsync(async () => new Set((unwrap(await supabase.rpc('admin_shared_phone_users')) as string[]) ?? []), []);
   if (selected) return <CustomerDetail userId={selected} onBack={() => setSelected(null)} />;
 
   return (
@@ -49,6 +50,7 @@ export default function AdminCustomers() {
                       <span className="chip bg-canvas capitalize">{p.role}</span>
                       <span className="chip bg-brand-50 text-brand-700">{availableClasses(p.memberships)} classes</span>
                       {!p.avatar_path && <span className="chip bg-accent-50">No photo</span>}
+                      {shared.data?.has(p.id) && <span className="chip bg-red-50 text-danger">Shared mobile</span>}
                     </span>
                   </span>
                   <span aria-hidden="true" className="text-muted">›</span>
@@ -62,7 +64,7 @@ export default function AdminCustomers() {
             const available = availableClasses(p.memberships);
             return (
               <tr key={p.id} className="cursor-pointer hover:bg-canvas" onClick={() => setSelected(p.id)}>
-                <Td className="font-semibold"><span className="flex items-center gap-2"><Avatar path={p.avatar_path} name={p.full_name} size={28} />{p.full_name || '—'}{!p.avatar_path && <span className="chip bg-accent-50 text-xs font-medium">No photo</span>}</span></Td>
+                <Td className="font-semibold"><span className="flex items-center gap-2"><Avatar path={p.avatar_path} name={p.full_name} size={28} />{p.full_name || '—'}{!p.avatar_path && <span className="chip bg-accent-50 text-xs font-medium">No photo</span>}{shared.data?.has(p.id) && <span className="chip bg-red-50 text-xs font-medium text-danger">Shared mobile</span>}</span></Td>
                 <Td>{p.email}</Td>
                 <Td className="capitalize">{p.role}</Td>
                 <Td className="tabular-nums">{available}</Td>
@@ -101,7 +103,8 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
       unwrap(await supabase.from('membership_plans').select('*').order('sort_order')) as MembershipPlan[],
       api.mySubscriptions(userId),
     ]);
-    return { profile, memberships, bookings, styles, ledger, payments, allowance, plans, subscriptions };
+    const sharedPhone = (unwrap(await supabase.rpc('admin_shared_phone', { p_user_id: userId })) ?? []) as { id: string; full_name: string; email: string | null }[];
+    return { profile, memberships, bookings, styles, ledger, payments, allowance, plans, subscriptions, sharedPhone };
   }, [userId]);
 
   const [adjusting, setAdjusting] = useState<Membership | null>(null);
@@ -218,6 +221,13 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
   return (
     <>
       <button className="mb-4 text-sm font-semibold text-brand-700" onClick={onBack}>← All members</button>
+      {d.sharedPhone.length > 0 && (
+        <div className="mb-4"><Notice tone="warn">
+          <strong>Same mobile number as {d.sharedPhone.length === 1 ? 'another account' : `${d.sharedPhone.length} other accounts`}:</strong>{' '}
+          {d.sharedPhone.map((o, i) => <span key={o.id}>{i > 0 && ', '}<a className="underline" href={`?user=${o.id}`}>{o.full_name || o.email}</a></span>)}.
+          This can be a second account used to get the Intro Offer again (the app now blocks that), or family sharing a phone.
+        </Notice></div>
+      )}
       <div className="card mb-6 overflow-hidden">
         <div className="flex flex-wrap items-center gap-4 border-b border-line p-5">
           <Avatar path={d.profile.avatar_path} name={d.profile.full_name} size={72} />

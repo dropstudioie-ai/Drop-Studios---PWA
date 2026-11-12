@@ -15,6 +15,7 @@ import { MembershipTerms } from '../components/Terms';
 import { EmptyState, ErrorNotice, Notice, PageSpinner, Spinner } from '../components/ui';
 import { useAuth } from '../auth/AuthProvider';
 import { StudioPhoto } from '../components/StudioPhoto';
+import { PhoneGate } from '../components/PhoneGate';
 
 export default function Checkout() {
   const { code = '' } = useParams();
@@ -188,7 +189,8 @@ export default function Checkout() {
             <a href={replaced.redirect} className="btn-primary w-full text-lg">Continue to payment</a>
           </div>
         )}
-        {!replaced && !alreadyPaid && <button className={`${paymentsMode === 'test' ? 'btn-accent' : 'btn-primary'} mt-5 w-full text-lg`} disabled={!canPay} onClick={pay}>
+        {!replaced && !alreadyPaid && !profile?.phone && <div className="mt-5"><PhoneGate /></div>}
+        {!replaced && !alreadyPaid && profile?.phone && <button className={`${paymentsMode === 'test' ? 'btn-accent' : 'btn-primary'} mt-5 w-full text-lg`} disabled={!canPay} onClick={pay}>
           {busy && <Spinner />}
           {paymentsMode === 'test'
             ? 'Complete TEST purchase'

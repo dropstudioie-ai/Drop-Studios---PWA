@@ -858,6 +858,29 @@ run('database: plans, booking, allowances, pauses, security', () => {
     expect((await db.query(`select admin_status from memberships where id = $1`, [membershipId])).rows[0].admin_status).toBe('valid');
   });
 
+  it('members need a mobile number to pay, and the Intro Offer is once per mobile number', async () => {
+    const noPhone = await createUser(db, 'NoPhone', 'customer', { phone: null });
+    await expectError(as(db, user(noPhone), `select create_checkout($1, null, $2, 'square')`, [await planId('multi-5'), randomUUID()]), 'phone_required');
+    const first = await createUser(db, 'FirstIntro', 'customer', { phone: '087 555 0101' });
+    await buy(first, 'intro-3');
+    // Same number written differently on a second account.
+    const second = await createUser(db, 'SecondIntro', 'customer', { phone: '+353 87 555 0101' });
+    await expectError(as(db, user(second), `select create_checkout($1, null, $2, 'square')`, [await planId('intro-3'), randomUUID()]), 'intro_not_eligible');
+    const [shared] = await as<{ r: { id: string }[] }>(db, user(admin), `select admin_shared_phone($1) r`, [second]);
+    expect(shared.r.map((x) => x.id)).toEqual([first]);
+    await expectError(as(db, user(second), `select admin_shared_phone($1)`, [second]), 'forbidden');
+  });
+
+  it('unpaid ticket holds last 5 minutes', async () => {
+    const m = await createUser(db, 'Holder');
+    const s = await makeSession({ style: 'heels', startsInMinutes: 3000, isSpecial: true });
+    await db.query(`update class_sessions set ticket_price_cents = 2000 where id = $1`, [s]);
+    await as(db, user(m), `select create_ticket_checkout($1, $2)`, [s, randomUUID()]);
+    const { rows: [b] } = await db.query(`select extract(epoch from hold_expires_at - now())::int secs from bookings where user_id = $1 and session_id = $2`, [m, s]);
+    expect(b.secs).toBeGreaterThan(240);
+    expect(b.secs).toBeLessThanOrEqual(300);
+  });
+
   describe('instructor view', () => {
     async function teacher(name: string) {
       const uid = await createUser(db, name);

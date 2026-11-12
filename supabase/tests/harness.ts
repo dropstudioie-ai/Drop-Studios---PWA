@@ -78,7 +78,7 @@ export async function createUser(
   db: pg.Client,
   name: string,
   role: 'customer' | 'admin' | 'instructor' = 'customer',
-  opts: { photo?: boolean } = {},
+  opts: { photo?: boolean; phone?: string | null } = {},
 ) {
   const id = randomUUID();
   await db.query(`insert into auth.users (id, email, raw_user_meta_data) values ($1, $2, $3)`, [
@@ -87,6 +87,9 @@ export async function createUser(
     { full_name: name },
   ]);
   if (role !== 'customer') await db.query(`update public.profiles set role = $2 where id = $1`, [id, role]);
+  // Paying needs a mobile number; give each test user a unique one unless told otherwise.
+  const phone = opts.phone === undefined ? `08${String(parseInt(id.replace(/-/g, '').slice(0, 8), 16) % 100000000).padStart(8, '0')}` : opts.phone;
+  if (phone) await db.query(`update public.profiles set phone = $2 where id = $1`, [id, phone]);
   // Booking requires a profile photo; most tests start from a customer who has one.
   if (opts.photo !== false) {
     await db.query(`insert into storage.objects (bucket_id, name, owner) values ('avatars', $1 || '/photo.jpg', $1::uuid)`, [id]);

@@ -103,6 +103,8 @@ export interface RosterEntry {
   user_id: string;
   full_name: string;
   avatar_path: string | null;
+  email?: string | null;
+  phone?: string | null;
   status: BookingStatus;
   class_restored: boolean;
   booked_at: string;
@@ -128,6 +130,7 @@ export interface MemberMatch {
   id: string;
   full_name: string;
   email: string | null;
+  phone?: string | null;
   avatar_path: string | null;
 }
 

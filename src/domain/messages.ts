@@ -13,6 +13,7 @@ const MESSAGES: Record<string, string> = {
   membership_not_cancelled: 'This membership isn’t cancelled.',
   price_change_needs_admin: 'The price was approved by the studio. Ask an admin to change it.',
   too_many_events: 'You’ve organised 3 events in the last 24 hours. Please try again tomorrow.',
+  phone_required: 'Please add your mobile number in My Membership before paying.',
   name_required: 'Please enter the member’s name.',
   member_not_found: 'We couldn’t find that member.',
   invalid_email: 'Please enter a valid email address.',

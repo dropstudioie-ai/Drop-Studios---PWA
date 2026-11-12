@@ -80,6 +80,10 @@ export function Register() {
       setError('Use at least 8 characters for your password.');
       return;
     }
+    if (form.phone.replace(/\D/g, '').length < 7) {
+      setError('Please enter your mobile number.');
+      return;
+    }
     setBusy(true);
     setError(null);
     const { data, error } = await supabase.auth.signUp({
@@ -111,7 +115,7 @@ export function Register() {
         <Field label="Full name"><input className="input" autoComplete="name" required value={form.full_name} onChange={set('full_name')} /></Field>
         <Field label="Email"><input className="input" type="email" autoComplete="email" required value={form.email} onChange={set('email')} /></Field>
         <Field label="Date of birth" hint="So your teacher can wish you a happy birthday. Only studio staff see it."><input className="input" type="date" required autoComplete="bday" min="1900-01-01" max={todayKey()} value={form.date_of_birth} onChange={set('date_of_birth')} /></Field>
-        <Field label="Mobile (optional)" hint="Only used if we need to reach you about a class."><input className="input" type="tel" autoComplete="tel" value={form.phone} onChange={set('phone')} /></Field>
+        <Field label="Mobile" hint="So the studio can reach you about your classes."><input className="input" type="tel" inputMode="tel" autoComplete="tel" required value={form.phone} onChange={set('phone')} placeholder="087 123 4567" /></Field>
         <Field label="Password" hint="At least 8 characters."><input className="input" type="password" autoComplete="new-password" required minLength={8} value={form.password} onChange={set('password')} /></Field>
         <label className="flex items-start gap-3 text-sm">
           <input type="checkbox" className="mt-0.5 h-5 w-5 accent-brand-600" checked={notifications} onChange={(e) => setNotifications(e.target.checked)} />

@@ -11,6 +11,7 @@ import { messageFor } from '../domain/messages';
 import { fmt } from '../domain/time';
 import { renewalLink, renewalOffer, type RenewalOffer } from '../domain/renewal';
 import { useAuth } from '../auth/AuthProvider';
+import { PhoneGate } from './PhoneGate';
 import { ClockIcon, UserIcon } from './icons';
 import { ErrorNotice, Notice, Sheet, Spinner, useToast } from './ui';
 
@@ -34,6 +35,8 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [renewal, setRenewal] = useState<RenewalOffer | null>(null);
   const auth = useAuth();
+  const profile = auth.profile;
+  const [askPhone, setAskPhone] = useState(false);
   const userId = auth.session?.user.id;
   const isStaff = auth.isStaff;
   const [staffFree, setStaffFree] = useState(false);
@@ -124,6 +127,7 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
   });
 
   const buyTicket = () => run(async () => {
+    if (!profile?.phone) { setAskPhone(true); return; }
     const next = await checkout({ session_id: session.id, idempotency_key: ticketKey });
     if ('redirect' in next) window.location.assign(next.redirect);
     else navigate(next.navigate);
@@ -167,6 +171,7 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
       <div className="mt-5 space-y-4">
         {!scheduled && <Notice tone="warn">This class has been cancelled{session.cancel_reason ? `: ${session.cancel_reason}` : '.'}</Notice>}
         {loading && <div className="flex justify-center py-4 text-brand-600"><Spinner className="h-6 w-6" /></div>}
+        {askPhone && !profile?.phone && <PhoneGate onSaved={() => setAskPhone(false)} />}
         {error && <ErrorNotice error={error} />}
 
         {opts && !opts.authenticated && scheduled && (
@@ -216,7 +221,7 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
         {/* Ticket checkout in progress */}
         {opts?.authenticated && opts.pending_hold_booking_id && (
           <div className="space-y-3">
-            <Notice tone="warn">Your spot is held while you finish paying. Unpaid holds are released after about 30 minutes.</Notice>
+            <Notice tone="warn">Your spot is held while you finish paying. Finish paying within 5 minutes or the spot is released for someone else.</Notice>
             <button className="btn-accent w-full text-lg" disabled={busy} onClick={buyTicket}>{busy && <Spinner />}Continue to payment</button>
             <button className="btn-ghost w-full" disabled={busy} onClick={releaseHold}>Release my spot</button>
           </div>

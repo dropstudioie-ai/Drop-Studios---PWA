@@ -93,6 +93,12 @@ export function StaffRoster({ sessionId, onClose, onChanged, isAdmin = false }: 
                 <Avatar path={b.avatar_path} name={b.full_name} size={52} />
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold">{b.full_name}</p>
+                  {(b.phone || b.email) && (
+                    <p className="flex flex-wrap gap-x-3 text-xs">
+                      {b.phone && <a className="font-semibold text-brand-700" href={`tel:${b.phone.replace(/\s/g, '')}`}>📞 {b.phone}</a>}
+                      {b.email && <a className="truncate text-brand-700" href={`mailto:${b.email}`}>{b.email}</a>}
+                    </p>
+                  )}
                   <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
                     {b.is_new && <span className="chip bg-brand-600 text-white">New · first class</span>}
                     {b.is_birthday && <span className="chip bg-accent-500 text-ink">🎂 Birthday{b.turning ? ` · ${b.turning}` : ''}</span>}
@@ -169,7 +175,7 @@ function AddMember({ sessionId, onAdded }: { sessionId: string; onAdded: () => v
     <section className="rounded-2xl border border-line p-4">
       <h3 className="font-bold">Add a member</h3>
       <p className="text-xs text-muted">Uses one class from their membership, as if they booked themselves.</p>
-      <input className="input mt-3" placeholder="Search by name or email" value={q} onChange={(e) => setQ(e.target.value)} />
+      <input className="input mt-3" placeholder="Search by name, email or mobile" value={q} onChange={(e) => setQ(e.target.value)} />
       {error && <div className="mt-3"><ErrorNotice error={error} /></div>}
       <ul className="mt-2 divide-y divide-line">
         {searching && <li className="py-3 text-center text-brand-600"><Spinner /></li>}
@@ -179,7 +185,7 @@ function AddMember({ sessionId, onAdded }: { sessionId: string; onAdded: () => v
             <Avatar path={m.avatar_path} name={m.full_name} size={36} />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold">{m.full_name || '—'}</p>
-              <p className="truncate text-xs text-muted">{m.email}</p>
+              <p className="truncate text-xs text-muted">{[m.email, m.phone].filter(Boolean).join(' · ')}</p>
             </div>
             <button className="btn-sm btn-primary" disabled={busyId !== null} onClick={() => void add(m)}>
               {busyId === m.id && <Spinner />}Add
