@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import type { BookingOptions, ClassSession } from '../api/types';
-import { classImage } from '../config/classImages';
+import { sessionImage } from '../config/classImages';
 import { AppError } from '../lib/supabase';
 import { checkout, paymentsMode } from '../lib/payments';
 import { availabilityLabel, cancellationOutcome, cutoffLabel } from '../domain/booking';
@@ -138,8 +138,8 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
 
   return (
     <Sheet open onClose={onClose} title={session.title}>
-      {classImage(session.style?.slug) && (
-        <img src={classImage(session.style?.slug)!.wide} alt="" width={1600} height={900} className="-mt-2 mb-3 aspect-[16/9] w-full rounded-2xl object-cover" />
+      {sessionImage(session.style?.slug, session.instructor_id) && (
+        <img src={sessionImage(session.style?.slug, session.instructor_id)!.wide} alt="" width={1600} height={900} className="-mt-2 mb-3 aspect-[16/9] w-full rounded-2xl object-cover" />
       )}
       <div className="-mt-2 rounded-2xl bg-canvas p-4">
         <div className="flex flex-wrap items-center gap-2">

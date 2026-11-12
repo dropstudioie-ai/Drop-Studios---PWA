@@ -88,7 +88,7 @@ export default function Checkout() {
   return (
     <div className="container-page max-w-2xl py-8">
       <Link to="/memberships" className="text-sm font-semibold text-brand-700">← All memberships</Link>
-      <StudioPhoto index={2} className="mt-4 aspect-[16/10] sm:aspect-[16/8]">
+      <StudioPhoto index={7} className="mt-4 aspect-[16/10] sm:aspect-[16/8]">
         <p className="font-display text-2xl font-black sm:text-3xl">You’re one step away from the floor.</p>
       </StudioPhoto>
       <h1 className="mt-5 text-3xl font-black">Checkout</h1>
