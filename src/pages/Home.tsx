@@ -6,9 +6,11 @@ import { classesLabel, sortPlans } from '../domain/plans';
 import { addDaysToKey, fmt, localDateKey, zonedTime } from '../domain/time';
 import { availabilityLabel } from '../domain/booking';
 import { STUDIO } from '../config/studio';
+import { useAuth } from '../auth/AuthProvider';
 import { CalendarIcon, PinIcon, TicketIcon, UserIcon } from '../components/icons';
 
 export default function Home() {
+  const { session } = useAuth();
   const today = localDateKey(new Date());
   const upcoming = useAsync(async () => {
     const list = await api.sessions(new Date().toISOString(), zonedTime(addDaysToKey(today, 3)).toISOString());
@@ -102,7 +104,7 @@ export default function Home() {
         <ol className="mt-6 grid gap-4 sm:grid-cols-3">
           {[
             { icon: <UserIcon />, title: 'Create your account', text: 'Sign up in under a minute.' },
-            { icon: <TicketIcon />, title: 'Pick a membership', text: cheapestRegular ? `Packs from ${formatPrice(cheapestRegular.price_cents, cheapestRegular.currency)}. No subscription.` : 'Prepaid class packs. No subscription.' },
+            { icon: <TicketIcon />, title: 'Pick a membership', text: cheapestRegular ? `Monthly memberships from ${formatPrice(cheapestRegular.price_cents, cheapestRegular.currency)}, or try 3 classes with the Intro Offer.` : 'Monthly memberships, or try 3 classes with the Intro Offer.' },
             { icon: <CalendarIcon />, title: 'Book your classes', text: 'Reserve up to 3 weeks ahead. Free cancellation up to 30 minutes before.' },
           ].map((step, i) => (
             <li key={step.title} className="card p-5">
@@ -113,8 +115,20 @@ export default function Home() {
             </li>
           ))}
         </ol>
-        <div className="mt-8 text-center">
+        <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
+          {!session && <Link to="/register" className="btn-accent text-lg">Create your free account</Link>}
           <Link to="/memberships" className="btn-primary text-lg">See memberships</Link>
+        </div>
+      </section>
+
+      <section className="bg-ink py-12 text-white" aria-labelledby="app-h">
+        <div className="container-page flex flex-col items-center gap-6 text-center md:flex-row md:text-left">
+          <img src="/brand/drop-icon.svg" alt="" className="h-20 w-20 shrink-0 rounded-3xl shadow-xl" />
+          <div className="flex-1">
+            <h2 id="app-h" className="font-display text-3xl font-black uppercase tracking-tight">Get the Drop app</h2>
+            <p className="mt-2 max-w-xl text-white/80">Book classes in one tap, get reminders and manage your membership from your phone. Free, no app store needed.</p>
+          </div>
+          <Link to="/app" className="btn-accent shrink-0 text-lg">Download the app</Link>
         </div>
       </section>
 
