@@ -841,6 +841,23 @@ run('database: plans, booking, allowances, pauses, security', () => {
     await expect(as(db, user(admin), `select admin_record_member_email($1, 'x@y.ie', $1)`, [m])).rejects.toThrow(/permission denied/);
   });
 
+  it('admins can cancel a class pack (upcoming bookings cancelled, member told) and reinstate it', async () => {
+    const m = await createUser(db, 'CancelMe');
+    const { membershipId } = await buy(m, 'intro-3');
+    const s = await makeSession({ style: 'fitdance', startsInMinutes: 2000 });
+    await book(m, s);
+    await expectError(as(db, user(m), `select admin_cancel_membership($1, 'x')`, [membershipId]), 'forbidden');
+    await expectError(as(db, user(admin), `select admin_cancel_membership($1, ' ')`, [membershipId]), 'reason_required');
+    const [r] = await as<{ r: { bookings_cancelled: number } }>(db, user(admin), `select admin_cancel_membership($1, 'Moving abroad') r`, [membershipId]);
+    expect(r.r.bookings_cancelled).toBe(1);
+    expect((await db.query(`select admin_status from memberships where id = $1`, [membershipId])).rows[0].admin_status).toBe('cancelled');
+    expect((await db.query(`select status from bookings where user_id = $1 and session_id = $2`, [m, s])).rows[0].status).toBe('cancelled');
+    expect((await db.query(`select count(*)::int n from notification_outbox where user_id = $1 and kind = 'membership_cancelled'`, [m])).rows[0].n).toBe(1);
+    await expectError(as(db, user(m), `select book_class($1, $2)`, [await makeSession({ style: 'fitdance', startsInMinutes: 3000 }), membershipId]), 'membership_cancelled');
+    await as(db, user(admin), `select admin_reinstate_membership($1, 'Changed their mind')`, [membershipId]);
+    expect((await db.query(`select admin_status from memberships where id = $1`, [membershipId])).rows[0].admin_status).toBe('valid');
+  });
+
   describe('instructor view', () => {
     async function teacher(name: string) {
       const uid = await createUser(db, name);

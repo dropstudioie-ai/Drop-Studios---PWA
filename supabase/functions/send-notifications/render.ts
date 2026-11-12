@@ -268,6 +268,14 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
           text: `${hi}\n\nSorry, the studio couldn't approve ${p.title} (${when(p.starts_at)}).${p.note ? `\n\n${p.note}` : ''}\n\nYou can suggest another date in the app.\n\nDrop Studios`,
           url: '/teach/events',
         };
+    case 'membership_cancelled': {
+      const n = Number(p.bookings_cancelled) || 0;
+      return {
+        subject: `Your ${p.plan_name} has been cancelled`,
+        text: `${hi}\n\nAs agreed, your ${p.plan_name} has been cancelled${p.reason ? ` (${p.reason})` : ''}.${n ? `\nYour ${n} upcoming booking${n === 1 ? ' has' : 's have'} been cancelled too.` : ''}\n\nIf this doesn't look right, just reply to this email or talk to us at reception.\n\nDrop Studios`,
+        url: '/account',
+      };
+    }
     case 'test_message':
       return {
         subject: 'Drop Studios: notifications are working ✅',

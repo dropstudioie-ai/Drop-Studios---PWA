@@ -9,6 +9,8 @@ const MESSAGES: Record<string, string> = {
   outside_booking_window: 'Bookings open 3 weeks before each class.',
   already_booked: 'You’re already booked into this class.',
   title_required: 'Give it a name.',
+  cancel_monthly_instead: 'This is a monthly membership. Cancel it under Monthly memberships so the payments stop too.',
+  membership_not_cancelled: 'This membership isn’t cancelled.',
   name_required: 'Please enter the member’s name.',
   member_not_found: 'We couldn’t find that member.',
   invalid_email: 'Please enter a valid email address.',

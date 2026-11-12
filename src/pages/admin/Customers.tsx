@@ -108,6 +108,7 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
   const [pausing, setPausing] = useState<Membership | null>(null);
   const [selling, setSelling] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [cancelling, setCancelling] = useState<Membership | null>(null);
 
   if (data.loading && !data.data) return <PageSpinner />;
   if (data.error) return <ErrorNotice error={data.error} />;
@@ -118,10 +119,34 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
     if (reason === null) return;
     try {
       await api.resume(m.id, reason || 'Admin resumed');
+      if (m.subscription_id) await manageSubscription('sync_billing', m.subscription_id).catch(() => {});
       toast('Pause ended.');
       void data.reload();
     } catch (e) {
       toast((e as Error).message, 'error');
+    }
+  }
+
+  async function reinstate(m: Membership) {
+    const reason = window.prompt(`Reinstate ${m.plan_name}? Reason (saved in the audit log):`);
+    if (!reason?.trim()) return;
+    try {
+      unwrap(await supabase.rpc('admin_reinstate_membership', { p_membership_id: m.id, p_reason: reason }));
+      toast('Membership reinstated.');
+      void data.reload();
+    } catch (e) {
+      toast((e as Error).message, 'error');
+    }
+  }
+
+  async function subAction(action: 'cancel' | 'undo_cancel', subscriptionId: string) {
+    try {
+      const r = await manageSubscription(action, subscriptionId);
+      toast(action === 'cancel' ? `Cancelled. It ends on ${r.ends_on ?? 'the end of the paid month'}; no further payments.` : 'Cancellation undone. Payments continue as normal.');
+      void data.reload();
+    } catch (e) {
+      const code = (e as { code?: string }).code ?? (e as Error).message;
+      toast(messageFor(code, (e as Error).message), 'error');
     }
   }
 
@@ -225,6 +250,33 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
 
       {d.subscriptions.length > 0 && (
         <Section title="Monthly memberships">
+          <ul className="space-y-2 md:hidden">
+            {d.subscriptions.map((s) => {
+              const ends = endsOn(s);
+              return (
+                <li key={s.id} className="card space-y-2 p-4 text-sm">
+                  <p className="font-bold">{s.plan_snapshot.plan_name} · {formatPrice(s.plan_snapshot.price_cents, s.plan_snapshot.currency)}/month</p>
+                  <p className="text-muted">
+                    <span className="capitalize">{s.status === 'cancel_scheduled' ? 'ending' : s.status === 'past_due' ? 'payment failed' : s.status === 'ended' ? `ended (${s.end_reason ?? '—'})` : s.status}</span>
+                    {' · '}{s.periods_paid} of {s.total_periods} paid
+                    {s.next_billing_on ? ` · next ${formatKey(s.next_billing_on)}` : ''}{ends ? ` · ends ${formatKey(ends)}` : ''}
+                  </p>
+                    <div className="flex flex-wrap gap-1">
+                      {(s.status === 'active' || s.status === 'past_due') && (
+                        <button className="btn-sm btn-outline" onClick={() => { if (window.confirm(`Cancel ${s.plan_snapshot.plan_name}? Same as the member cancelling: it ends at the end of the paid month (72-hour rule applies).`)) void subAction('cancel', s.id); }}>Cancel</button>
+                      )}
+                      {s.status === 'cancel_scheduled' && !s.provider_cancel_sent_at && (
+                        <button className="btn-sm btn-outline" onClick={() => void subAction('undo_cancel', s.id)}>Undo cancel</button>
+                      )}
+                      {s.status !== 'ended' && !s.provider_cancel_sent_at && s.next_billing_on && (
+                        <button className="btn-sm btn-ghost text-danger" onClick={() => void endNow(s.id, s.plan_snapshot.plan_name)}>Stop payments now</button>
+                      )}
+                    </div>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="hidden md:block">
           <Table head={['Plan', 'Status', 'Payments', 'Next payment', 'Ends', '']} empty={false}>
             {d.subscriptions.map((s) => {
               const ends = endsOn(s);
@@ -235,14 +287,25 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
                   <Td>{s.periods_paid} of {s.total_periods}</Td>
                   <Td>{s.next_billing_on ? formatKey(s.next_billing_on) : '—'}</Td>
                   <Td>{ends ? formatKey(ends) : '—'}</Td>
-                  <Td>{s.status !== 'ended' && !s.provider_cancel_sent_at && s.next_billing_on && (
-                    <button className="btn-sm btn-ghost text-danger" onClick={() => void endNow(s.id, s.plan_snapshot.plan_name)}>Stop payments now</button>
-                  )}</Td>
+                  <Td>
+                    <div className="flex flex-wrap gap-1">
+                      {(s.status === 'active' || s.status === 'past_due') && (
+                        <button className="btn-sm btn-outline" onClick={() => { if (window.confirm(`Cancel ${s.plan_snapshot.plan_name}? Same as the member cancelling: it ends at the end of the paid month (72-hour rule applies).`)) void subAction('cancel', s.id); }}>Cancel</button>
+                      )}
+                      {s.status === 'cancel_scheduled' && !s.provider_cancel_sent_at && (
+                        <button className="btn-sm btn-outline" onClick={() => void subAction('undo_cancel', s.id)}>Undo cancel</button>
+                      )}
+                      {s.status !== 'ended' && !s.provider_cancel_sent_at && s.next_billing_on && (
+                        <button className="btn-sm btn-ghost text-danger" onClick={() => void endNow(s.id, s.plan_snapshot.plan_name)}>Stop payments now</button>
+                      )}
+                    </div>
+                  </Td>
                 </tr>
               );
             })}
           </Table>
-          <p className="mt-2 text-xs text-muted">Members can cancel themselves in the app (at least 72 hours before a payment). “Stop payments now” cancels from the next payment date whatever the notice, e.g. when they ask by email or at reception.</p>
+          </div>
+          <p className="mt-2 text-xs text-muted">Members can cancel themselves in the app (at least 72 hours before a payment). “Cancel” does the same for them (the 72-hour rule applies). “Stop payments now” cancels from the next payment date whatever the notice, e.g. when they ask by email or at reception. To pause, use Pause on the membership below; the payment date moves back by the paused days.</p>
         </Section>
       )}
 
@@ -251,8 +314,10 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
           {d.memberships.length === 0 && <p className="text-sm text-muted">No memberships.</p>}
           {d.memberships.map((m) => (
             <div key={m.id}>
-              <MembershipCard m={m} styles={d.styles} reminderDays={0} onPause={() => setPausing(m)} onResume={() => void resume(m)} />
-              <button className="btn-sm btn-outline mt-2" onClick={() => setAdjusting(m)}>Grant / revoke classes</button>
+              <MembershipCard m={m} styles={d.styles} reminderDays={0} />
+              <MembershipActions m={m} monthly={d.subscriptions.some((x) => x.id === m.subscription_id && x.status !== 'ended')}
+                onPause={() => setPausing(m)} onResume={() => void resume(m)} onAdjust={() => setAdjusting(m)}
+                onCancel={() => setCancelling(m)} onReinstate={() => void reinstate(m)} />
             </div>
           ))}
         </div>
@@ -318,8 +383,9 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
       </Section>
 
       {editing && <EditMemberSheet profile={d.profile} onClose={() => setEditing(false)} onDone={() => { setEditing(false); void data.reload(); }} />}
+      {cancelling && <CancelMembershipSheet m={cancelling} onClose={() => setCancelling(null)} onDone={(n) => { setCancelling(null); toast(`Membership cancelled${n ? ` and ${n} upcoming booking${n === 1 ? '' : 's'} cancelled` : ''}. The member has been told.`); void data.reload(); }} />}
       {adjusting && <AdjustSheet m={adjusting} onClose={() => setAdjusting(null)} onDone={() => { toast('Classes updated.'); void data.reload(); }} />}
-      {pausing && <PauseSheet membership={pausing} allowance={d.allowance} adminOverride onClose={() => setPausing(null)} onDone={() => { toast('Membership paused.'); void data.reload(); }} />}
+      {pausing && <PauseSheet membership={pausing} allowance={d.allowance} adminOverride onClose={() => setPausing(null)} onDone={() => { const sub = pausing?.subscription_id; if (sub) void manageSubscription('sync_billing', sub).catch(() => {}); toast(sub ? 'Membership paused. The next payment moves back by the paused days.' : 'Membership paused.'); void data.reload(); }} />}
       {selling && <ManualSaleSheet userId={userId} plans={d.plans} styles={d.styles as { id: string; name: string }[]} onClose={() => setSelling(false)} onDone={() => { toast('Sale recorded.'); void data.reload(); }} />}
     </>
   );
@@ -464,6 +530,68 @@ function EditMemberSheet({ profile, onClose, onDone }: { profile: Profile; onClo
         <p className="text-xs text-muted">Changes are saved in the audit log.</p>
         {error && <ErrorNotice error={error} />}
         <button className="btn-primary w-full" disabled={busy || !f.full_name.trim()} onClick={() => void save()}>{busy && <Spinner />}Save changes</button>
+      </div>
+    </Sheet>
+  );
+}
+
+function MembershipActions({ m, monthly, onPause, onResume, onAdjust, onCancel, onReinstate }: {
+  m: Membership; monthly: boolean;
+  onPause: () => void; onResume: () => void; onAdjust: () => void; onCancel: () => void; onReinstate: () => void;
+}) {
+  const today = new Date().toISOString().slice(0, 10);
+  const pause = (m.pauses ?? []).filter((p) => !p.is_cancelled && p.ends_on >= today).sort((a, b) => a.starts_on.localeCompare(b.starts_on))[0];
+  const cancelled = m.admin_status === 'cancelled';
+  const live = !cancelled && (m.state === 'active' || m.state === 'paused' || m.state === 'pending_activation');
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {cancelled ? (
+        <>
+          <span className="chip bg-red-50 text-danger">Cancelled by the studio</span>
+          <button className="btn-sm btn-outline" onClick={onReinstate}>Reinstate</button>
+        </>
+      ) : (
+        <>
+          {live && (pause
+            ? <button className="btn-sm btn-outline" onClick={onResume}>{pause.starts_on <= today ? 'Unpause now' : 'Remove scheduled pause'}</button>
+            : <button className="btn-sm btn-outline" onClick={onPause}>Pause</button>)}
+          <button className="btn-sm btn-outline" onClick={onAdjust}>Grant / revoke classes</button>
+          {monthly
+            ? <span className="self-center text-xs text-muted">Monthly: cancel under Monthly memberships above</span>
+            : live && <button className="btn-sm btn-ghost text-danger" onClick={onCancel}>Cancel membership</button>}
+        </>
+      )}
+    </div>
+  );
+}
+
+function CancelMembershipSheet({ m, onClose, onDone }: { m: Membership; onClose: () => void; onDone: (bookingsCancelled: number) => void }) {
+  const [reason, setReason] = useState('');
+  const [notify, setNotify] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <Sheet open onClose={onClose} title={`Cancel ${m.plan_name}?`}>
+      <div className="space-y-3">
+        <Notice tone="warn">
+          The membership stops working straight away ({m.classes_remaining} class{m.classes_remaining === 1 ? '' : 'es'} left will be lost) and any upcoming bookings made with it are cancelled.
+          This doesn’t refund money: if a refund is due, use Refund under Payments. You can reinstate it later.
+        </Notice>
+        <Field label="Reason (saved in the audit log)"><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Moving abroad, asked at reception" /></Field>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-5 w-5" checked={notify} onChange={(e) => setNotify(e.target.checked)} />Tell the member by email and phone</label>
+        {error && <ErrorNotice error={error} />}
+        <button className="btn-danger w-full" disabled={busy || !reason.trim()} onClick={async () => {
+          setBusy(true);
+          setError(null);
+          try {
+            const r = unwrap(await supabase.rpc('admin_cancel_membership', { p_membership_id: m.id, p_reason: reason, p_notify: notify })) as { bookings_cancelled: number };
+            onDone(r.bookings_cancelled);
+          } catch (e) {
+            const code = (e as { code?: string }).code ?? (e as Error).message;
+            setError(messageFor(code, (e as Error).message));
+            setBusy(false);
+          }
+        }}>{busy && <Spinner />}Cancel membership</button>
       </div>
     </Sheet>
   );

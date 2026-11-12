@@ -125,3 +125,9 @@ Deno.test('moved events tell each group what it means for them', () => {
   assertStringIncludes(render({ kind: 'event_rescheduled', full_name: null, payload: { ...payload, audience: 'told' } })!.subject, 'New date');
   assertStringIncludes(render({ kind: 'event_staff_change', full_name: null, payload: { ...payload, action: 'cancelled', reason: 'Injured', refunds: 3 } })!.text, '3 tickets need a refund');
 });
+
+Deno.test('membership cancelled by the studio', () => {
+  const m = render({ kind: 'membership_cancelled', full_name: 'Aoife Byrne', payload: { plan_name: '3-Class Intro', reason: 'Moving abroad', bookings_cancelled: 2 } })!;
+  assertEquals(m.subject, 'Your 3-Class Intro has been cancelled');
+  assertStringIncludes(m.text, '2 upcoming bookings have been cancelled');
+});
