@@ -117,7 +117,7 @@ export function UpdatePrompt() {
   const { needRefresh: [needRefresh, setNeedRefresh], updateServiceWorker } = useRegisterSW();
   if (!needRefresh) return null;
   return (
-    <div className="fixed inset-x-3 top-[calc(env(safe-area-inset-top)+0.75rem)] z-[70] mx-auto flex max-w-md items-center justify-between gap-3 rounded-2xl bg-brand-700 p-3 pl-4 text-sm text-white shadow-xl">
+    <div className="fixed inset-x-3 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-[70] md:bottom-auto md:top-[calc(env(safe-area-inset-top)+0.75rem)] mx-auto flex max-w-md items-center justify-between gap-3 rounded-2xl bg-brand-700 p-3 pl-4 text-sm text-white shadow-xl">
       <span>A new version is available.</span>
       <span className="flex gap-1">
         <button className="btn-sm btn text-white/80" onClick={() => setNeedRefresh(false)}>Later</button>
