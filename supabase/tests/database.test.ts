@@ -1302,6 +1302,14 @@ run('database: plans, booking, allowances, pauses, security', () => {
   });
 
   describe('notifications', () => {
+    it('the admin Today page has the numbers, for admins only', async () => {
+      const [d] = await as<{ r: Record<string, number> }>(db, user(admin), `select admin_dashboard() r`);
+      expect(Object.keys(d.r).sort()).toEqual(['active_monthly', 'bookings_today', 'ending_monthly', 'failed_monthly_payments', 'new_members_week',
+        'payments_to_review', 'payments_week', 'revenue_week_cents', 'ticket_refunds', 'unfinished_checkouts']);
+      const c = await createUser(db, 'NotAdminDash');
+      await expectError(as(db, user(c), `select admin_dashboard()`), 'forbidden');
+    });
+
     it('admins can change a class; everyone booked is told what changed', async () => {
       const c = await createUser(db, 'MovedClass');
       await buy(c, 'intro-3');

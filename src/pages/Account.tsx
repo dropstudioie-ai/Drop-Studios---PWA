@@ -26,7 +26,7 @@ const BOOKING_LABEL: Record<string, string> = {
 };
 
 export default function Account() {
-  const { session, profile, signOut, refreshProfile } = useAuth();
+  const { session, profile, signOut, refreshProfile, isStaff, isAdmin } = useAuth();
   const toast = useToast();
   const uid = session!.user.id;
   const data = useAsync(async () => {
@@ -77,18 +77,19 @@ export default function Account() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-muted">Hi {profile?.full_name?.split(' ')[0] || 'there'} 👋</p>
-          <h1 className="text-3xl font-black">My Membership</h1>
+          <h1 className="text-3xl font-black">{isStaff ? 'My account' : 'My Membership'}</h1>
+          {isStaff && <p className="mt-1 text-sm text-muted">{isAdmin ? 'Admin' : 'Instructor'} account · you book classes for free, no membership needed.</p>}
         </div>
-        {current.length > 0 && <p className="font-display text-lg font-extrabold text-brand-700">{totalRemaining} {totalRemaining === 1 ? 'class' : 'classes'} available</p>}
+        {!isStaff && current.length > 0 && <p className="font-display text-lg font-extrabold text-brand-700">{totalRemaining} {totalRemaining === 1 ? 'class' : 'classes'} available</p>}
       </div>
 
       <div className="mt-6 space-y-3"><ProfilePhotoCard />{!profile?.date_of_birth && <BirthdayCard onSaved={refreshProfile} />}</div>
 
-      <section className="mt-6 space-y-4" aria-labelledby="current-h">
+      {(!isStaff || current.length > 0 || liveSubs.length > 0) && <section className="mt-6 space-y-4" aria-labelledby="current-h">
         <h2 id="current-h" className="sr-only">Current memberships</h2>
-        {out?.kind === 'subscription' && <OutOfClassesCard out={out} />}
+        {!isStaff && out?.kind === 'subscription' && <OutOfClassesCard out={out} />}
         {liveSubs.map((s) => <SubscriptionCard key={s.id} sub={s} onChanged={() => void data.reload()} />)}
-        {renewal && (
+        {!isStaff && renewal && (
           <div className="card border-2 border-accent-500 p-5">
             <h3 className="text-lg font-extrabold">You’ve used all your classes</h3>
             <p className="mt-1 text-sm text-ink-soft">
@@ -112,7 +113,7 @@ export default function Account() {
           <MembershipCard key={m.id} m={m} styles={styles} reminderDays={settings.expiry_reminder_days}
             busy={busy} onPause={() => setPausing(m)} onResume={() => void resume(m)} />
         ))}
-      </section>
+      </section>}
 
       <section className="mt-10" aria-labelledby="upcoming-h">
         <div className="flex items-end justify-between">

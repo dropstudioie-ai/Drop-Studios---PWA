@@ -8,9 +8,17 @@ import { availabilityLabel } from '../domain/booking';
 import { STUDIO } from '../config/studio';
 import { useAuth } from '../auth/AuthProvider';
 import { CalendarIcon, PinIcon, TicketIcon, UserIcon } from '../components/icons';
+import { isStandalone } from '../components/pwa';
+import StaffHome from './StaffHome';
 
 export default function Home() {
+  const { isStaff } = useAuth();
+  return isStaff ? <StaffHome /> : <MemberHome />;
+}
+
+function MemberHome() {
   const { session } = useAuth();
+  const installed = isStandalone();
   const today = localDateKey(new Date());
   const upcoming = useAsync(async () => {
     const list = await api.sessions(new Date().toISOString(), zonedTime(addDaysToKey(today, 3)).toISOString());
@@ -121,7 +129,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="bg-ink py-12 text-white" aria-labelledby="app-h">
+      {!installed && <section className="bg-ink py-12 text-white" aria-labelledby="app-h">
         <div className="container-page flex flex-col items-center gap-6 text-center md:flex-row md:text-left">
           <img src="/brand/drop-icon.svg" alt="" className="h-20 w-20 shrink-0 rounded-3xl shadow-xl" />
           <div className="flex-1">
@@ -130,7 +138,7 @@ export default function Home() {
           </div>
           <Link to="/app" className="btn-accent shrink-0 text-lg">Download the app</Link>
         </div>
-      </section>
+      </section>}
 
       {(STUDIO.address || STUDIO.email || STUDIO.phone) && (
         <section className="bg-white py-12">
