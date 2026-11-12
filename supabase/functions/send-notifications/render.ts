@@ -134,6 +134,23 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
           url: '/admin/instructors',
         };
     }
+    case 'payment_receipt': {
+      const paid = new Intl.DateTimeFormat('en-IE', { timeZone: TZ, day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(String(p.paid_at)));
+      const lines = [
+        `Receipt no.: ${p.receipt_no}`,
+        `Date: ${paid}`,
+        `Membership: ${p.plan_name}${p.month ? ` (payment ${p.month} of ${p.of})` : ''}`,
+        `Classes: ${p.classes}`,
+        `Amount paid: ${eur(p.amount_cents)}`,
+        `Paid by: ${p.provider === 'manual' ? 'at the studio' : 'card (Square)'}`,
+      ];
+      const next = p.next_billing_on ? `\nYour next payment of ${eur(p.amount_cents)} is on ${longDate(p.next_billing_on)}.\n` : '';
+      return {
+        subject: `Your Drop Studios receipt: ${p.plan_name}, ${eur(p.amount_cents)}`,
+        text: `${hi}\n\nThank you for your payment. Here is your receipt.\n\n${lines.join('\n')}\n${next}\nDrop Studios Limited\n13 Sackville Place, Dublin 1, D01\n${Deno.env.get('SUPPORT_EMAIL') ?? ''}`,
+        url: '/account',
+      };
+    }
     case 'test_message':
       return {
         subject: 'Drop Studios: notifications are working ✅',

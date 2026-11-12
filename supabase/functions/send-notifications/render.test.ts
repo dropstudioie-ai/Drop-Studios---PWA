@@ -71,3 +71,17 @@ Deno.test('test message for checking delivery', () => {
   assertEquals(m.subject, 'Drop Studios: notifications are working ✅');
   assertStringIncludes(m.text, 'Hi Jorge,');
 });
+
+Deno.test('payment receipt: plan, month, amount, next payment, business name', () => {
+  const m = render({ kind: 'payment_receipt', full_name: 'Aoife Byrne', payload: {
+    receipt_no: 'AB12CD34EF', plan_name: 'Committed', amount_cents: 7900, currency: 'EUR', paid_at: '2026-11-12T10:00:00Z',
+    provider: 'square', classes: 8, month: 1, of: 3, next_billing_on: '2026-12-12' } })!;
+  assertEquals(m.subject, 'Your Drop Studios receipt: Committed, €79.00');
+  assertStringIncludes(m.text, 'Membership: Committed (payment 1 of 3)');
+  assertStringIncludes(m.text, 'Your next payment of €79.00 is on Saturday, 12 December.');
+  assertStringIncludes(m.text, 'Drop Studios Limited');
+  const intro = render({ kind: 'payment_receipt', full_name: 'Aoife Byrne', payload: {
+    receipt_no: 'X', plan_name: '3-Class Intro Offer', amount_cents: 3500, currency: 'EUR', paid_at: '2026-11-12T10:00:00Z', provider: 'manual', classes: 3 } })!;
+  assertStringIncludes(intro.text, 'Paid by: at the studio');
+  assertEquals(intro.text.includes('next payment'), false);
+});

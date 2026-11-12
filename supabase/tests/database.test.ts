@@ -1060,6 +1060,21 @@ run('database: plans, booking, allowances, pauses, security', () => {
     const use = (membershipId: string, n: number) =>
       db.query(`update memberships set classes_remaining = classes_remaining - $2 where id = $1`, [membershipId, n]);
 
+    it('every membership payment queues one email receipt (first month and each monthly payment)', async () => {
+      const { c, subId, provider } = await subscribe('multi-8');
+      const receipts = async () => (await db.query(
+        `select payload->>'plan_name' plan, (payload->>'amount_cents')::int amount, payload->>'month' mon, payload->>'of' of_
+         from notification_outbox where user_id = $1 and kind = 'payment_receipt' order by id`, [c])).rows;
+      expect(await receipts()).toEqual([{ plan: 'Committed', amount: 7900, mon: '1', of_: '3' }]);
+      const m2 = await payNext(subId, provider, 7900);
+      await as(db, service, `select fulfill_subscription_charge($1, $2, 'evt_dup', 7900, 'EUR')`, [provider, m2.ref]); // repeated webhook
+      expect((await receipts()).map((r) => r.mon)).toEqual(['1', '2']);
+      // The Intro Offer (one-off) gets a receipt too; free reward classes don't.
+      const one = await createUser(db, 'IntroReceipt');
+      await buy(one, 'intro-3');
+      expect((await db.query(`select payload->>'month' mon from notification_outbox where user_id = $1 and kind = 'payment_receipt'`, [one])).rows).toEqual([{ mon: null }]);
+    });
+
     it('the Intro Offer stays a one-off purchase with no subscription', async () => {
       const c = await createUser(db, 'IntroOnly');
       const { paymentId } = await buy(c, 'intro-3');
@@ -1310,7 +1325,7 @@ run('database: plans, booking, allowances, pauses, security', () => {
       const s = await makeSession({ style: 'heels', startsInMinutes: 300 });
       await book(c, s);
       await as(db, user(admin), `select admin_cancel_session($1, 'Studio flooded')`, [s]);
-      const { rows } = await db.query(`select kind, payload from notification_outbox where user_id = $1`, [c]);
+      const { rows } = await db.query(`select kind, payload from notification_outbox where user_id = $1 and kind = 'class_cancelled'`, [c]);
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ kind: 'class_cancelled', payload: { reason: 'Studio flooded', class_returned: true } });
     });

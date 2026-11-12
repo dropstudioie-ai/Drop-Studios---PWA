@@ -3,7 +3,7 @@
 export const STUDIO = {
   name: 'Drop Studios',
   // Registered business name (and CRO number, if a company) for the legal pages.
-  legalName: '',
+  legalName: 'Drop Studios Limited',
   tagline: 'Dance & Fitness Studio',
   city: 'Dublin, Ireland',
   address: '13 Sackville Place, Dublin 1, D01',
