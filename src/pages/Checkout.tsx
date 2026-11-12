@@ -14,6 +14,7 @@ import { formatKey } from '../domain/time';
 import { MembershipTerms } from '../components/Terms';
 import { EmptyState, ErrorNotice, Notice, PageSpinner, Spinner } from '../components/ui';
 import { useAuth } from '../auth/AuthProvider';
+import { StudioPhoto } from '../components/StudioPhoto';
 
 export default function Checkout() {
   const { code = '' } = useParams();
@@ -87,7 +88,10 @@ export default function Checkout() {
   return (
     <div className="container-page max-w-2xl py-8">
       <Link to="/memberships" className="text-sm font-semibold text-brand-700">← All memberships</Link>
-      <h1 className="mt-3 text-3xl font-black">Checkout</h1>
+      <StudioPhoto index={0} className="mt-4 aspect-[16/7]">
+        <p className="font-display text-2xl font-black sm:text-3xl">You’re one step away from the floor.</p>
+      </StudioPhoto>
+      <h1 className="mt-5 text-3xl font-black">Checkout</h1>
 
       {paymentsMode === 'test' && (
         <div className="mt-4"><Notice tone="test">

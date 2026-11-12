@@ -9,6 +9,7 @@ import { isLive } from '../domain/subscription';
 import { EmptyState, ErrorNotice, PageSpinner } from '../components/ui';
 import type { DanceStyle } from '../api/types';
 import { formatPrice } from '../domain/money';
+import { StudioPhoto } from '../components/StudioPhoto';
 
 export default function Memberships() {
   const navigate = useNavigate();
@@ -29,6 +30,7 @@ export default function Memberships() {
 
   return (
     <div className="container-page py-8 sm:py-12 xl:max-w-7xl">
+      <StudioPhoto index={5} className="mb-8 aspect-[16/7] sm:aspect-[16/5] lg:aspect-[16/4]" />
       <header className="mx-auto max-w-3xl text-center">
         <h1 className="font-display text-4xl font-black uppercase leading-[0.95] tracking-tight sm:text-6xl">
           Find your rhythm.<br /><span className="text-brand-600">Choose your Drop membership.</span>

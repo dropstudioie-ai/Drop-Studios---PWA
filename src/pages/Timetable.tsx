@@ -10,6 +10,7 @@ import { BookingSheet } from '../components/BookingSheet';
 import { ChevronLeft, ChevronRight } from '../components/icons';
 import { EmptyState, ErrorNotice, PageSpinner } from '../components/ui';
 import { classImage } from '../config/classImages';
+import { StudioPhoto } from '../components/StudioPhoto';
 
 export default function Timetable() {
   const { session: authSession } = useAuth();
@@ -108,6 +109,12 @@ export default function Timetable() {
             </button>
           ))}
         </div>
+      )}
+      {!classImage(styleFilter) && (
+        <StudioPhoto index={offset + 2} className="mt-4 aspect-[16/7] sm:aspect-[16/5] lg:aspect-[16/4]">
+          <p className="text-xs font-bold uppercase tracking-widest text-accent-400">Real classes · real people</p>
+          <p className="font-display text-2xl font-black sm:text-4xl">Find your class. Book your spot.</p>
+        </StudioPhoto>
       )}
       {classImage(styleFilter) && (
         <img src={classImage(styleFilter)!.wide} alt="" width={1600} height={900}
