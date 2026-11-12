@@ -129,10 +129,13 @@ one-off; the other four are monthly.
   MONTHLY variation with `periods: 3`, stored in `square_plan_variations`, and a
   payment link with `checkout_options.subscription_plan_id`. Square saves the
   card, creates the subscription, charges month 1 and completes it after 3.
-- **Month 1.** `payment.updated` for our link's order → `fulfill_payment` →
-  `_start_subscription` → `_issue_period(0)`; finishes an upgrade and gives the
-  loyalty reward if earned. The webhook then finds the Square subscription by
-  the payment's customer and links it.
+- **Month 1** (tested live): Square charges it as the subscription's first
+  invoice, not on the checkout order; the checkout order stays DRAFT but carries
+  the buyer's `customer_id`. `invoice.payment_made` for an unknown subscription →
+  the webhook finds the member's pending monthly checkout whose order has that
+  customer → `fulfill_payment` → `_start_subscription` → `_issue_period(0)`, and
+  links the Square subscription (fallbacks: customer already linked, then the
+  customer's email). Finishes an upgrade and gives the loyalty reward if earned.
 - **Months 2–3.** `invoice.payment_made` → `fulfill_subscription_charge`,
   idempotent per invoice and per month (`subscription_periods` unique per
   index). Early, extra or wrong-amount payments are accepted but flagged

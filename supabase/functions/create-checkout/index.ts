@@ -3,7 +3,7 @@
 // (create_checkout / create_ticket_checkout RPC), never from the client.
 import { adminClient, corsHeaders, dbErrorCode, json, readCheckoutBody, startCheckout, userClient } from '../_shared/http.ts';
 import { orderWasPaid, paymentLinkRequest, SQUARE_VERSION, squareBaseUrl, subscriptionLinkRequest } from '../_shared/square.ts';
-import { ensurePlanVariation, squareConfig } from '../_shared/squareApi.ts';
+import { ensurePlanVariation, findSubscription, squareConfig } from '../_shared/squareApi.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(req) });
@@ -38,6 +38,16 @@ Deno.serve(async (req) => {
         const r = await fetch(`${squareApi}/v2/orders/${encodeURIComponent(old.provider_session_id)}`, { headers: squareHeaders });
         const order = (await r.json().catch(() => null))?.order;
         if (r.ok && orderWasPaid(order)) return json(req, { error: 'earlier_payment_completed', payment_id: old.id }, 409);
+        // A monthly checkout's order stays a draft even once paid (Square bills
+        // the first month as the subscription's invoice); it carries the buyer,
+        // so a live subscription for that buyer means it was paid.
+        const cfg = squareConfig();
+        if (r.ok && order?.customer_id && cfg) {
+          const sub = await findSubscription(cfg, order.customer_id, null);
+          if (sub && sub.created_at && Date.parse(sub.created_at) >= Date.parse(order.created_at ?? '1970-01-01')) {
+            return json(req, { error: 'earlier_payment_completed', payment_id: old.id }, 409);
+          }
+        }
         if (!r.ok && r.status !== 404) {
           console.error('Square order check failed', r.status);
           return json(req, { error: 'payment_provider_error' }, 502);

@@ -5,7 +5,7 @@
 // an app checkout is acknowledged and ignored.
 import { adminClient } from '../_shared/http.ts';
 import { ENDED_SUBSCRIPTION_STATUSES, subscriptionEvent, verifySquareSignature, webhookAction } from '../_shared/square.ts';
-import { cancelSubscription, customerEmail, findSubscription, retrieveSubscription, sendCancelIfDue, squareConfig, syncBillingIfNeeded, type SquareConfig } from '../_shared/squareApi.ts';
+import { cancelSubscription, customerEmail, findSubscription, orderCustomer, retrieveSubscription, sendCancelIfDue, squareConfig, syncBillingIfNeeded, type SquareConfig } from '../_shared/squareApi.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.118.0';
 
 /** Link our new subscription (started by its first payment) to Square's. */
@@ -61,9 +61,32 @@ async function ourSubscription(db: SupabaseClient, cfg: SquareConfig | null, squ
     return byCustomer.id as string;
   }
 
-  // Square doesn't always put the customer on the checkout payment, so match
-  // the member by the customer's email: their newest monthly membership that
-  // isn't linked to Square yet.
+  // How a subscription checkout really works (tested live): Square charges the
+  // first month as the subscription's first invoice, not on the checkout order,
+  // but it puts the buyer (customer) on that checkout order. So the member's
+  // unpaid monthly checkout is found by its order's customer.
+  if (firstInvoice) {
+    const since = new Date(Date.now() - 3 * 86_400_000).toISOString();
+    const { data: pendings } = await db.from('payments').select('id, provider_session_id')
+      .eq('provider', 'square').eq('kind', 'membership').eq('status', 'pending').gte('created_at', since)
+      .not('provider_session_id', 'is', null).contains('plan_snapshot', { billing_interval: 'monthly' })
+      .order('created_at', { ascending: false }).limit(20);
+    for (const p of pendings ?? []) {
+      if ((await orderCustomer(cfg, p.provider_session_id!)) !== sq.customer_id) continue;
+      const { data: res, error } = await db.rpc('fulfill_payment', {
+        p_payment_id: p.id, p_provider: 'square', p_provider_ref: `inv:${firstInvoice.id}`, p_provider_event_id: firstInvoice.eventId,
+        p_amount_cents: firstInvoice.amountCents, p_currency: firstInvoice.currency,
+      });
+      if (error || !res?.subscription_id) return null;
+      await db.rpc('link_provider_subscription', { p_payment_id: p.id, p_provider_subscription_id: squareSubId, p_provider_customer_id: sq.customer_id });
+      if (sq.card_id) await db.from('member_subscriptions').update({ provider_card_id: sq.card_id }).eq('id', res.subscription_id);
+      await stopUpgradedSubscription(db, cfg, res.cancel_provider_subscription_of);
+      return res.subscription_id as string;
+    }
+  }
+
+  // Otherwise match the member by the customer's email: their newest monthly
+  // membership that isn't linked to Square yet.
   const email = await customerEmail(cfg, sq.customer_id);
   if (!email) return null;
   const { data: profile } = await db.from('profiles').select('id').ilike('email', email).maybeSingle();

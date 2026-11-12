@@ -162,3 +162,9 @@ export async function squarePaymentIdFor(cfg: SquareConfig, ref: string | null):
 export async function refundPayment(cfg: SquareConfig, p: Parameters<typeof refundRequest>[0]) {
   return call<{ refund?: { id?: string; status?: string } }>(cfg, '/v2/refunds', { method: 'POST', body: JSON.stringify(refundRequest(p)) });
 }
+
+/** The Square customer on an order (a subscription checkout puts the buyer there). */
+export async function orderCustomer(cfg: SquareConfig, orderId: string): Promise<string | null> {
+  const r = await call<{ order?: { customer_id?: string } }>(cfg, `/v2/orders/${encodeURIComponent(orderId)}`);
+  return r.ok ? r.body.order?.customer_id ?? null : null;
+}
