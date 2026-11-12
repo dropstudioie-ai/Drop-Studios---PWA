@@ -1077,6 +1077,21 @@ run('database: plans, booking, allowances, pauses, security', () => {
       expect((await db.query(`select title, description from studio_events where id = $1`, [r.r.event_id])).rows[0]).toEqual({ title: 'Spooky FitDance', description: 'Boo' });
     });
 
+    it('instructors can’t change an approved workshop price or spam events', async () => {
+      const t = await teacher('Hardened');
+      const st = await styleId('heels');
+      const base = `date_trunc('day', now()) + interval '70 days'`;
+      const [w] = await as<{ r: { event_id: string } }>(db, user(t.uid),
+        `select request_workshop('Price Test', $1, ${base} + interval '10 hours', ${base} + interval '12 hours', 20, 3000) r`, [st]);
+      await as(db, user(admin), `select admin_decide_workshop($1, true)`, [w.r.event_id]);
+      await expectError(as(db, user(t.uid), `select update_event($1, 'Price Test', null, null, null, null, 20, 100, null)`, [w.r.event_id]), 'price_change_needs_admin');
+      await as(db, user(admin), `select update_event($1, 'Price Test', null, null, null, null, 20, 2500, null)`, [w.r.event_id]);
+      const sessions = await Promise.all([1, 2, 3].map((d) => taughtBy(t.instructorId, 3000 + d * 1440, 'heels')));
+      await as(db, user(t.uid), `select organise_special_class($1, 'One')`, [sessions[0]]);
+      await as(db, user(t.uid), `select organise_special_class($1, 'Two')`, [sessions[1]]);
+      await expectError(as(db, user(t.uid), `select organise_special_class($1, 'Three')`, [sessions[2]]), 'too_many_events');
+    });
+
     it('instructors are asked to plan next month in the last week of the month', async () => {
       const t = await teacher('Planner');
       const { rows: [{ tz }] } = await db.query(`select timezone tz from app_settings`);

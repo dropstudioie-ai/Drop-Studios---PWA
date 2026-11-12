@@ -18,7 +18,7 @@ Deno.serve(async (req) => {
   if (!isAdmin) return json(req, { error: 'forbidden' }, 403);
 
   const db = adminClient();
-  const { data: taken } = await db.from('profiles').select('id').ilike('email', email).neq('id', body.user_id).maybeSingle();
+  const { data: taken } = await db.from('profiles').select('id').eq('email', email).neq('id', body.user_id).maybeSingle();
   if (taken) return json(req, { error: 'email_in_use' }, 409);
 
   const { error } = await db.auth.admin.updateUserById(body.user_id, { email, email_confirm: true });

@@ -205,10 +205,10 @@ export function EditEventSheet({ e, onClose, onDone }: { e: StudioEvent; onClose
             <>
               <div className="grid grid-cols-3 gap-2">
                 <Field label="Places"><input className="input" inputMode="numeric" value={money.capacity} onChange={(x) => setMoney({ ...money, capacity: x.target.value.replace(/\D/g, '') })} /></Field>
-                <Field label="Price (€)"><input className="input" inputMode="decimal" disabled={sold} value={money.price} onChange={(x) => setMoney({ ...money, price: x.target.value })} /></Field>
-                <Field label="Members (€)"><input className="input" inputMode="decimal" disabled={sold} value={money.member} onChange={(x) => setMoney({ ...money, member: x.target.value })} /></Field>
+                <Field label="Price (€)"><input className="input" inputMode="decimal" disabled={sold || (!isAdmin && e.status === 'published')} value={money.price} onChange={(x) => setMoney({ ...money, price: x.target.value })} /></Field>
+                <Field label="Members (€)"><input className="input" inputMode="decimal" disabled={sold || (!isAdmin && e.status === 'published')} value={money.member} onChange={(x) => setMoney({ ...money, member: x.target.value })} /></Field>
               </div>
-              {sold && <p className="text-xs text-muted">Tickets have been bought, so the prices are fixed.</p>}
+              {sold ? <p className="text-xs text-muted">Tickets have been bought, so the prices are fixed.</p> : !isAdmin && e.status === 'published' && <p className="text-xs text-muted">The studio approved these prices. Ask an admin to change them.</p>}
             </>
           )}
           <DetailFields d={d} setD={setD} />
