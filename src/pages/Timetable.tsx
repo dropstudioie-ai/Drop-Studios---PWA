@@ -111,7 +111,7 @@ export default function Timetable() {
         </div>
       )}
       {!classImage(styleFilter) && (
-        <StudioPhoto index={11 + offset} className="mt-4 aspect-[16/10] sm:aspect-[16/6] lg:aspect-[16/5]">
+        <StudioPhoto index={offset} className="mt-4 aspect-[16/10] sm:aspect-[16/6] lg:aspect-[16/5]">
           <p className="text-xs font-bold uppercase tracking-widest text-white/85">Real classes · real people</p>
           <p className="font-display text-2xl font-black sm:text-4xl">Find your class. Book your spot.</p>
         </StudioPhoto>
