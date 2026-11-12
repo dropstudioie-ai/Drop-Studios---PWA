@@ -16,7 +16,7 @@ function safeNext(next: string | null) {
 function AuthShell({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
     <div className="container-page flex max-w-md flex-col py-10">
-      <StudioPhoto index={9} className="mb-6 aspect-[16/8]" />
+      <StudioPhoto index={4} className="mb-6 aspect-[16/10]" />
       <h1 className="text-3xl font-black">{title}</h1>
       {subtitle && <p className="mt-1 text-ink-soft">{subtitle}</p>}
       <div className="card mt-6 p-5 sm:p-6">{children}</div>
