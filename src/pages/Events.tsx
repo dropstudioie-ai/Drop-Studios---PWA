@@ -119,38 +119,167 @@ export function EventCard({ e, onEdit, admin }: { e: StudioEvent; onEdit?: () =>
       </dl>
       {e.admin_note && <p className="mt-2 text-sm"><span className="text-muted">Note from the studio:</span> {e.admin_note}</p>}
       {onEdit && !past && (e.status === 'pending' || e.status === 'published') && (
-        <button className="btn-outline btn-sm mt-3" onClick={onEdit}>Change details</button>
+        <button className="btn-outline btn-sm mt-3" onClick={onEdit}>Edit · reschedule · cancel</button>
       )}
     </li>
   );
 }
 
-function EditEventSheet({ e, onClose, onDone }: { e: StudioEvent; onClose: () => void; onDone: () => void }) {
+export function EditEventSheet({ e, onClose, onDone }: { e: StudioEvent; onClose: () => void; onDone: () => void }) {
   const toast = useToast();
+  const { isAdmin } = useAuth();
+  const [tab, setTab] = useState<'details' | 'move' | 'cancel'>('details');
+  const [title, setTitle] = useState(e.title);
   const [d, setD] = useState({ description: e.description ?? '', dress: e.dress_code ?? '', decorations: e.decorations ?? '', extras: e.extras ?? '' });
+  const [money, setMoney] = useState({
+    capacity: String(e.session?.capacity ?? e.capacity ?? 20),
+    price: e.price_cents != null ? String(e.price_cents / 100) : '',
+    member: e.member_price_cents != null ? String(e.member_price_cents / 100) : '',
+  });
+  const start = e.session?.starts_at ?? e.starts_at ?? new Date().toISOString();
+  const end = e.session?.ends_at ?? e.ends_at ?? start;
+  const [when, setWhen] = useState({ date: localDateKey(new Date(start)), start: fmt.time(start), end: fmt.time(end), sessionId: '', note: '' });
+  const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const canRemove = !(e.kind === 'workshop' && e.status === 'published');
-  async function go(fn: () => Promise<unknown>, msg: string) {
+  const workshop = e.kind === 'workshop';
+  const paidWorkshop = workshop && e.status === 'published';
+  const sold = e.tickets_sold > 0;
+
+  // Other classes by the same instructor, for moving a theme.
+  const classes = useAsync(async () => {
+    if (workshop || tab !== 'move') return [];
+    const today = localDateKey(new Date());
+    const [list, taken] = await Promise.all([
+      api.staffSessions(new Date().toISOString(), zonedTime(addDaysToKey(today, 42)).toISOString()),
+      isAdmin ? events.all() : events.mine(),
+    ]);
+    const used = new Set(taken.filter((x) => x.status === 'pending' || x.status === 'published').map((x) => x.session_id));
+    return list.filter((s) => s.instructor_id === e.instructor_id && s.status === 'scheduled' && !s.is_special && !used.has(s.id) && new Date(s.starts_at) > new Date());
+  }, [tab, workshop, isAdmin]);
+  const busySlots = useAsync(() => (workshop && tab === 'move' && when.date ? events.busy(when.date) : Promise.resolve([])), [workshop, tab, when.date]);
+
+  async function go(fn: () => Promise<unknown>, msg: (r: unknown) => string) {
     setBusy(true);
     setError(null);
-    try { await fn(); toast(msg); onDone(); } catch (x) { setError((x as Error).message); setBusy(false); }
+    try { const r = await fn(); toast(msg(r)); onDone(); } catch (x) { setError((x as Error).message); setBusy(false); }
   }
+  const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+  const notified = (r: unknown) => (r as { notified?: number })?.notified ?? 0;
+
+  function saveDetails() {
+    let price: number | null = null, member: number | null = null;
+    if (workshop) {
+      price = euroToCents(money.price);
+      member = euroToCents(money.member);
+      if (price == null || Number.isNaN(price)) { setError('Enter the ticket price, e.g. 25.'); return; }
+      if (member != null && Number.isNaN(member)) { setError('Enter the member price like 20 or 20.50, or leave it empty.'); return; }
+    }
+    void go(() => events.edit(e.id, { title, ...d, capacity: workshop ? Number(money.capacity) || 0 : null, priceCents: price, memberPriceCents: member }), () => 'Saved.');
+  }
+
+  function move() {
+    if (workshop) {
+      void go(() => events.reschedule(e.id, { startsAt: zonedTime(when.date, toMin(when.start)).toISOString(), endsAt: zonedTime(when.date, toMin(when.end)).toISOString(), note: when.note }),
+        (r) => e.status === 'published' ? `Moved. ${notified(r)} people were told the new date.` : 'Moved. The studio will see the new time.');
+    } else {
+      if (!when.sessionId) { setError('Choose the new class.'); return; }
+      void go(() => events.reschedule(e.id, { sessionId: when.sessionId, note: when.note }), (r) => `Theme moved. ${notified(r)} people were told.`);
+    }
+  }
+
+  const tabs: [typeof tab, string][] = [['details', 'Details'], ['move', 'Reschedule'], ['cancel', 'Cancel']];
   return (
     <Sheet open onClose={onClose} title={e.title}>
-      <div className="space-y-3">
-        <DetailFields d={d} setD={setD} />
-        <p className="text-xs text-muted">Changes show in the app and in the reminder sent the day before. Nobody gets a new message now.</p>
-        {error && <ErrorNotice error={error} />}
-        <button className="btn-primary w-full" disabled={busy} onClick={() => void go(() => events.update(e.id, d), 'Details saved.')}>{busy && <Spinner />}Save</button>
-        {canRemove ? (
-          <button className="btn-ghost w-full text-danger" disabled={busy} onClick={() => {
-            if (window.confirm(e.kind === 'workshop' ? 'Withdraw this workshop request?' : 'Remove the theme? The class still runs as normal and everyone booked is told.')) {
-              void go(() => events.cancel(e.id), e.kind === 'workshop' ? 'Request withdrawn.' : 'Theme removed. Everyone booked has been told.');
-            }
-          }}>{e.kind === 'workshop' ? 'Withdraw request' : 'Remove theme'}</button>
-        ) : <p className="text-center text-xs text-muted">To cancel a workshop with tickets, ask the studio, so everyone is refunded.</p>}
+      <div className="-mt-2 mb-4 flex gap-1 rounded-xl bg-canvas p-1" role="tablist">
+        {tabs.map(([k, label]) => (
+          <button key={k} role="tab" aria-selected={tab === k} onClick={() => { setTab(k); setError(null); }}
+            className={`flex-1 rounded-lg px-2 py-2 text-sm font-bold ${tab === k ? 'bg-white shadow-sm' : 'text-muted'}`}>{label}</button>
+        ))}
       </div>
+
+      {tab === 'details' && (
+        <div className="space-y-3">
+          <Field label="Name"><input className="input" maxLength={80} value={title} onChange={(x) => setTitle(x.target.value)} /></Field>
+          {workshop && (
+            <>
+              <div className="grid grid-cols-3 gap-2">
+                <Field label="Places"><input className="input" inputMode="numeric" value={money.capacity} onChange={(x) => setMoney({ ...money, capacity: x.target.value.replace(/\D/g, '') })} /></Field>
+                <Field label="Price (€)"><input className="input" inputMode="decimal" disabled={sold} value={money.price} onChange={(x) => setMoney({ ...money, price: x.target.value })} /></Field>
+                <Field label="Members (€)"><input className="input" inputMode="decimal" disabled={sold} value={money.member} onChange={(x) => setMoney({ ...money, member: x.target.value })} /></Field>
+              </div>
+              {sold && <p className="text-xs text-muted">Tickets have been bought, so the prices are fixed.</p>}
+            </>
+          )}
+          <DetailFields d={d} setD={setD} />
+          <p className="text-xs text-muted">Changes show in the app and in the reminder the day before. Nobody gets a new message now.</p>
+          {error && <ErrorNotice error={error} />}
+          <button className="btn-primary w-full" disabled={busy} onClick={saveDetails}>{busy && <Spinner />}Save</button>
+        </div>
+      )}
+
+      {tab === 'move' && (
+        <div className="space-y-3">
+          {workshop ? (
+            <>
+              <Field label="New date"><input className="input" type="date" min={addDaysToKey(localDateKey(new Date()), 1)} value={when.date} onChange={(x) => setWhen({ ...when, date: x.target.value })} /></Field>
+              <div className="rounded-xl bg-canvas p-3 text-sm">
+                <p className="font-semibold">Studio already busy that day</p>
+                {busySlots.loading ? <Spinner /> : (busySlots.data ?? []).filter((b) => b.title !== e.title).length === 0
+                  ? <p className="text-muted">Free all day.</p>
+                  : <ul className="mt-1 space-y-0.5">{busySlots.data!.filter((b) => b.title !== e.title).map((b, i) => (
+                    <li key={i}>{fmt.time(b.starts_at)}–{fmt.time(b.ends_at)} · {b.title}{b.pending ? ' (workshop request)' : ''}</li>
+                  ))}</ul>}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Starts"><input className="input" type="time" value={when.start} onChange={(x) => setWhen({ ...when, start: x.target.value })} /></Field>
+                <Field label="Ends"><input className="input" type="time" value={when.end} onChange={(x) => setWhen({ ...when, end: x.target.value })} /></Field>
+              </div>
+            </>
+          ) : classes.loading ? <PageSpinner /> : classes.error ? <ErrorNotice error={classes.error} /> : (classes.data ?? []).length === 0 ? (
+            <p className="text-sm text-muted">There’s no other class in the next 6 weeks to move the theme to.</p>
+          ) : (
+            <ul className="space-y-2">
+              {classes.data!.map((s) => (
+                <li key={s.id}>
+                  <label className={`card flex cursor-pointer items-center gap-3 p-3 ${when.sessionId === s.id ? 'ring-2 ring-brand-600' : ''}`}>
+                    <input type="radio" name="move" checked={when.sessionId === s.id} onChange={() => setWhen({ ...when, sessionId: s.id })} />
+                    <span className="font-bold">{fmt.dayMonth(s.starts_at)} · {fmt.time(s.starts_at)} · {s.title}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          )}
+          <Field label="Message to members (optional)"><input className="input" value={when.note} onChange={(x) => setWhen({ ...when, note: x.target.value })} placeholder="e.g. Sorry for the change!" /></Field>
+          {e.status === 'published' && (
+            <Notice tone="info">
+              {workshop
+                ? 'Ticket holders are told the new date (and can ask for a refund if they can’t make it), and so is everyone who was told about it.'
+                : 'People booked on the old class are told it’s now a normal class, people booked on the new class get the details, and everyone who was told about it gets the new date.'}
+            </Notice>
+          )}
+          {error && <ErrorNotice error={error} />}
+          <button className="btn-primary w-full" disabled={busy} onClick={move}>{busy && <Spinner />}Reschedule</button>
+        </div>
+      )}
+
+      {tab === 'cancel' && (
+        <div className="space-y-3">
+          <Notice tone="warn">
+            {paidWorkshop
+              ? `The workshop is cancelled and taken off the timetable. Everyone booked is told${sold ? `, and their ${e.tickets_sold} ticket${e.tickets_sold === 1 ? ' is' : 's are'} flagged for a refund` : ''}.`
+              : workshop ? 'The request is withdrawn.' : 'The theme is removed. The class still runs as normal and everyone booked is told.'}
+          </Notice>
+          <Field label={paidWorkshop ? 'Reason (shown to members)' : 'Reason (optional)'}>
+            <input className="input" value={reason} onChange={(x) => setReason(x.target.value)} placeholder="e.g. Instructor unwell" />
+          </Field>
+          {error && <ErrorNotice error={error} />}
+          <button className="btn-danger w-full" disabled={busy || (paidWorkshop && !reason.trim())}
+            onClick={() => void go(() => events.cancel(e.id, reason), (r) => `${paidWorkshop ? 'Workshop cancelled' : workshop ? 'Request withdrawn' : 'Theme removed'}.${notified(r) ? ` ${notified(r)} people were told.` : ''}`)}>
+            {busy && <Spinner />}{paidWorkshop ? 'Cancel workshop' : workshop ? 'Withdraw request' : 'Remove theme'}
+          </button>
+        </div>
+      )}
     </Sheet>
   );
 }

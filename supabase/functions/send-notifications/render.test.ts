@@ -117,3 +117,11 @@ Deno.test('the monthly prompt lists next month\'s dates', () => {
   assertStringIncludes(m.text, 'Pride Month (all month)');
   assertEquals(m.url, '/teach/events');
 });
+
+Deno.test('moved events tell each group what it means for them', () => {
+  const payload = { title: 'Christmas Heels', instructor: 'Talita', starts_at: '2026-12-20T15:00:00Z', old_starts_at: '2026-12-19T15:00:00Z', session_id: 's9', old_class_title: 'Heels' };
+  assertStringIncludes(render({ kind: 'event_rescheduled', full_name: null, payload: { ...payload, audience: 'ticket' } })!.text, 'refund your ticket');
+  assertStringIncludes(render({ kind: 'event_rescheduled', full_name: null, payload: { ...payload, audience: 'old_class' } })!.text, 'now runs as a normal class');
+  assertStringIncludes(render({ kind: 'event_rescheduled', full_name: null, payload: { ...payload, audience: 'told' } })!.subject, 'New date');
+  assertStringIncludes(render({ kind: 'event_staff_change', full_name: null, payload: { ...payload, action: 'cancelled', reason: 'Injured', refunds: 3 } })!.text, '3 tickets need a refund');
+});

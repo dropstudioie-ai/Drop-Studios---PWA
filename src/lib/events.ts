@@ -69,6 +69,15 @@ export const events = {
     }),
   update: (id: string, d: { description: string; dress: string; decorations: string; extras: string }) =>
     rpc<void>('update_event_details', { p_event_id: id, p_description: d.description, p_dress_code: d.dress, p_decorations: d.decorations, p_extras: d.extras }),
+  edit: (id: string, a: { title: string; description: string; dress: string; decorations: string; extras: string; capacity: number | null; priceCents: number | null; memberPriceCents: number | null }) =>
+    rpc<{ ok: boolean }>('update_event', {
+      p_event_id: id, p_title: a.title, p_description: a.description, p_dress_code: a.dress, p_decorations: a.decorations, p_extras: a.extras,
+      p_capacity: a.capacity, p_price_cents: a.priceCents, p_member_price_cents: a.memberPriceCents,
+    }),
+  reschedule: (id: string, a: { sessionId?: string; startsAt?: string; endsAt?: string; note?: string }) =>
+    rpc<{ notified: number }>('reschedule_event', {
+      p_event_id: id, p_session_id: a.sessionId ?? null, p_starts_at: a.startsAt ?? null, p_ends_at: a.endsAt ?? null, p_note: a.note || null,
+    }),
   cancel: (id: string, reason?: string) => rpc<{ notified: number }>('cancel_event', { p_event_id: id, p_reason: reason || null }),
   decide: (id: string, approve: boolean, note?: string) =>
     rpc<{ session_id: string | null; announced: number }>('admin_decide_workshop', { p_event_id: id, p_approve: approve, p_note: note || null }),

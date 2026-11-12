@@ -996,7 +996,55 @@ run('database: plans, booking, allowances, pauses, security', () => {
       const [after] = await as<{ r: { fees_cents: number; fees_pending: number; net_revenue_cents: number; instructor_earnings_cents: number; studio_earnings_cents: number }[] }>(
         db, user(t.uid), `select my_events() r`);
       expect(after.r[0]).toMatchObject({ fees_cents: 120, fees_pending: 0, net_revenue_cents: 4880, instructor_earnings_cents: 3416, studio_earnings_cents: 1464 });
-      await expectError(as(db, user(t.uid), `select cancel_event($1)`, [w.r.event_id]), 'workshop_cancel_by_admin');
+      // The instructor can change the details, but not the price once tickets are sold, nor go below the people booked.
+      await expectError(as(db, user(t.uid), `select update_event($1, 'Heels Workshop', null, null, null, null, 20, 2500, 2000)`, [w.r.event_id]), 'price_locked');
+      await expectError(as(db, user(t.uid), `select update_event($1, 'Heels Workshop', null, null, null, null, 1, 3000, 2000)`, [w.r.event_id]), 'capacity_below_booked');
+      await as(db, user(t.uid), `select update_event($1, 'Heels & Heart Workshop', 'New text', 'Red', null, null, 25, 3000, 2000)`, [w.r.event_id]);
+      expect((await db.query(`select title, capacity from class_sessions where id = $1`, [d.r.session_id])).rows[0]).toEqual({ title: 'Heels & Heart Workshop', capacity: 25 });
+
+      // Reschedule: must be free; the ticket holders are told.
+      await expectError(as(db, user(t.uid), `select reschedule_event($1, null, $2, $3)`, [w.r.event_id, c.starts_at, c.ends_at]), 'studio_busy');
+      await as(db, user(t.uid), `select reschedule_event($1, null, ${base} + interval '2 days 3 hours', ${base} + interval '2 days 5 hours', 'Sorry!')`, [w.r.event_id]);
+      const moved = (await db.query(`select payload from notification_outbox where user_id = $1 and kind = 'event_rescheduled'`, [member])).rows;
+      expect(moved).toHaveLength(1);
+      expect(moved[0].payload).toMatchObject({ audience: 'ticket', note: 'Sorry!' });
+      expect((await db.query(`select count(*)::int n from notification_outbox where user_id = $1 and kind = 'event_staff_change' and payload->>'event_id' = $2 and payload->>'action' = 'rescheduled'`, [admin, w.r.event_id])).rows[0].n).toBe(1);
+      const other = await teacher('NotTheOrganiser');
+      await expectError(as(db, user(other.uid), `select reschedule_event($1, null, ${base} + interval '3 days', ${base} + interval '3 days 2 hours')`, [w.r.event_id]), 'forbidden');
+
+      // Cancelling a paid workshop cancels the class and flags the tickets for a refund.
+      await expectError(as(db, user(t.uid), `select cancel_event($1)`, [w.r.event_id]), 'reason_required');
+      const [cx] = await as<{ r: { notified: number } }>(db, user(t.uid), `select cancel_event($1, 'Injured, sorry') r`, [w.r.event_id]);
+      expect(cx.r.notified).toBe(2);
+      expect((await db.query(`select status from class_sessions where id = $1`, [d.r.session_id])).rows[0].status).toBe('cancelled');
+      expect((await db.query(`select status from studio_events where id = $1`, [w.r.event_id])).rows[0].status).toBe('cancelled');
+    });
+
+    it('a theme can be moved to another of the instructor’s classes, by them or an admin', async () => {
+      const t = await teacher('Mover');
+      const fan = await createUser(db, 'MoveFan');
+      const onOld = await createUser(db, 'OnOld');
+      const onNew = await createUser(db, 'OnNew');
+      for (const u of [fan, onOld, onNew]) await buy(u, 'multi-8');
+      await book(fan, await taughtBy(t.instructorId, 600, 'fitdance'));
+      const from = await taughtBy(t.instructorId, 3000, 'fitdance');
+      const to = await taughtBy(t.instructorId, 6000, 'fitdance');
+      await book(onOld, from);
+      await book(onNew, to);
+      const [r] = await as<{ r: { event_id: string } }>(db, user(t.uid), `select organise_special_class($1, 'Halloween FitDance', null, 'Costumes') r`, [from]);
+      const [mv] = await as<{ r: { notified: number } }>(db, user(admin), `select reschedule_event($1, $2) r`, [r.r.event_id, to]);
+      expect(mv.r.notified).toBe(3); // old class, new class, the fan
+      const kinds = async (u: string) => (await db.query(`select kind from notification_outbox where user_id = $1 and kind like 'event_%' order by id`, [u])).rows.map((x) => x.kind);
+      expect(await kinds(onOld)).toEqual(['event_details', 'event_rescheduled']);
+      expect(await kinds(onNew)).toEqual(['event_announced', 'event_details']);
+      expect(await kinds(fan)).toEqual(['event_announced', 'event_rescheduled']);
+      const [tt] = await as<{ r: { id: string; event: { title: string } | null }[] }>(db, anon, `select timetable(null, null, $1) r`, [to]);
+      expect(tt.r[0].event?.title).toBe('Halloween FitDance');
+      // Only the organiser's own classes, and the name can be changed.
+      const other = await teacher('SomeoneElse');
+      await expectError(as(db, user(t.uid), `select reschedule_event($1, $2)`, [r.r.event_id, await taughtBy(other.instructorId, 5000)]), 'forbidden');
+      await as(db, user(t.uid), `select update_event($1, 'Spooky FitDance', 'Boo', 'Costumes')`, [r.r.event_id]);
+      expect((await db.query(`select title, description from studio_events where id = $1`, [r.r.event_id])).rows[0]).toEqual({ title: 'Spooky FitDance', description: 'Boo' });
     });
 
     it('instructors are asked to plan next month in the last week of the month', async () => {

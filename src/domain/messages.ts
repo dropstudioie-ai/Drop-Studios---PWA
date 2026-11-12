@@ -20,6 +20,8 @@ const MESSAGES: Record<string, string> = {
   event_not_pending: 'This event has already been decided or cancelled.',
   workshop_cancel_by_admin: 'A published workshop has paid tickets. Ask the studio to cancel it so everyone is refunded.',
   style_not_found: 'Choose a dance style.',
+  capacity_below_booked: 'More people are already booked than that. Choose a bigger number.',
+  price_locked: 'Tickets have already been bought, so the price can’t change.',
   session_full: 'This class is fully booked.',
   no_membership: 'You need a membership to book classes.',
   membership_not_found: 'Membership not found.',

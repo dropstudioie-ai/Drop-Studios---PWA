@@ -206,6 +206,38 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
         text: `${hi}\n\nA reminder that you're booked for tomorrow:\n\n${eventBlock(p)}\nCan't make it? Cancel in the app so someone else can take your spot.\n\nDrop Studios`,
         url: classLink(p),
       };
+    case 'event_rescheduled': {
+      const note = p.note ? `\n${p.note}\n` : '';
+      if (p.audience === 'old_class') {
+        return {
+          subject: `Theme moved: ${p.title} is now on ${when(p.starts_at)}`,
+          text: `${hi}\n\nThe "${p.title}" theme has moved from ${p.old_class_title ?? 'your class'} on ${when(p.old_starts_at)} to ${p.class_title} on ${when(p.starts_at)}.\n${note}\nYou're still booked into ${when(p.old_starts_at)}, which now runs as a normal class. Want the themed one? Book it here: ${site()}${classLink(p)}\n\nDrop Studios`,
+          url: classLink(p),
+        };
+      }
+      if (p.audience === 'ticket') {
+        return {
+          subject: `New date: ${p.title} is now on ${when(p.starts_at)}`,
+          text: `${hi}\n\n${p.title} has moved from ${when(p.old_starts_at)} to ${when(p.starts_at)}. Your ticket is still valid for the new date.\n${note}\nCan't make the new date? Reply to this email or tell us at reception and we'll refund your ticket.\n\nDrop Studios`,
+          url: classLink(p),
+        };
+      }
+      return {
+        subject: `New date: ${p.title}, ${when(p.starts_at)}`,
+        text: `${hi}\n\n${p.title} with ${p.instructor ?? 'your instructor'} has a new date: ${when(p.starts_at)} (was ${when(p.old_starts_at)}).\n${note}\nBook your spot: ${site()}${classLink(p)}\n\nDrop Studios`,
+        url: classLink(p),
+      };
+    }
+    case 'event_staff_change': {
+      const what = p.action === 'cancelled'
+        ? `cancelled ${p.title}${p.reason ? ` (${p.reason})` : ''}.${p.refunds ? ` ${p.refunds} ticket${Number(p.refunds) === 1 ? '' : 's'} need a refund.` : ''}`
+        : `moved ${p.title} from ${when(p.old_starts_at)} to ${when(p.starts_at)}.`;
+      return {
+        subject: `${p.instructor} ${p.action === 'cancelled' ? 'cancelled' : 'rescheduled'}: ${p.title}`,
+        text: `${hi}\n\n${p.instructor} ${what}\n\n${site()}/admin/events\n\nDrop Studios`,
+        url: '/admin/events',
+      };
+    }
     case 'event_cancelled':
       return {
         subject: `Theme dropped: ${p.class_title}, ${when(p.starts_at)}`,

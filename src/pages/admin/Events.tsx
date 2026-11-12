@@ -4,13 +4,14 @@ import { useAsync } from '../../lib/useAsync';
 import { events, type StudioEvent } from '../../lib/events';
 import { formatPrice } from '../../domain/money';
 import { fmt } from '../../domain/time';
-import { EventCard } from '../Events';
+import { EditEventSheet, EventCard } from '../Events';
 import { ErrorNotice, Field, Notice, PageSpinner, Sheet, Spinner, useToast } from '../../components/ui';
 
 /** Admin: workshop requests to approve, and what's coming up (with decorations to get). */
 export default function AdminEvents() {
   const list = useAsync(() => events.all(), []);
   const [deciding, setDeciding] = useState<StudioEvent | null>(null);
+  const [editing, setEditing] = useState<StudioEvent | null>(null);
   if (list.loading && !list.data) return <PageSpinner />;
   if (list.error) return <ErrorNotice error={list.error} onRetry={list.reload} />;
   const all = list.data!;
@@ -26,7 +27,7 @@ export default function AdminEvents() {
           Instructors organise special classes (a theme on their own class, live straight away) and workshops (paid, outside the timetable, need your approval).
           Instructors are reminded in the last week of each month.
         </p>
-        <Link to="/teach/events/new" className="btn-primary btn-sm">Organise an event</Link>
+        <Link to="/teach/events/new" className="btn-primary btn-sm">+ Add an event</Link>
       </div>
 
       <section>
@@ -35,7 +36,7 @@ export default function AdminEvents() {
           <ul className="mt-3 space-y-3">
             {pending.map((e) => (
               <div key={e.id}>
-                <EventCard e={e} admin />
+                <EventCard e={e} admin onEdit={() => setEditing(e)} />
                 <button className="btn-primary btn-sm mt-2" onClick={() => setDeciding(e)}>Approve or decline</button>
               </div>
             ))}
@@ -57,7 +58,7 @@ export default function AdminEvents() {
                 </ul>
               </div>
             )}
-            <ul className="mt-3 space-y-3">{upcoming.map((e) => <EventCard key={e.id} e={e} admin />)}</ul>
+            <ul className="mt-3 space-y-3">{upcoming.map((e) => <EventCard key={e.id} e={e} admin onEdit={() => setEditing(e)} />)}</ul>
           </>
         )}
       </section>
@@ -71,6 +72,7 @@ export default function AdminEvents() {
         </section>
       )}
 
+      {editing && <EditEventSheet e={editing} onClose={() => setEditing(null)} onDone={() => { setEditing(null); void list.reload(); }} />}
       {deciding && <DecideSheet e={deciding} onClose={() => setDeciding(null)} onDone={() => { setDeciding(null); void list.reload(); }} />}
     </div>
   );
