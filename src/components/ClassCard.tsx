@@ -43,6 +43,11 @@ export function ClassCard({ session, booked, onOpen, compact = false }: {
         )}
       </div>
       <p className={`mt-1 font-bold leading-tight ${compact ? 'text-sm' : 'text-base'}`}>{session.title}</p>
+      {session.event && session.event.kind === 'special_class' && (
+        <p className={`mt-1 inline-flex max-w-full items-center gap-1 rounded-full bg-accent-100 px-2 py-0.5 font-bold text-ink ${compact ? 'text-[11px]' : 'text-xs'}`}>
+          <span aria-hidden="true">{session.event.emoji ?? '✨'}</span><span className="truncate">{session.event.title}</span>
+        </p>
+      )}
       <p className="mt-0.5 text-xs text-muted">
         <span className="font-semibold" style={{ color }}>{session.style?.name}</span>
         {session.instructor ? ` · ${session.instructor.full_name}` : ''}{session.level && !compact ? ` · ${session.level}` : ''}

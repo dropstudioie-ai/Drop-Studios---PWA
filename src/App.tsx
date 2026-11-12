@@ -17,6 +17,9 @@ const CheckoutCancelled = lazy(() => import('./pages/CheckoutResult').then((m) =
 const Account = lazy(() => import('./pages/Account'));
 const GetApp = lazy(() => import('./pages/GetApp'));
 const Teach = lazy(() => import('./pages/Teach'));
+const Events = lazy(() => import('./pages/Events'));
+const OrganiseEvent = lazy(() => import('./pages/Events').then((m) => ({ default: m.OrganiseEvent })));
+const AdminEvents = lazy(() => import('./pages/admin/Events'));
 const AdminLayout = lazy(() => import('./pages/admin/AdminLayout'));
 const AdminOverview = lazy(() => import('./pages/admin/Overview'));
 const AdminTimetable = lazy(() => import('./pages/admin/Timetable'));
@@ -70,10 +73,13 @@ export default function App() {
                 <Route path="checkout/:code" element={<RequireAuth><Checkout /></RequireAuth>} />
                 <Route path="account" element={<RequireAuth><Account /></RequireAuth>} />
                 <Route path="teach" element={<RequireStaff><Teach /></RequireStaff>} />
+                <Route path="teach/events" element={<RequireStaff><Events /></RequireStaff>} />
+                <Route path="teach/events/new" element={<RequireStaff><OrganiseEvent /></RequireStaff>} />
                 <Route path="admin" element={<RequireAdmin><AdminLayout /></RequireAdmin>}>
                   <Route index element={<AdminOverview />} />
                   <Route path="timetable" element={<AdminTimetable />} />
                   <Route path="bookings" element={<AdminBookings />} />
+                  <Route path="events" element={<AdminEvents />} />
                   <Route path="customers" element={<AdminCustomers />} />
                   <Route path="plans" element={<AdminPlans />} />
                   <Route path="styles" element={<AdminStyles />} />

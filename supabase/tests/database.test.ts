@@ -900,6 +900,108 @@ run('database: plans, booking, allowances, pauses, security', () => {
       return s;
     }
 
+    it('an instructor themes their class: their people are told, everyone booked gets the details', async () => {
+      const t = await teacher('Themer');
+      const other = await teacher('OtherTeacher');
+      const past = await taughtBy(t.instructorId, 600, 'fitdance');
+      const target = await taughtBy(t.instructorId, 3000, 'fitdance');
+      const fan = await createUser(db, 'Fan');          // took their class recently
+      const booked = await createUser(db, 'BookedIn');  // already booked on the themed class
+      const stranger = await createUser(db, 'Stranger'); // only took another teacher's class
+      for (const u of [fan, booked, stranger]) await buy(u, 'multi-8');
+      await book(fan, past);
+      await book(booked, target);
+      await book(stranger, await taughtBy(other.instructorId, 700, 'fitdance'));
+      // An old booking (more than 3 months ago) doesn't count.
+      const old = await createUser(db, 'LongAgo');
+      const oldS = await taughtBy(t.instructorId, 600, 'fitdance');
+      await db.query(`update class_sessions set starts_at = now() - interval '4 months', ends_at = now() - interval '4 months' + interval '1 hour' where id = $1`, [oldS]);
+      await db.query(`insert into bookings (user_id, session_id, status) values ($1, $2, 'attended')`, [old, oldS]);
+
+      const [count] = await as<{ n: number }>(db, user(t.uid), `select event_audience_count() n`);
+      expect(count.n).toBe(2); // fan + booked
+      await expectError(as(db, user(t.uid), `select organise_special_class($1, 'All Black')`, [await taughtBy(other.instructorId, 3000)]), 'forbidden');
+      await expectError(as(db, user(fan), `select organise_special_class($1, 'All Black')`, [target]), 'forbidden');
+
+      const [r] = await as<{ r: { event_id: string; announced: number; booked_told: number } }>(db, user(t.uid),
+        `select organise_special_class($1, 'All Black FitDance', 'Our all black class!', 'Black', 'UV lights', 'Licorice') r`, [target]);
+      expect(r.r).toMatchObject({ announced: 1, booked_told: 1 });
+      const kinds = async (u: string) => (await db.query(`select kind from notification_outbox where user_id = $1 and kind like 'event_%' order by id`, [u])).rows.map((x) => x.kind);
+      expect(await kinds(fan)).toEqual(['event_announced']);
+      expect(await kinds(booked)).toEqual(['event_details']);
+      expect(await kinds(stranger)).toEqual([]);
+      expect(await kinds(old)).toEqual([]);
+      expect(await kinds(admin)).toEqual(['event_organised']);
+      const { rows: [n] } = await db.query(`select payload from notification_outbox where user_id = $1 and kind = 'event_details'`, [booked]);
+      expect(n.payload).toMatchObject({ title: 'All Black FitDance', dress_code: 'Black', instructor: 'Themer' });
+      expect(n.payload).not.toHaveProperty('decorations');
+      await expectError(as(db, user(t.uid), `select organise_special_class($1, 'Again')`, [target]), 'already_an_event');
+
+      // Members see the theme on the timetable; booking later sends the details once.
+      const [tt] = await as<{ r: { event: { title: string; dress_code: string } }[] }>(db, anon, `select timetable(null, null, $1) r`, [target]);
+      expect(tt.r[0].event).toMatchObject({ title: 'All Black FitDance', dress_code: 'Black' });
+      await book(fan, target);
+      expect(await kinds(fan)).toEqual(['event_announced', 'event_details']);
+
+      // Taking the theme off tells everyone booked.
+      await as(db, user(t.uid), `select cancel_event($1, 'Change of plan')`, [r.r.event_id]);
+      expect(await kinds(booked)).toEqual(['event_details', 'event_cancelled']);
+      const [tt2] = await as<{ r: { event: unknown }[] }>(db, anon, `select timetable(null, null, $1) r`, [target]);
+      expect(tt2.r[0].event).toBeNull();
+    });
+
+    it('workshops must fit the studio, need admin approval and can have a member price', async () => {
+      const t = await teacher('Workshopper');
+      const st = await styleId('heels');
+      const base = `date_trunc('day', now()) + interval '45 days'`;
+      const clash = await makeSession({ style: 'heels', startsInMinutes: 10 * 24 * 60 });
+      const { rows: [c] } = await db.query(`select starts_at, ends_at from class_sessions where id = $1`, [clash]);
+      await expectError(as(db, user(t.uid), `select request_workshop('Heels Workshop', $1, $2, $3, 20, 3000)`, [st, c.starts_at, c.ends_at]), 'studio_busy');
+      await expectError(as(db, user(t.uid), `select request_workshop('Too soon', $1, now() + interval '1 day', now() + interval '1 day 2 hours', 20, 3000)`, [st]), 'workshop_too_soon');
+      await expectError(as(db, user(t.uid), `select request_workshop('Bad price', $1, ${base} + interval '1 day', ${base} + interval '1 day 2 hours', 20, 3000, 4000)`, [st]), 'invalid_price');
+
+      const [w] = await as<{ r: { event_id: string } }>(db, user(t.uid),
+        `select request_workshop('Heels Workshop', $1, ${base} + interval '1 day 3 hours', ${base} + interval '1 day 5 hours', 20, 3000, 2000, 'Learn a full routine', 'Heels!') r`, [st]);
+      expect((await db.query(`select count(*)::int n from notification_outbox where user_id = $1 and kind = 'event_request'`, [admin])).rows[0].n).toBe(1);
+      // A second request on top of a pending one is refused, and members can't approve.
+      await expectError(as(db, user(t.uid), `select request_workshop('Overlap', $1, ${base} + interval '1 day 4 hours', ${base} + interval '1 day 6 hours', 20, 3000)`, [st]), 'studio_busy');
+      await expectError(as(db, user(t.uid), `select admin_decide_workshop($1, true)`, [w.r.event_id]), 'forbidden');
+
+      const [d] = await as<{ r: { session_id: string } }>(db, user(admin), `select admin_decide_workshop($1, true, 'Go for it') r`, [w.r.event_id]);
+      const { rows: [s] } = await db.query(`select is_special, ticket_price_cents, member_ticket_price_cents, instructor_id from class_sessions where id = $1`, [d.r.session_id]);
+      expect(s).toMatchObject({ is_special: true, ticket_price_cents: 3000, member_ticket_price_cents: 2000, instructor_id: t.instructorId });
+      expect((await db.query(`select count(*)::int n from notification_outbox where user_id = $1 and kind = 'event_decided'`, [t.uid])).rows[0].n).toBe(1);
+
+      // Members pay the member price, everyone else the full price.
+      const member = await createUser(db, 'WorkshopMember');
+      await buy(member, 'multi-5');
+      const guest = await createUser(db, 'WorkshopGuest');
+      const price = async (u: string) => (await as<{ r: { amount_cents: number } }>(db, user(u), `select create_ticket_checkout($1, $2) r`, [d.r.session_id, randomUUID()]))[0].r.amount_cents;
+      expect(await price(member)).toBe(2000);
+      expect(await price(guest)).toBe(3000);
+
+      const [mine] = await as<{ r: { status: string; session: { id: string } }[] }>(db, user(t.uid), `select my_events() r`);
+      expect(mine.r[0]).toMatchObject({ status: 'published', session: { id: d.r.session_id } });
+      await expectError(as(db, user(t.uid), `select cancel_event($1)`, [w.r.event_id]), 'workshop_cancel_by_admin');
+    });
+
+    it('instructors are asked to plan next month in the last week of the month', async () => {
+      const t = await teacher('Planner');
+      const { rows: [{ tz }] } = await db.query(`select timezone tz from app_settings`);
+      const { rows: [x] } = await db.query(
+        `select (now() at time zone $1)::time >= '10:00' late,
+                (now() at time zone $1)::date >= (date_trunc('month', (now() at time zone $1)::date) + interval '1 month')::date - 7 lastweek`, [tz]);
+      await as(db, service, `select queue_event_notifications()`);
+      await as(db, service, `select queue_event_notifications()`);
+      const { rows } = await db.query(`select payload from notification_outbox where user_id = $1 and kind = 'event_prompt'`, [t.uid]);
+      expect(rows.length).toBe(x.late && x.lastweek ? 1 : 0);
+      // The themes for any month come from the calendar (Easter-based ones included).
+      const [th] = await as<{ r: { name: string; on: string | null }[] }>(db, service, `select _themes_for_month('2027-03-01') r`);
+      expect(th.r.map((z) => z.name)).toEqual(expect.arrayContaining(["St Patrick's Day", "Mother's Day", "Easter"]));
+      expect(th.r.find((z) => z.name === 'Easter')?.on).toBe('2027-03-28');
+      await expectError(as(db, user(await createUser(db, 'Nosy')), `select upcoming_themes()`), 'forbidden');
+    });
+
     it('linking an account makes that person an instructor', async () => {
       const t = await teacher('Talita');
       const { rows } = await db.query(`select role from profiles where id = $1`, [t.uid]);

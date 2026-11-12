@@ -68,10 +68,22 @@ export interface ClassSession {
   room: string | null;
   is_special: boolean;
   ticket_price_cents: number | null;
+  member_ticket_price_cents?: number | null;
   status: 'scheduled' | 'cancelled';
   cancel_reason: string | null;
+  /** A theme or workshop organised by the instructor. */
+  event?: SessionEvent | null;
   style?: Pick<DanceStyle, 'id' | 'name' | 'color' | 'slug'> | null;
   instructor?: Pick<Instructor, 'id' | 'full_name'> | null;
+}
+
+export interface SessionEvent {
+  id: string;
+  kind: 'special_class' | 'workshop';
+  title: string;
+  description: string | null;
+  dress_code: string | null;
+  emoji: string | null;
 }
 
 export type Availability = 'available' | 'almost_full' | 'full';
@@ -204,6 +216,8 @@ export interface BookingOptions {
   my_booking_is_ticket?: boolean | null;
   pending_hold_booking_id?: string | null;
   ticket_price_cents?: number | null;
+  member_ticket_price_cents?: number | null;
+  ticket_is_member_price?: boolean;
   drop_in_price_cents?: number | null;
   has_profile_photo?: boolean;
   eligible_membership_id?: string | null;

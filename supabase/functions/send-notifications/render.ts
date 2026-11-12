@@ -30,6 +30,23 @@ const eur = (cents: unknown) => new Intl.NumberFormat('en-IE', { style: 'currenc
 const longDate = (d: unknown) => new Intl.DateTimeFormat('en-IE', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long' })
   .format(new Date(`${String(d)}T12:00:00Z`));
 
+
+const site = () => Deno.env.get('SITE_URL') ?? '';
+const monthName = (d: unknown) => new Intl.DateTimeFormat('en-IE', { timeZone: TZ, month: 'long' }).format(new Date(`${String(d)}T12:00:00Z`));
+const shortDay = (d: unknown) => new Intl.DateTimeFormat('en-IE', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(`${String(d)}T12:00:00Z`));
+/** Dress code: always encouraged, never required. */
+export const dressLine = (dress: unknown) => dress
+  ? `\n👗 What to wear: ${dress}\nThis is encouraged, never required. Come as you are: everyone is welcome at Drop.\n`
+  : '';
+const eventBlock = (p: Record<string, unknown>) => {
+  const lines = [`✨ ${p.title}`, `📅 ${when(p.starts_at)}${p.instructor ? ` with ${p.instructor}` : ''}`];
+  if (p.kind === 'workshop' && p.price_cents != null) {
+    lines.push(`🎟️ ${eur(p.price_cents)}${p.member_price_cents != null ? ` (members ${eur(p.member_price_cents)})` : ''}`);
+  }
+  return `${lines.join('\n')}\n${p.description ? `\n${p.description}\n` : ''}${dressLine(p.dress_code)}`;
+};
+const classLink = (p: Record<string, unknown>) => `/timetable?class=${p.session_id}`;
+
 export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Message | null {
   const hi = n.full_name ? `Hi ${n.full_name.split(' ')[0]},` : 'Hi,';
   const p = n.payload;
@@ -162,6 +179,63 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
         url: '/account',
       };
     }
+    case 'event_prompt': {
+      const themes = (p.themes as { name: string; emoji?: string; on?: string | null; ideas?: string }[] | undefined) ?? [];
+      const list = themes.map((t) => `${t.emoji ?? '•'} ${t.name}${t.on ? ` (${shortDay(t.on)})` : ' (all month)'}${t.ideas ? `\n   Idea: ${t.ideas}` : ''}`).join('\n');
+      return {
+        subject: `🗓️ ${monthName(p.month)} is coming: plan a special class or workshop`,
+        text: `${hi}\n\nHere's what's coming up in ${monthName(p.month)}:\n\n${list || 'No dates in the calendar, so pick your own theme!'}\n\nWant to make one of your classes special, or run a workshop or gathering? Open the app, go to Organise an event, and tell us the theme, what members could wear, any decorations the studio should get, and snacks or other ideas.\n\nWorkshops are paid events outside the timetable: a great way to earn extra and bring your community together.\n\n${site()}/teach/events\n\nDrop Studios`,
+        url: '/teach/events',
+      };
+    }
+    case 'event_announced':
+      return {
+        subject: p.kind === 'workshop' ? `New workshop: ${p.title}` : `Special class: ${p.title}`,
+        text: `${hi}\n\n${p.instructor ?? 'Your instructor'} is organising ${p.kind === 'workshop' ? 'a workshop' : 'a special class'} and thought you'd love it:\n\n${eventBlock(p)}\nBook your spot: ${site()}${classLink(p)}\n\nDrop Studios`,
+        url: classLink(p),
+      };
+    case 'event_details':
+      return {
+        subject: `You're booked: ${p.title}, ${when(p.starts_at)}`,
+        text: `${hi}\n\nYou're booked into a ${p.kind === 'workshop' ? 'workshop' : 'special themed class'}. Here's what to know:\n\n${eventBlock(p)}\nSee you there!\nDrop Studios`,
+        url: classLink(p),
+      };
+    case 'event_reminder':
+      return {
+        subject: `Tomorrow: ${p.title}`,
+        text: `${hi}\n\nA reminder that you're booked for tomorrow:\n\n${eventBlock(p)}\nCan't make it? Cancel in the app so someone else can take your spot.\n\nDrop Studios`,
+        url: classLink(p),
+      };
+    case 'event_cancelled':
+      return {
+        subject: `Theme dropped: ${p.class_title}, ${when(p.starts_at)}`,
+        text: `${hi}\n\nThe "${p.title}" theme for ${p.class_title} on ${when(p.starts_at)} won't go ahead${p.reason ? `: ${p.reason}` : '.'}\nThe class itself still runs as normal and you're still booked in. No need to dress up.\n\nDrop Studios`,
+        url: '/account',
+      };
+    case 'event_organised':
+      return {
+        subject: `${p.instructor} organised: ${p.title}`,
+        text: `${hi}\n\n${p.instructor} turned ${p.class_title} on ${when(p.starts_at)} into a special class: ${p.title}.\n${p.dress_code ? `\nWhat to wear: ${p.dress_code}` : ''}\nDecorations for the studio to get: ${p.decorations ?? 'none'}\nSnacks and other ideas: ${p.extras ?? 'none'}\n\n${site()}/admin/events\n\nDrop Studios`,
+        url: '/admin/events',
+      };
+    case 'event_request':
+      return {
+        subject: `Workshop request: ${p.title}`,
+        text: `${hi}\n\n${p.instructor} would like to run a workshop: ${p.title}, ${when(p.starts_at)}.\nPrice: ${eur(p.price_cents)}${p.member_price_cents != null ? ` (members ${eur(p.member_price_cents)})` : ''}\n\nApprove or decline it in the app: ${site()}/admin/events\n\nDrop Studios`,
+        url: '/admin/events',
+      };
+    case 'event_decided':
+      return p.approved
+        ? {
+          subject: `Approved: ${p.title} is on the timetable 🎉`,
+          text: `${hi}\n\nYour workshop ${p.title} (${when(p.starts_at)}) is approved and on the timetable. ${Number(p.announced) || 0} people who took your classes recently have been told.${p.note ? `\n\nFrom the studio: ${p.note}` : ''}\n\nShare it with your community: ${site()}/teach/events\n\nDrop Studios`,
+          url: '/teach/events',
+        }
+        : {
+          subject: `Workshop not approved: ${p.title}`,
+          text: `${hi}\n\nSorry, the studio couldn't approve ${p.title} (${when(p.starts_at)}).${p.note ? `\n\n${p.note}` : ''}\n\nYou can suggest another date in the app.\n\nDrop Studios`,
+          url: '/teach/events',
+        };
     case 'test_message':
       return {
         subject: 'Drop Studios: notifications are working ✅',

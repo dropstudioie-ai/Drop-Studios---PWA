@@ -152,6 +152,7 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
             <UserIcon width={18} height={18} className="shrink-0 text-muted" />with {session.instructor.full_name}{session.room ? ` · ${session.room}` : ''}
           </p>
         )}
+        {session.event && <EventDetails event={session.event} />}
         {scheduled && availabilityLabel(session.availability) && (
           <p className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-bold ${session.availability === 'full' ? 'bg-ink/10 text-ink-soft' : 'bg-accent-100 text-ink'}`}>
             {availabilityLabel(session.availability)}
@@ -244,12 +245,15 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
             <div className="space-y-3">
               {paymentsMode === 'test' && <Notice tone="test"><strong>TEST MODE</strong> — no real payment will be taken.</Notice>}
               <div className="flex items-center justify-between">
-                <span className="text-sm text-ink-soft">Ticket · one-off payment</span>
+                <span className="text-sm text-ink-soft">Ticket · one-off payment{opts.ticket_is_member_price ? ' · member price' : ''}</span>
                 <span className="font-display text-2xl font-black">{formatPrice(ticketPrice, 'EUR', { forceDecimals: true })}</span>
               </div>
               <button className="btn-accent w-full text-lg" disabled={busy} onClick={buyTicket}>
                 {busy && <Spinner />}{paymentsMode === 'test' ? 'Get TEST ticket' : 'Buy ticket'}
               </button>
+              {!opts.ticket_is_member_price && opts.member_ticket_price_cents != null && opts.member_ticket_price_cents < ticketPrice && (
+                <p className="text-center text-sm text-ink-soft">Members pay {formatPrice(opts.member_ticket_price_cents)}.</p>
+              )}
               <p className="text-center text-xs text-muted">Not included in memberships. Tickets are non-refundable unless the studio cancels the event.</p>
             </div>
           ) : (
@@ -329,5 +333,22 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
         )}
       </div>
     </Sheet>
+  );
+}
+
+/** The theme of a special class or the details of a workshop. What to wear is never required. */
+export function EventDetails({ event }: { event: NonNullable<ClassSession['event']> }) {
+  return (
+    <div className="mt-3 rounded-xl border-2 border-accent-500 bg-white p-3">
+      <p className="text-xs font-bold uppercase tracking-wide text-accent-600">{event.kind === 'workshop' ? 'Workshop' : 'Special themed class'}</p>
+      <p className="font-display text-lg font-extrabold">{event.emoji ?? '✨'} {event.title}</p>
+      {event.description && <p className="mt-1 whitespace-pre-line text-sm text-ink-soft">{event.description}</p>}
+      {event.dress_code && (
+        <div className="mt-2 rounded-lg bg-canvas p-2 text-sm">
+          <p><strong>What to wear:</strong> {event.dress_code}</p>
+          <p className="mt-0.5 text-xs text-muted">Encouraged, never required. Come as you are: everyone is welcome at Drop.</p>
+        </div>
+      )}
+    </div>
   );
 }

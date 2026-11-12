@@ -95,3 +95,25 @@ Deno.test('class changed: new time and instructor', () => {
   assertStringIncludes(m.text, 'New instructor: Vini Martins (was Talita Lima)');
   assertStringIncludes(m.text, 'Sorry!');
 });
+
+Deno.test('event details always say the dress code is optional', () => {
+  const payload = { title: 'All Black FitDance', kind: 'special_class', instructor: 'Jorginho', starts_at: '2026-11-27T18:30:00Z', dress_code: 'All black', session_id: 's1', description: 'Our darkest class yet.' };
+  for (const kind of ['event_announced', 'event_details', 'event_reminder']) {
+    const m = render({ kind, full_name: 'Aoife Byrne', payload })!;
+    assertStringIncludes(m.text, 'What to wear: All black');
+    assertStringIncludes(m.text, 'encouraged, never required');
+    assertEquals(m.url, '/timetable?class=s1');
+  }
+  const ws = render({ kind: 'event_announced', full_name: null, payload: { ...payload, kind: 'workshop', price_cents: 2500, member_price_cents: 2000, dress_code: null } })!;
+  assertStringIncludes(ws.text, '€25.00 (members €20.00)');
+  assertEquals(ws.text.includes('What to wear'), false);
+});
+
+Deno.test('the monthly prompt lists next month\'s dates', () => {
+  const m = render({ kind: 'event_prompt', full_name: 'Talita Lima', payload: { month: '2027-03-01', themes: [
+    { name: "St Patrick's Day", emoji: '☘️', on: '2027-03-17', ideas: 'Wear green' }, { name: 'Pride Month', emoji: '🏳️‍🌈', on: null }] } })!;
+  assertStringIncludes(m.subject, 'March is coming');
+  assertStringIncludes(m.text, "☘️ St Patrick's Day (Wed, 17 Mar)");
+  assertStringIncludes(m.text, 'Pride Month (all month)');
+  assertEquals(m.url, '/teach/events');
+});

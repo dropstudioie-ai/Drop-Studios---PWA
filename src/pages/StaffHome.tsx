@@ -9,6 +9,7 @@ import { formatPrice } from '../domain/money';
 import { addDaysToKey, fmt, formatKey, localDateKey, zonedTime } from '../domain/time';
 import { StaffRoster } from '../components/StaffRoster';
 import { ErrorNotice, PageSpinner } from '../components/ui';
+import { events } from '../lib/events';
 
 interface Dashboard {
   payments_to_review: number; unfinished_checkouts: number; failed_monthly_payments: number; ticket_refunds: number;
@@ -83,8 +84,10 @@ function AdminToday({ todays, onOpen }: { todays: StaffSession[]; onOpen: (id: s
     return rows.filter((r) => r.next_birthday && r.next_birthday <= soon)
       .map((r) => ({ name: names.find((n) => n.id === r.instructor_id)?.full_name ?? 'Instructor', on: r.next_birthday! }));
   }, []);
+  const requests = useAsync(async () => (await events.all()).filter((e) => e.status === 'pending').length, []);
   const v = d.data;
   const attention = v ? [
+    { n: requests.data ?? 0, label: ['workshop request to approve', 'workshop requests to approve'], to: '/admin/events' },
     { n: v.failed_monthly_payments, label: ['monthly payment failed', 'monthly payments failed'], to: '/admin/customers' },
     { n: v.payments_to_review, label: ['payment to review', 'payments to review'], to: '/admin/customers' },
     { n: v.ticket_refunds, label: ['ticket needs a refund', 'tickets need a refund'], to: '/admin/audit' },
@@ -194,6 +197,8 @@ function InstructorToday({ upcoming, today, onOpen }: { upcoming: StaffSession[]
         </section>
       )}
 
+      <OrganisePrompt />
+
       <section className="card p-5" aria-labelledby="free-h">
         <h2 id="free-h" className="font-extrabold">Want to take a class?</h2>
         <p className="mt-1 text-sm text-ink-soft">As an instructor you can book any class for free from the timetable.</p>
@@ -208,4 +213,31 @@ function dayLabel(s: StaffSession, today: string) {
   if (key === today) return 'Today';
   if (key === addDaysToKey(today, 1)) return 'Tomorrow';
   return formatKey(key, { weekday: 'long', day: 'numeric', month: 'short' });
+}
+
+function OrganisePrompt() {
+  const themes = useAsync(() => events.themes(), []);
+  const now = localDateKey(new Date());
+  // From the last week of the month, look ahead to next month.
+  const lastWeek = Number(now.slice(8)) >= 22;
+  const month = themes.data?.[lastWeek ? 1 : 0] ?? themes.data?.[0];
+  const list = (month?.themes ?? []).filter((t) => !t.on || t.on >= now).slice(0, 3);
+  return (
+    <section className="overflow-hidden rounded-2xl bg-ink p-5 text-white" aria-labelledby="org-h">
+      <h2 id="org-h" className="font-display text-xl font-black">✨ Organise an event</h2>
+      <p className="mt-1 text-sm text-white/75">Give one of your classes a theme, or run a paid workshop or gathering for your community.</p>
+      {list.length > 0 && (
+        <ul className="mt-3 space-y-1 text-sm">
+          {list.map((t) => (
+            <li key={t.id}>
+              <Link to={`/teach/events/new?theme=${t.id}`} className="font-semibold text-accent-400 hover:underline">
+                {t.emoji} {t.name}{t.on ? ` · ${formatKey(t.on, { day: 'numeric', month: 'short' })}` : ''}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+      <Link to="/teach/events/new" className="btn-accent btn-sm mt-4">Organise an event</Link>
+    </section>
+  );
 }

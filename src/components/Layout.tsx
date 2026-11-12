@@ -1,7 +1,7 @@
 import { NavLink, Link, Outlet } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { Logo } from './Logo';
-import { CalendarIcon, HomeIcon, ShieldIcon, TicketIcon, UserIcon, UsersIcon } from './icons';
+import { CalendarIcon, HomeIcon, ShieldIcon, SparkleIcon, TicketIcon, UserIcon, UsersIcon } from './icons';
 import { InstallPrompt, OfflineBanner, UpdatePrompt, isStandalone } from './pwa';
 import { OutOfClassesPrompt } from './OutOfClasses';
 import { NotificationsPrompt } from './NotificationsPrompt';
@@ -24,7 +24,8 @@ export function Layout() {
           <Link to="/" aria-label="Drop Studios home"><Logo height={26} /></Link>
           <nav className="hidden items-center gap-1 md:flex" aria-label="Main">
             {isStaff && <NavLink to="/" end className={navCls}>Today</NavLink>}
-            {isStaff && <NavLink to="/teach" className={navCls}>{isAdmin ? 'Classes' : 'My classes'}</NavLink>}
+            {isStaff && <NavLink to="/teach" end className={navCls}>{isAdmin ? 'Classes' : 'My classes'}</NavLink>}
+            {isStaff && !isAdmin && <NavLink to="/teach/events" className={navCls}>Events</NavLink>}
             <NavLink to="/timetable" className={navCls}>Timetable</NavLink>
             {!isStaff && <NavLink to="/memberships" className={navCls}>Memberships</NavLink>}
             {isAdmin && <NavLink to="/admin/customers" className={navCls}>Members</NavLink>}
@@ -80,14 +81,15 @@ function BottomNav({ signedIn, staff, admin }: { signedIn: boolean; staff: boole
       {admin ? (
         <>
           <NavLink to="/" end className={item}><HomeIcon />Today</NavLink>
-          <NavLink to="/teach" className={item}><CalendarIcon />Classes</NavLink>
+          <NavLink to="/teach" end className={item}><CalendarIcon />Classes</NavLink>
           <NavLink to="/admin/customers" className={item}><UsersIcon />Members</NavLink>
           <NavLink to="/admin" end className={item}><ShieldIcon />Admin</NavLink>
         </>
       ) : staff ? (
         <>
           <NavLink to="/" end className={item}><HomeIcon />Today</NavLink>
-          <NavLink to="/teach" className={item}><UsersIcon />My classes</NavLink>
+          <NavLink to="/teach" end className={item}><UsersIcon />My classes</NavLink>
+          <NavLink to="/teach/events" className={item}><SparkleIcon />Events</NavLink>
           <NavLink to="/timetable" className={item}><CalendarIcon />Timetable</NavLink>
         </>
       ) : (

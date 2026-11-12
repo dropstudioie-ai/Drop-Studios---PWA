@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import type { ClassSession } from '../api/types';
@@ -47,6 +47,16 @@ export default function Timetable() {
     const found = sessions.data?.find((s) => s.id === id);
     setOpen(found ?? (await api.session(id)));
   }, [sessions.data]);
+
+  // Links from notifications: /timetable?class=<id> opens that class.
+  const linked = params.get('class');
+  useEffect(() => {
+    if (!linked) return;
+    void api.session(linked).then(setOpen).catch(() => {});
+    const next = new URLSearchParams(params);
+    next.delete('class');
+    setParams(next, { replace: true });
+  }, [linked]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = (sessions.data ?? []).filter((s) => !styleFilter || s.style?.slug === styleFilter);
   const byDay = new Map<string, ClassSession[]>(days.map((d) => [d, []]));
