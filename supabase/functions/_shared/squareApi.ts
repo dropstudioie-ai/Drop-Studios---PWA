@@ -1,6 +1,6 @@
 // Calls to Square's API for monthly memberships (server side only).
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.118.0';
-import { refundRequest, restartSubscriptionRequest, SQUARE_VERSION, squareBaseUrl, subscriptionPlanUpsert } from './square.ts';
+import { processingFee, refundRequest, restartSubscriptionRequest, SQUARE_VERSION, squareBaseUrl, subscriptionPlanUpsert, type SquarePaymentLike } from './square.ts';
 
 export interface SquareConfig {
   base: string;
@@ -167,4 +167,23 @@ export async function refundPayment(cfg: SquareConfig, p: Parameters<typeof refu
 export async function orderCustomer(cfg: SquareConfig, orderId: string): Promise<string | null> {
   const r = await call<{ order?: { customer_id?: string } }>(cfg, `/v2/orders/${encodeURIComponent(orderId)}`);
   return r.ok ? r.body.order?.customer_id ?? null : null;
+}
+
+/** Fill in Square's fee on recent ticket payments where the webhook didn't carry it. */
+export async function backfillPaymentFees(db: SupabaseClient, cfg: SquareConfig): Promise<{ fees_recorded: number }> {
+  const since = new Date(Date.now() - 60 * 864e5).toISOString();
+  const { data } = await db.from('payments').select('id, provider_payment_ref')
+    .eq('provider', 'square').eq('status', 'succeeded').in('kind', ['ticket', 'drop_in'])
+    .is('provider_fee_cents', null).gte('created_at', since).not('provider_payment_ref', 'is', null).limit(50);
+  let n = 0;
+  for (const p of (data ?? []) as { id: string; provider_payment_ref: string }[]) {
+    const id = await squarePaymentIdFor(cfg, p.provider_payment_ref);
+    if (!id) continue;
+    const r = await call<{ payment?: SquarePaymentLike }>(cfg, `/v2/payments/${encodeURIComponent(id)}`);
+    const fee = r.ok ? processingFee(r.body.payment) : null;
+    if (fee == null) continue;
+    await db.rpc('record_payment_fee', { p_payment_id: p.id, p_fee_cents: fee });
+    n++;
+  }
+  return { fees_recorded: n };
 }

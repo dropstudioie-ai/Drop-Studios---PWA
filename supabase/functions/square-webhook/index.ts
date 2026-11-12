@@ -149,6 +149,9 @@ Deno.serve(async (req) => {
       .eq('provider_session_id', action.orderId)
       .maybeSingle();
     if (!payment) return Response.json({ ignored: 'not an app checkout' });
+    if (action.feeCents != null) {
+      await db.rpc('record_payment_fee', { p_payment_id: payment.id, p_fee_cents: action.feeCents });
+    }
 
     const { data, error } = await db.rpc('fulfill_payment', {
       p_payment_id: payment.id,

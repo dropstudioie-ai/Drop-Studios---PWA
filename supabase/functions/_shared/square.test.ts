@@ -41,7 +41,7 @@ Deno.test('payment link labels Drop Ins and tickets', () => {
 
 Deno.test('only COMPLETED payments activate anything', () => {
   const ev = (status: string) => ({ type: 'payment.updated', data: { object: { payment: { id: 'sq1', order_id: 'ord1', status, amount_money: { amount: 3500, currency: 'EUR' } } } } });
-  assertEquals(webhookAction(ev('COMPLETED')), { kind: 'fulfil', orderId: 'ord1', squarePaymentId: 'sq1', amountCents: 3500, currency: 'EUR', customerId: null });
+  assertEquals(webhookAction(ev('COMPLETED')), { kind: 'fulfil', orderId: 'ord1', squarePaymentId: 'sq1', amountCents: 3500, currency: 'EUR', customerId: null, feeCents: null });
   for (const s of ['APPROVED', 'PENDING', 'CANCELED', 'FAILED']) assertEquals(webhookAction(ev(s)).kind, 'ignore');
   assertEquals(webhookAction({ type: 'payment.updated', data: { object: { payment: { id: 'pos', status: 'COMPLETED' } } } }).kind, 'ignore');
   assertEquals(webhookAction({ type: 'customer.created' }).kind, 'ignore');
@@ -111,4 +111,13 @@ Deno.test('pause: restart on the new payment date with the saved card, once per 
 Deno.test('refund: Square payment id, exact amount, one refund per payment', () => {
   assertEquals(refundRequest({ paymentId: 'p1', squarePaymentId: 'sq1', amountCents: 5500, currency: 'eur', reason: 'Cooling-off' }),
     { idempotency_key: 'drop-refund-p1', payment_id: 'sq1', amount_money: { amount: 5500, currency: 'EUR' }, reason: 'Cooling-off' });
+});
+
+Deno.test('the processing fee is read from the payment once Square reports it', () => {
+  const base = { type: 'payment.updated', data: { object: { payment: { id: 'p1', order_id: 'o1', status: 'COMPLETED', amount_money: { amount: 3000, currency: 'EUR' } } } } };
+  const a = webhookAction(base);
+  assertEquals(a.kind === 'fulfil' && a.feeCents, null);
+  const b = webhookAction({ ...base, data: { object: { payment: { ...base.data.object.payment,
+    processing_fee: [{ amount_money: { amount: 67, currency: 'EUR' } }, { amount_money: { amount: 3, currency: 'EUR' } }] } } } });
+  assertEquals(b.kind === 'fulfil' && b.feeCents, 70);
 });

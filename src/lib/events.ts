@@ -28,6 +28,10 @@ export interface StudioEvent {
   session: { id: string; title: string; starts_at: string; ends_at: string; booked_count: number; capacity: number; status: string } | null;
   tickets_sold: number;
   ticket_revenue_cents: number;
+  /** Square's card fees on those tickets; fees_pending = tickets whose fee Square hasn't reported yet. */
+  fees_cents: number;
+  fees_pending: number;
+  net_revenue_cents: number;
   instructor_share_pct: number;
   instructor_earnings_cents: number;
   studio_earnings_cents: number;

@@ -106,9 +106,12 @@ export function EventCard({ e, onEdit, admin }: { e: StudioEvent; onEdit?: () =>
         )}
         {e.kind === 'workshop' && e.status !== 'declined' && e.status !== 'cancelled' && (
           <div className="sm:col-span-2">
-            <dt className="inline text-muted">Split {e.instructor_share_pct}/{100 - e.instructor_share_pct}: </dt>
+            <dt className="inline text-muted">Split {e.instructor_share_pct}/{100 - e.instructor_share_pct} after card fees: </dt>
             <dd className="inline">
-              {admin ? e.instructor ?? 'Instructor' : 'You'} <strong>{formatPrice(e.instructor_earnings_cents)}</strong> · Studio {formatPrice(e.studio_earnings_cents)}
+              {admin ? e.instructor ?? 'Instructor' : 'You'} <strong>{formatPrice(e.instructor_earnings_cents, 'EUR', { forceDecimals: true })}</strong>
+              {' '}· Studio {formatPrice(e.studio_earnings_cents, 'EUR', { forceDecimals: true })}
+              {e.fees_cents > 0 && <span className="text-muted"> (fees {formatPrice(e.fees_cents, 'EUR', { forceDecimals: true })})</span>}
+              {e.fees_pending > 0 && <span className="block text-xs text-muted">Square hasn’t reported the fee on {e.fees_pending} ticket{e.fees_pending === 1 ? '' : 's'} yet, so this may go down slightly.</span>}
             </dd>
           </div>
         )}
@@ -401,11 +404,11 @@ function WorkshopEarnings({ share, price, capacity }: { share: number; price: nu
   const full = price != null && !Number.isNaN(price) && capacity > 0 ? price * capacity : null;
   return (
     <div className="rounded-xl border-2 border-success/40 bg-green-50/60 p-3 text-sm">
-      <p className="font-bold">💶 You keep {share}% of ticket sales. The studio keeps {100 - share}% for the space, payments and promotion.</p>
+      <p className="font-bold">💶 You keep {share}% of ticket sales after Square’s card fee. The studio keeps {100 - share}% for the space and promotion.</p>
       {full != null && (
         <p className="mt-1 text-ink-soft">
-          Sold out at full price: {formatPrice(full)} in tickets, so <strong>{formatPrice(Math.round((full * share) / 100))}</strong> for you
-          {' '}(less if members buy at the member price).
+          Sold out at full price: {formatPrice(full)} in tickets, so about <strong>{formatPrice(Math.round((full * share) / 100))}</strong> for you
+          {' '}before card fees (less if members buy at the member price).
         </p>
       )}
     </div>

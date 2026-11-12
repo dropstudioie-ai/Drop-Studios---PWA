@@ -114,27 +114,27 @@ function DecideSheet({ e, onClose, onDone }: { e: StudioEvent; onClose: () => vo
 function EarningsSummary({ list }: { list: StudioEvent[] }) {
   const paid = list.filter((e) => e.kind === 'workshop' && e.ticket_revenue_cents > 0);
   if (paid.length === 0) return null;
-  const by = new Map<string, { tickets: number; revenue: number; instructor: number; studio: number }>();
+  const by = new Map<string, { tickets: number; revenue: number; fees: number; instructor: number; studio: number }>();
   for (const e of paid) {
     const k = e.instructor ?? 'Instructor';
-    const r = by.get(k) ?? { tickets: 0, revenue: 0, instructor: 0, studio: 0 };
-    r.tickets += e.tickets_sold; r.revenue += e.ticket_revenue_cents; r.instructor += e.instructor_earnings_cents; r.studio += e.studio_earnings_cents;
+    const r = by.get(k) ?? { tickets: 0, revenue: 0, fees: 0, instructor: 0, studio: 0 };
+    r.tickets += e.tickets_sold; r.revenue += e.ticket_revenue_cents; r.fees += e.fees_cents; r.instructor += e.instructor_earnings_cents; r.studio += e.studio_earnings_cents;
     by.set(k, r);
   }
   return (
     <section>
       <h2 className="text-xl font-black">Workshop earnings</h2>
-      <p className="text-sm text-muted">Ticket sales in the last 12 months, split by each workshop’s instructor share. Refunded and test tickets aren’t counted.</p>
+      <p className="text-sm text-muted">Ticket sales in the last 12 months. Square’s card fee comes off first, then what’s left is split by each workshop’s instructor share. Refunded and test tickets aren’t counted.</p>
       <div className="card mt-3 overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="text-left text-xs uppercase tracking-wide text-muted">
-            <tr><th className="p-3">Instructor</th><th className="p-3 text-right">Tickets</th><th className="p-3 text-right">Sales</th><th className="p-3 text-right">Instructor</th><th className="p-3 text-right">Studio</th></tr>
+            <tr><th className="p-3">Instructor</th><th className="p-3 text-right">Tickets</th><th className="p-3 text-right">Sales</th><th className="p-3 text-right">Fees</th><th className="p-3 text-right">Instructor</th><th className="p-3 text-right">Studio</th></tr>
           </thead>
           <tbody className="divide-y divide-line">
             {[...by].map(([name, r]) => (
               <tr key={name}>
-                <td className="p-3 font-semibold">{name}</td><td className="p-3 text-right">{r.tickets}</td><td className="p-3 text-right">{formatPrice(r.revenue)}</td>
-                <td className="p-3 text-right font-bold">{formatPrice(r.instructor)}</td><td className="p-3 text-right">{formatPrice(r.studio)}</td>
+                <td className="p-3 font-semibold">{name}</td><td className="p-3 text-right">{r.tickets}</td><td className="p-3 text-right">{formatPrice(r.revenue)}</td><td className="p-3 text-right">{formatPrice(r.fees, 'EUR', { forceDecimals: true })}</td>
+                <td className="p-3 text-right font-bold">{formatPrice(r.instructor, 'EUR', { forceDecimals: true })}</td><td className="p-3 text-right">{formatPrice(r.studio, 'EUR', { forceDecimals: true })}</td>
               </tr>
             ))}
           </tbody>

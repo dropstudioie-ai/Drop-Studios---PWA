@@ -126,8 +126,21 @@ insert into public.important_dates (name, emoji, month, day, easter_offset, idea
 -- ---------------------------------------------------------------------------
 alter table public.class_sessions add column member_ticket_price_cents int check (member_ticket_price_cents >= 0);
 
--- Workshop ticket money: the instructor's share (the rest is the studio's).
--- Each workshop keeps the share it was requested under.
+-- Workshop ticket money: after Square's processing fee, the instructor gets
+-- their share and the rest is the studio's. Each workshop keeps the share it
+-- was requested under. Square reports the fee on the payment (often a moment
+-- after it completes); the webhook and the hourly job record it.
+alter table public.payments add column provider_fee_cents int check (provider_fee_cents >= 0);
+
+create or replace function public.record_payment_fee(p_payment_id uuid, p_fee_cents int)
+returns void
+language sql
+security definer
+set search_path = public, pg_temp
+as $$
+  update public.payments set provider_fee_cents = p_fee_cents where id = p_payment_id and p_fee_cents >= 0;
+$$;
+
 alter table public.app_settings add column workshop_instructor_share_pct int not null default 60
   check (workshop_instructor_share_pct between 0 and 100);
 
@@ -632,9 +645,15 @@ security definer
 set search_path = public, pg_temp
 as $$
   with money as (
-    select count(*) as sold, coalesce(sum(p.amount_cents), 0)::int as revenue
+    select count(*) as sold,
+           coalesce(sum(p.amount_cents), 0)::int as revenue,
+           coalesce(sum(p.provider_fee_cents), 0)::int as fees,
+           count(*) filter (where p.provider = 'square' and p.provider_fee_cents is null) as fees_pending
     from public.payments p
     where e.kind = 'workshop' and p.session_id = e.session_id and p.status = 'succeeded' and not p.is_test
+  ), net as (
+    select m.*, greatest(m.revenue - m.fees, 0) as net, round(greatest(m.revenue - m.fees, 0) * e.instructor_share_pct / 100.0)::int as mine
+    from money m
   )
   select to_jsonb(e) || jsonb_build_object(
     'instructor', (select full_name from public.instructors where id = e.instructor_id),
@@ -642,11 +661,14 @@ as $$
     'session', (select jsonb_build_object('id', s.id, 'title', s.title, 'starts_at', s.starts_at, 'ends_at', s.ends_at,
                   'booked_count', s.booked_count, 'capacity', s.capacity, 'status', s.status)
                 from public.class_sessions s where s.id = e.session_id),
-    'tickets_sold', m.sold,
-    'ticket_revenue_cents', m.revenue,
-    'instructor_earnings_cents', round(m.revenue * e.instructor_share_pct / 100.0)::int,
-    'studio_earnings_cents', m.revenue - round(m.revenue * e.instructor_share_pct / 100.0)::int)
-  from money m;
+    'tickets_sold', n.sold,
+    'ticket_revenue_cents', n.revenue,
+    'fees_cents', n.fees,
+    'fees_pending', n.fees_pending,
+    'net_revenue_cents', n.net,
+    'instructor_earnings_cents', n.mine,
+    'studio_earnings_cents', n.net - n.mine)
+  from net n;
 $$;
 
 create or replace function public.my_events()
@@ -930,3 +952,5 @@ grant execute on function public.upcoming_themes(), public.event_audience_count(
   public.cancel_event(uuid, text), public.my_events(), public.admin_events()
   to authenticated;
 grant execute on function public.queue_event_notifications() to service_role;
+revoke execute on function public.record_payment_fee(uuid, int) from public, anon, authenticated;
+grant execute on function public.record_payment_fee(uuid, int) to service_role;

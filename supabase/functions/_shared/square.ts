@@ -76,21 +76,34 @@ export async function verifySquareSignature(
 interface Money { amount?: number; currency?: string }
 
 export type WebhookAction =
-  | { kind: 'fulfil'; orderId: string; squarePaymentId: string; amountCents: number; currency: string; customerId: string | null }
+  | { kind: 'fulfil'; orderId: string; squarePaymentId: string; amountCents: number; currency: string; customerId: string | null; feeCents: number | null }
   | { kind: 'refund'; squarePaymentId: string; refundId: string; amountCents: number; currency: string }
   | { kind: 'ignore'; reason: string };
+
+export interface SquarePaymentLike {
+  id?: string; order_id?: string; status?: string; amount_money?: Money; customer_id?: string;
+  processing_fee?: { amount_money?: Money }[];
+}
+
+/** Square's processing fee on a payment in cents, or null while Square hasn't reported it yet. */
+export function processingFee(p: SquarePaymentLike | null | undefined): number | null {
+  const fees = p?.processing_fee;
+  if (!Array.isArray(fees) || fees.length === 0) return null;
+  return fees.reduce((sum, f) => sum + Math.max(0, f.amount_money?.amount ?? 0), 0);
+}
 
 /** Decides what a Square event means for the app. */
 export function webhookAction(event: {
   type?: string;
-  data?: { object?: { payment?: { id?: string; order_id?: string; status?: string; amount_money?: Money; customer_id?: string }; refund?: { id?: string; payment_id?: string; status?: string; amount_money?: Money } } };
+  data?: { object?: { payment?: SquarePaymentLike; refund?: { id?: string; payment_id?: string; status?: string; amount_money?: Money } } };
 }): WebhookAction {
   const type = event.type ?? '';
   if (type === 'payment.created' || type === 'payment.updated') {
     const p = event.data?.object?.payment;
     if (!p?.id || !p.order_id) return { kind: 'ignore', reason: 'payment without order' };
     if (p.status !== 'COMPLETED') return { kind: 'ignore', reason: `payment status ${p.status}` };
-    return { kind: 'fulfil', orderId: p.order_id, squarePaymentId: p.id, amountCents: p.amount_money?.amount ?? -1, currency: p.amount_money?.currency ?? '', customerId: p.customer_id ?? null };
+    return { kind: 'fulfil', orderId: p.order_id, squarePaymentId: p.id, amountCents: p.amount_money?.amount ?? -1, currency: p.amount_money?.currency ?? '',
+      customerId: p.customer_id ?? null, feeCents: processingFee(p) };
   }
   if (type === 'refund.created' || type === 'refund.updated') {
     const r = event.data?.object?.refund;
