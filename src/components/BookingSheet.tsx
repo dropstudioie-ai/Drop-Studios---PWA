@@ -39,6 +39,10 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
   const profile = auth.profile;
   const [askPhone, setAskPhone] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [friendOffer, setFriendOffer] = useState(false);
+  const [bringFriend, setBringFriend] = useState(false);
+  const [friendName, setFriendName] = useState('');
+  const [myGuest, setMyGuest] = useState<string | null>(null);
   const userId = auth.session?.user.id;
   const isStaff = auth.isStaff;
   const [staffFree, setStaffFree] = useState(false);
@@ -56,6 +60,10 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
       .then((o) => {
         if (!live) return;
         setOpts(o);
+        setFriendOffer(false);
+        setMyGuest(null);
+        if (userId && !session.is_special && !o.my_booking_id) api.friendOffer(session.id).then((v) => live && setFriendOffer(v)).catch(() => {});
+        if (o.my_booking_id) api.myGuest(o.my_booking_id).then((g) => live && setMyGuest(g)).catch(() => {});
         setMembershipId(o.eligible_membership_id ?? null);
         setRenewal(null);
         setStaffFree(false);
@@ -130,7 +138,8 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
 
   const buyTicket = () => run(async () => {
     if (!profile?.phone) { setAskPhone(true); return; }
-    const next = await checkout({ session_id: session.id, idempotency_key: ticketKey });
+    const guest = friendOffer && bringFriend && !session.is_special ? friendName.trim() : '';
+    const next = await checkout({ session_id: session.id, idempotency_key: ticketKey, ...(guest ? { guest_name: guest } : {}) });
     if ('redirect' in next) window.location.assign(next.redirect);
     else navigate(next.navigate);
   });
@@ -192,6 +201,10 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
         {opts?.authenticated && opts.my_booking_id && (
           <div className="space-y-3">
             <Notice tone="success"><strong>{opts.my_booking_is_ticket ? (session.is_special ? 'You have a ticket.' : 'You’re booked in (Drop In).') : staffFree ? 'You’re booked in (instructor, free).' : 'You’re booked in.'}</strong> See you on the floor!</Notice>
+            {myGuest && <Notice tone="info">👯 <strong>{myGuest}</strong> is coming with you, free. Arrive together and introduce them at reception.</Notice>}
+            {!isStaff && !profile?.avatar_path && (
+              <Notice tone="info">👋 <strong>Welcome to Drop!</strong> Introduce yourself at reception when you arrive and we’ll take your profile photo. You’ll need it to book your next class.</Notice>
+            )}
             {opts.my_booking_is_ticket ? (
               <p className="text-sm text-muted">Can’t make it? Contact the studio about your booking.</p>
             ) : (
@@ -308,8 +321,17 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
                 <span className="text-sm text-ink-soft"><strong className="text-ink">Drop In</strong> · this class only</span>
                 <span className="font-display text-2xl font-black">{formatPrice(dropInPrice, 'EUR', { forceDecimals: true })}</span>
               </div>
-              <button className="btn-accent w-full text-lg" disabled={busy} onClick={buyTicket}>
-                {busy && <Spinner />}{paymentsMode === 'test' ? 'Book TEST Drop In' : 'Book Drop In'}
+              {friendOffer && (
+                <div className="rounded-xl border-2 border-dashed border-accent-500 bg-accent-50 p-3">
+                  <label className="flex items-start gap-2 text-sm">
+                    <input type="checkbox" className="mt-0.5 h-5 w-5" checked={bringFriend} onChange={(e) => setBringFriend(e.target.checked)} />
+                    <span><strong>First time? Bring a friend for free 👯</strong><br /><span className="text-ink-soft">Two spots for the price of one on your first Drop In.</span></span>
+                  </label>
+                  {bringFriend && <input className="input mt-2" value={friendName} onChange={(e) => setFriendName(e.target.value)} placeholder="Your friend’s name" maxLength={80} />}
+                </div>
+              )}
+              <button className="btn-accent w-full text-lg" disabled={busy || (bringFriend && friendOffer && !friendName.trim())} onClick={buyTicket}>
+                {busy && <Spinner />}{paymentsMode === 'test' ? 'Book TEST Drop In' : bringFriend && friendOffer ? 'Book Drop In for 2' : 'Book Drop In'}
               </button>
               {!renewal && <Link to="/memberships" className="btn-outline w-full">Save with a membership</Link>}
               <p className="text-center text-xs text-muted">Drop Ins aren’t refundable in the app. Contact the studio if you can’t make it.</p>

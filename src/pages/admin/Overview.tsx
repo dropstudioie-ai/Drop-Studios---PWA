@@ -1,3 +1,5 @@
+import { useAuth } from '../../auth/AuthProvider';
+import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { unwrap } from '../../api';
@@ -35,6 +37,25 @@ function Stat({ label, value, note }: { label: string; value: string | null; not
 }
 
 export default function Overview() {
+  const { canViewFinance } = useAuth();
+  if (!canViewFinance) return <ManagerOverview />;
+  return <SalesOverview />;
+}
+
+function ManagerOverview() {
+  const links: [string, string][] = [['Members', '/admin/customers'], ['Timetable', '/admin/timetable'], ['Bookings', '/admin/bookings'], ['Events', '/admin/events'],
+    ['Instructors', '/admin/instructors'], ['Styles', '/admin/styles'], ['Audit log', '/admin/audit'], ['Settings', '/admin/settings']];
+  return (
+    <div>
+      <p className="max-w-2xl text-sm text-ink-soft">You’re a <strong>Manager</strong>: you can run classes, members, bookings and events. Sales, payments, refunds and earnings are only visible to full admins.</p>
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {links.map(([label, to]) => <Link key={to} to={to} className="card p-4 text-center font-semibold hover:shadow-md">{label}</Link>)}
+      </div>
+    </div>
+  );
+}
+
+function SalesOverview() {
   const today = localDateKey(new Date());
   const [from, setFrom] = useState(addDaysToKey(today, -29));
   const [to, setTo] = useState(today);

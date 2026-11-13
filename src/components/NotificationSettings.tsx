@@ -42,9 +42,9 @@ export function NotificationSettings() {
   return (
     <section className="mt-10" aria-labelledby="notif-h">
       <h2 id="notif-h" className="text-xl font-black">Notifications</h2>
-      <p className="mt-1 text-sm text-muted">Class reminders, changes to your bookings and membership updates.</p>
+      <p className="mt-1 text-sm text-muted">Class reminders, changes to your bookings and membership updates. Everything comes by email; phone notifications are an optional extra.</p>
       <div className="card mt-3 divide-y divide-line">
-        <Toggle label="Email" hint={profile.email ?? ''} checked={emailOn} disabled={busy} onChange={(v) => void setEmail(v)} />
+        <Toggle label="Email (recommended)" hint={emailOn ? (profile.email ?? '') : 'Off: you may miss class changes and cancellations'} checked={emailOn} disabled={busy} onChange={(v) => void setEmail(v)} />
         {pushSupported() ? (
           needsInstallForPush() ? (
             <div className="p-4 text-sm">
@@ -52,7 +52,7 @@ export function NotificationSettings() {
               <p className="text-muted">On iPhone, add the app to your Home Screen first, then switch them on here. <Link to="/app" className="font-semibold text-brand-700 underline">How?</Link></p>
             </div>
           ) : (
-            <Toggle label="Phone notifications" hint="On this device" checked={pushOn} disabled={busy || deviceOn === null} onChange={(v) => void setPush(v)} />
+            <Toggle label="Phone notifications" hint="Optional extra, on this device" checked={pushOn} disabled={busy || deviceOn === null} onChange={(v) => void setPush(v)} />
           )
         ) : (
           <div className="p-4 text-sm"><p className="font-semibold">Phone notifications</p><p className="text-muted">Not available in this browser.</p></div>

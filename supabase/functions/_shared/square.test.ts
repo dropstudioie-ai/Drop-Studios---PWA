@@ -35,6 +35,7 @@ Deno.test('payment link labels Drop Ins and tickets', () => {
   const p = { payment_id: 'pay-9', amount_cents: 1500, currency: 'EUR', plan_name: 'Drop In: FitDance', class_count: null };
   const base = { locationId: 'LOC1', siteUrl: 'https://x.ie' };
   assertEquals(paymentLinkRequest(p, { ...base, kind: 'drop_in' }).order.line_items[0].note, 'Drop In: single class');
+  assertEquals(paymentLinkRequest(p, { ...base, kind: 'drop_in' }).checkout_options.accepted_payment_methods, { apple_pay: true, google_pay: true });
   assertEquals(paymentLinkRequest(p, { ...base, kind: 'ticket' }).order.line_items[0].note, 'Workshop ticket');
   assertEquals(paymentLinkRequest(p, { ...base, kind: 'drop_in' }).order.line_items[0].name, 'Drop Studios — Drop In: FitDance');
 });

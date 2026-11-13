@@ -67,6 +67,7 @@ export function CheckoutSuccess() {
           <h1 className="mt-4 text-3xl font-black">You’re in!</h1>
           <p className="mt-2 text-ink-soft">{isDropIn ? 'Your Drop In class is booked. It’s in your upcoming bookings.' : isTicket ? 'Your ticket is confirmed. It’s in your upcoming bookings.' : 'Your membership is ready. Time to book your first class.'}</p>
           {isTest && <div className="mt-4 text-left"><Notice tone="test"><strong>TEST purchase.</strong> No real payment was taken.</Notice></div>}
+          {!profile?.avatar_path && <div className="mt-4 text-left"><Notice tone="info">👋 <strong>Welcome to Drop!</strong> Introduce yourself at reception when you arrive and we’ll take your profile photo. You’ll need it to book your next class.</Notice></div>}
           {reward && <LoyaltyRewardPopup name={profile?.full_name?.split(' ')[0] ?? ''} onClose={() => setReward(false)} />}
           <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
             <Link to="/timetable" className="btn-primary">Book a class</Link>

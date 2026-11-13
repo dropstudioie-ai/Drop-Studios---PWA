@@ -41,6 +41,8 @@ export function paymentLinkRequest(
       redirect_url: `${opts.siteUrl}/checkout/success?payment_id=${p.payment_id}`,
       allow_tipping: false,
       ask_for_shipping_address: false,
+      // Phone wallets: much faster than typing a card (shown when the buyer's device supports them).
+      accepted_payment_methods: { apple_pay: true, google_pay: true },
       ...(opts.supportEmail ? { merchant_support_email: opts.supportEmail } : {}),
     },
     ...(opts.buyerEmail ? { pre_populated_data: { buyer_email: opts.buyerEmail } } : {}),

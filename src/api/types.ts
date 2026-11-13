@@ -105,6 +105,7 @@ export interface RosterEntry {
   avatar_path: string | null;
   email?: string | null;
   phone?: string | null;
+  guest_name?: string | null;
   status: BookingStatus;
   class_restored: boolean;
   booked_at: string;
@@ -205,6 +206,8 @@ export interface Profile {
   email: string | null;
   phone: string | null;
   role: 'customer' | 'instructor' | 'admin';
+  /** Admins only: full admin (true) or manager without financial information (false). */
+  finance_access?: boolean;
   marketing_opt_in: boolean;
   avatar_path: string | null;
   date_of_birth: string | null;

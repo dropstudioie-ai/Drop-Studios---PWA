@@ -92,7 +92,7 @@ export function StaffRoster({ sessionId, onClose, onChanged, isAdmin = false }: 
               <li key={b.booking_id} className="flex flex-wrap items-center gap-3 py-3">
                 <Avatar path={b.avatar_path} name={b.full_name} size={52} />
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold">{b.full_name}</p>
+                  <p className="font-semibold">{b.full_name}{b.guest_name && <span className="chip ml-2 bg-accent-100 align-middle text-xs text-ink">+1 friend: {b.guest_name}</span>}</p>
                   {(b.phone || b.email) && (
                     <p className="flex flex-wrap gap-x-3 text-xs">
                       {b.phone && <a className="font-semibold text-brand-700" href={`tel:${b.phone.replace(/\s/g, '')}`}>📞 {b.phone}</a>}

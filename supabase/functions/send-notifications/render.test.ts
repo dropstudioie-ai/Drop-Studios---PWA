@@ -131,3 +131,20 @@ Deno.test('membership cancelled by the studio', () => {
   assertEquals(m.subject, 'Your 3-Class Intro has been cancelled');
   assertStringIncludes(m.text, '2 upcoming bookings have been cancelled');
 });
+
+Deno.test('feedback request links to the feedback page', () => {
+  const m = render({ kind: 'feedback_request', full_name: 'Aoife Byrne', payload: { feedback_id: 'f1', title: 'Heels', starts_at: '2026-11-20T19:00:00Z', instructor: 'Talita', reason: 'first_in_style' } })!;
+  assertEquals(m.url, '/feedback/f1');
+  assertStringIncludes(m.subject, 'How was Heels');
+  assertStringIncludes(m.text, 'first class in this style');
+  assertStringIncludes(m.text, 'not your name');
+});
+
+Deno.test('members get the instructor birthday a week before and on the day', () => {
+  const base = { instructor_name: 'Talita', title: 'Heels', starts_at: '2026-11-20T19:00:00Z' };
+  const week = render({ kind: 'instructor_birthday_member', full_name: 'Aoife', payload: { ...base, phase: 'week_before', birthday: '2026-11-21' } })!;
+  assertStringIncludes(week.subject, 'coming up');
+  assertStringIncludes(week.text, '21 November');
+  const today = render({ kind: 'instructor_birthday_member', full_name: 'Aoife', payload: { ...base, phase: 'on_day', birthday: '2026-11-20' } })!;
+  assertStringIncludes(today.subject, "birthday today");
+});

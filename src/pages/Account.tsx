@@ -19,6 +19,7 @@ import { renewalLink, renewalOffer } from '../domain/renewal';
 import { formatPrice } from '../domain/money';
 import { ProfilePhotoCard } from '../components/ProfilePhotoCard';
 import { PauseSheet } from '../components/PauseSheet';
+import { FeedbackPrompt } from './Feedback';
 import { EmptyState, ErrorNotice, Field, Notice, PageSpinner, Sheet, Spinner, useToast } from '../components/ui';
 
 const BOOKING_LABEL: Record<string, string> = {
@@ -83,7 +84,7 @@ export default function Account() {
         {!isStaff && current.length > 0 && <p className="font-display text-lg font-extrabold text-brand-700">{totalRemaining} {totalRemaining === 1 ? 'class' : 'classes'} available</p>}
       </div>
 
-      <div className="mt-6 space-y-3"><ProfilePhotoCard />{!profile?.date_of_birth && <BirthdayCard onSaved={refreshProfile} />}</div>
+      <div className="mt-6 space-y-3">{!isStaff && <FeedbackPrompt />}<ProfilePhotoCard />{!profile?.date_of_birth && <BirthdayCard onSaved={refreshProfile} />}</div>
 
       {(!isStaff || current.length > 0 || liveSubs.length > 0) && <section className="mt-6 space-y-4" aria-labelledby="current-h">
         <h2 id="current-h" className="sr-only">Current memberships</h2>

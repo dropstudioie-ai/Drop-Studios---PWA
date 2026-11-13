@@ -25,12 +25,13 @@ export default function Checkout() {
   const navigate = useNavigate();
   const { profile } = useAuth();
   const data = useAsync(async () => {
-    const [plan, settings, styles, firstTime, subscriptions] = await Promise.all([
+    const [plan, settings, styles, firstTime, subscriptions, photoOk] = await Promise.all([
       api.planByCode(code), api.settings(), api.styles(), api.isFirstTimeCustomer(),
       profile ? api.mySubscriptions(profile.id) : Promise.resolve([]),
+      api.photoRequirementMet(),
     ]);
     const planStyleIds = plan && !plan.all_styles ? await api.planStyles(plan.id) : null;
-    return { plan, settings, styles, firstTime, planStyleIds, subscriptions };
+    return { plan, settings, styles, firstTime, planStyleIds, subscriptions, photoOk };
   }, [code, profile?.id]);
 
   // Renewing a single-style plan keeps the same style (it can still be changed here).
@@ -64,7 +65,8 @@ export default function Checkout() {
     ? formatKey(lastValidDay(computeExpiry(new Date(), plan.validity_days, 0, settings.timezone), settings.timezone), { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' })
     : null;
 
-  const needsPhoto = !profile?.avatar_path;
+  // First class can be booked without a photo (reception takes it); after that it's needed.
+  const needsPhoto = !profile?.avatar_path && !data.data?.photoOk;
   const monthly = isMonthly(plan);
   const canPay = !busy && agreed && (!monthly || agreedRecurring) && !introBlocked && !needsPhoto && (!needsStyle || styleId);
 

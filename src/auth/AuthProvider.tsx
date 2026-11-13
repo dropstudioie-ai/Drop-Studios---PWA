@@ -9,6 +9,8 @@ interface AuthState {
   loading: boolean;
   isAdmin: boolean;
   isStaff: boolean;
+  /** Full admins see money (revenue, payments, refunds); managers don't. */
+  canViewFinance: boolean;
   refreshProfile: () => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -54,6 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loading,
     isAdmin: profile?.role === 'admin',
     isStaff: profile?.role === 'admin' || profile?.role === 'instructor',
+    canViewFinance: profile?.role === 'admin' && profile?.finance_access !== false,
     refreshProfile: () => loadProfile(session?.user.id),
     signOut: async () => {
       await supabase.auth.signOut();

@@ -39,14 +39,15 @@ export function adminClient(): SupabaseClient {
 /** Either a membership plan or a workshop ticket. */
 export type CheckoutBody =
   | { kind: 'membership'; plan_id: string; selected_style_id: string | null; idempotency_key: string }
-  | { kind: 'ticket'; session_id: string; idempotency_key: string };
+  | { kind: 'ticket'; session_id: string; idempotency_key: string; guest_name?: string | null };
 
 export async function readCheckoutBody(req: Request): Promise<CheckoutBody | null> {
   try {
     const b = await req.json();
     if (typeof b?.idempotency_key !== 'string') return null;
     if (typeof b.session_id === 'string') {
-      return { kind: 'ticket', session_id: b.session_id, idempotency_key: b.idempotency_key };
+      return { kind: 'ticket', session_id: b.session_id, idempotency_key: b.idempotency_key,
+        guest_name: typeof b.guest_name === 'string' && b.guest_name.trim() ? b.guest_name.trim().slice(0, 80) : null };
     }
     if (typeof b.plan_id !== 'string') return null;
     return {
@@ -67,6 +68,7 @@ export function startCheckout(supa: SupabaseClient, body: CheckoutBody, provider
       p_session_id: body.session_id,
       p_idempotency_key: body.idempotency_key,
       p_provider: provider,
+      p_guest_name: body.guest_name ?? null,
     })
     : supa.rpc('create_checkout', {
       p_plan_id: body.plan_id,

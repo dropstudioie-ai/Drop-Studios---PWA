@@ -14,6 +14,7 @@ import { PauseSheet } from '../../components/PauseSheet';
 import { ErrorNotice, Field, Notice, PageSpinner, Sheet, Spinner, TestBadge, useToast } from '../../components/ui';
 import { Section, Table, Td } from './shared';
 import { Avatar } from '../../components/Avatar';
+import { useAuth } from '../../auth/AuthProvider';
 
 export default function AdminCustomers() {
   const [q, setQ] = useState('');
@@ -91,6 +92,7 @@ interface PaymentRow { id: string; amount_cents: number; currency: string; provi
 
 function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void }) {
   const toast = useToast();
+  const { canViewFinance } = useAuth();
   const data = useAsync(async () => {
     const [profile, memberships, bookings, styles, ledger, payments, allowance, plans, subscriptions] = await Promise.all([
       api.profile(userId),
@@ -205,6 +207,22 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
     }
   }
 
+  async function setAccess(level: string) {
+    if (level === 'manager' || level === 'full_admin') {
+      const label = level === 'manager' ? 'a Manager: runs classes, members, bookings and events, but sees no revenue, payments, refunds or earnings' : 'a Full admin, with access to everything including money';
+      if (!window.confirm(`Make ${d.profile.full_name || 'this person'} ${label}?`)) return;
+      try {
+        unwrap(await supabase.rpc('admin_set_access', { p_user_id: userId, p_level: level }));
+        toast('Access updated. They’ll see the change next time they open the app.');
+        void data.reload();
+      } catch (e) {
+        toast((e as Error).message, 'error');
+      }
+      return;
+    }
+    await setRole(level as Profile['role']);
+  }
+
   async function setRole(role: Profile['role']) {
     if (!window.confirm(`Change role to ${role}?`)) return;
     try {
@@ -249,11 +267,17 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
           <Info label="Bookings">{d.bookings.filter((b) => b.status === 'attended').length} attended · {d.bookings.filter((b) => b.status === 'booked').length} upcoming</Info>
         </dl>
         <div className="flex flex-wrap items-end gap-2 border-t border-line bg-canvas p-4">
-          <label className="text-sm"><span className="label">Role</span>
-            <select className="input" value={d.profile.role} onChange={(e) => void setRole(e.target.value as Profile['role'])}>
-              <option value="customer">Customer</option><option value="instructor">Instructor</option><option value="admin">Admin</option>
-            </select>
-          </label>
+          {canViewFinance && (
+            <label className="text-sm"><span className="label">Access</span>
+              <select className="input" value={d.profile.role === 'admin' ? (d.profile.finance_access ? 'full_admin' : 'manager') : d.profile.role}
+                onChange={(e) => void setAccess(e.target.value)}>
+                <option value="customer">Member</option>
+                <option value="instructor">Instructor</option>
+                <option value="manager">Manager (admin, no money info)</option>
+                <option value="full_admin">Full admin</option>
+              </select>
+            </label>
+          )}
           <button className="btn-sm btn-outline" onClick={() => setSelling(true)}>Record in-studio sale</button>
         </div>
       </div>
@@ -360,7 +384,7 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
         </Table>
       </Section>
 
-      <Section title="Payments">
+      {canViewFinance && <Section title="Payments">
         {d.payments.some((p) => p.review_reason) && (
           <div className="mb-3"><Notice tone="warn">
             A payment was made on a checkout that had already been replaced or cancelled. It was accepted. If the member now has two of the
@@ -390,7 +414,7 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
             </tr>
           ))}
         </Table>
-      </Section>
+      </Section>}
 
       {editing && <EditMemberSheet profile={d.profile} onClose={() => setEditing(false)} onDone={() => { setEditing(false); void data.reload(); }} />}
       {cancelling && <CancelMembershipSheet m={cancelling} onClose={() => setCancelling(null)} onDone={(n) => { setCancelling(null); toast(`Membership cancelled${n ? ` and ${n} upcoming booking${n === 1 ? '' : 's'} cancelled` : ''}. The member has been told.`); void data.reload(); }} />}

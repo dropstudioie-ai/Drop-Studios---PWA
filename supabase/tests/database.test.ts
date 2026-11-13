@@ -758,18 +758,22 @@ run('database: plans, booking, allowances, pauses, security', () => {
 
   // ---------------------------------------------------------------- photos
   describe('profile photo', () => {
-    it('is required before booking, buying a membership or a Drop In', async () => {
+    it('is not needed for the first class, but is from the second booking on', async () => {
       const c = await createUser(db, 'NoPhoto', 'customer', { photo: false });
       const s = await makeSession({ style: 'heels', startsInMinutes: 1000 });
-      await expectError(as(db, user(c), `select create_checkout($1, null, $2)`, [await planId('multi-5'), randomUUID()]), 'profile_photo_required');
-      await expectError(as(db, user(c), `select create_ticket_checkout($1, $2)`, [s, randomUUID()]), 'profile_photo_required');
+      const s2 = await makeSession({ style: 'heels', startsInMinutes: 2000 });
       const [o] = await as<{ r: { has_profile_photo: boolean } }>(db, user(c), `select booking_options($1) as r`, [s]);
-      expect(o.r.has_profile_photo).toBe(false);
+      expect(o.r.has_profile_photo).toBe(true);
+      await as(db, user(c), `select create_ticket_checkout($1, $2)`, [s, randomUUID()]); // first class: fine without a photo
+      await expectError(as(db, user(c), `select create_ticket_checkout($1, $2)`, [s2, randomUUID()]), 'profile_photo_required');
+      await expectError(as(db, user(c), `select create_checkout($1, null, $2)`, [await planId('multi-5'), randomUUID()]), 'profile_photo_required');
+      const [o1] = await as<{ r: { has_profile_photo: boolean } }>(db, user(c), `select booking_options($1) as r`, [s2]);
+      expect(o1.r.has_profile_photo).toBe(false);
 
       // Upload into their own folder, then everything works.
       await as(db, user(c), `insert into storage.objects (bucket_id, name, owner) values ('avatars', $1 || '/me.jpg', $1::uuid)`, [c]);
       await as(db, user(c), `update profiles set avatar_path = $1 || '/me.jpg' where id = $1::uuid`, [c]);
-      const [o2] = await as<{ r: { has_profile_photo: boolean } }>(db, user(c), `select booking_options($1) as r`, [s]);
+      const [o2] = await as<{ r: { has_profile_photo: boolean } }>(db, user(c), `select booking_options($1) as r`, [s2]);
       expect(o2.r.has_profile_photo).toBe(true);
       await as(db, user(c), `select create_checkout($1, null, $2)`, [await planId('multi-5'), randomUUID()]);
     });
@@ -890,6 +894,73 @@ run('database: plans, booking, allowances, pauses, security', () => {
     await expectError(as(db, user(m), `select pause_membership($1, current_date + 1, current_date + 8)`, [membershipId]), 'pause_cooldown');
     await expectError(as(db, user(m), `select pause_membership($1, current_date + 9, current_date + 16)`, [membershipId]), 'pause_cooldown');
     await as(db, user(admin), `select pause_membership($1, current_date + 1, current_date + 8, 'Injury', true)`, [membershipId]);
+  });
+
+  it('managers run the studio but see no revenue, payments, refunds or roles', async () => {
+    const mgr = await createUser(db, 'Manager', 'customer');
+    await as(db, user(admin), `select admin_set_access($1, 'manager')`, [mgr]);
+    expect((await db.query(`select role, finance_access from profiles where id = $1`, [mgr])).rows[0]).toEqual({ role: 'admin', finance_access: false });
+    await expectError(as(db, user(mgr), `select admin_analytics(current_date - 30, current_date)`), 'finance_only');
+    await expectError(as(db, user(mgr), `select admin_ticket_sales(current_date - 30, current_date)`), 'finance_only');
+    await expectError(as(db, user(mgr), `select admin_set_role($1, 'admin')`, [mgr]), 'finance_only');
+    await expectError(as(db, user(mgr), `select admin_set_access($1, 'full_admin')`, [mgr]), 'finance_only');
+    const [d] = await as<{ r: Record<string, unknown> }>(db, user(mgr), `select admin_dashboard() r`);
+    expect(d.r).not.toHaveProperty('revenue_week_cents');
+    expect(d.r.finance).toBe(false);
+    const payer = await createUser(db, 'PaidSomething');
+    await buy(payer, 'intro-3');
+    expect(await as(db, user(mgr), `select id from payments where user_id = $1`, [payer])).toHaveLength(0);
+    expect((await as(db, user(admin), `select id from payments where user_id = $1`, [payer])).length).toBeGreaterThan(0);
+    // Still a working admin: can see members and memberships.
+    expect((await as(db, user(mgr), `select id from memberships where user_id = $1`, [payer])).length).toBe(1);
+  });
+
+  it('first-timers buying a Drop In can bring a friend free; the friend leaves with them', async () => {
+    const m = await createUser(db, 'Newcomer');
+    const s = await makeSession({ style: 'fitdance', startsInMinutes: 3000, capacity: 10 });
+    const [ok] = await as<{ r: boolean }>(db, user(m), `select friend_offer($1) r`, [s]);
+    expect(ok.r).toBe(true);
+    const [c] = await as<{ r: { amount_cents: number } }>(db, user(m), `select create_ticket_checkout($1, $2, 'square', 'Sarah') r`, [s, randomUUID()]);
+    const price = (await db.query(`select drop_in_price_cents p from dance_styles where slug = 'fitdance'`)).rows[0].p;
+    expect(c.r.amount_cents).toBe(price);
+    expect((await db.query(`select booked_count from class_sessions where id = $1`, [s])).rows[0].booked_count).toBe(2);
+    const [roster] = await as<{ r: { bookings: { guest_name: string }[] } }>(db, user(admin), `select staff_roster($1) r`, [s]);
+    expect(roster.r.bookings[0].guest_name).toBe('Sarah');
+    // Released hold frees both spots.
+    const { rows: [b] } = await db.query(`select id from bookings where user_id = $1 and session_id = $2`, [m, s]);
+    await db.query(`update bookings set status = 'cancelled' where id = $1`, [b.id]);
+    expect((await db.query(`select booked_count from class_sessions where id = $1`, [s])).rows[0].booked_count).toBe(1);
+    // Not for people who've been before.
+    const regular = await createUser(db, 'Regular');
+    await buy(regular, 'intro-3');
+    const [no] = await as<{ r: boolean }>(db, user(regular), `select friend_offer($1) r`, [s]);
+    expect(no.r).toBe(false);
+    await expectError(as(db, user(regular), `select create_ticket_checkout($1, $2, 'square', 'Pal')`, [s, randomUUID()]), 'friend_offer_not_eligible');
+  });
+
+  it('asks for feedback after the first class in a style, every 6th, and after events', async () => {
+    const m = await createUser(db, 'Rater');
+    const { membershipId } = await buy(m, 'multi-8');
+    await db.query(`update memberships set classes_remaining = 20 where id = $1`, [membershipId]);
+    const done: string[] = [];
+    for (let k = 0; k < 6; k++) {
+      const s = await makeSession({ style: 'reggaeton', startsInMinutes: 60 * 24 * (k + 1) });
+      await book(m, s);
+      // Move the class into the past (ended 2 hours ago, older ones earlier).
+      await db.query(`update class_sessions set starts_at = now() - make_interval(hours => 3 + (6 - $2) * 24), ends_at = now() - make_interval(hours => 2 + (6 - $2) * 24) where id = $1`, [s, k]);
+      done.push(s);
+    }
+    await as(db, service, `select queue_feedback_requests()`);
+    const { rows } = await db.query(`select reason, session_id from class_feedback where user_id = $1 order by requested_at`, [m]);
+    // Classes older than 2 days aren't asked about; of the recent ones, only the 6th in the style qualifies.
+    expect(rows.map((r) => r.reason)).toEqual(['every_6']);
+    const [reqs] = await as<{ r: { id: string }[] }>(db, user(m), `select my_feedback_requests() r`);
+    await expectError(as(db, user(m), `select submit_feedback($1, 9)`, [reqs.r[0].id]), 'invalid_rating');
+    await as(db, user(m), `select submit_feedback($1, 5, 'Loved it', true)`, [reqs.r[0].id]);
+    await expectError(as(db, user(m), `select submit_feedback($1, 4)`, [reqs.r[0].id]), 'feedback_already_sent');
+    const [all] = await as<{ r: { rating: number; member: string | null }[] }>(db, user(admin), `select staff_feedback() r`);
+    expect(all.r.find((x) => x.rating === 5)?.member).toBe('Rater');
+    expect((await db.query(`select count(*)::int n from notification_outbox where user_id = $1 and kind = 'feedback_request'`, [m])).rows[0].n).toBe(1);
   });
 
   describe('instructor view', () => {
@@ -1141,6 +1212,20 @@ run('database: plans, booking, allowances, pauses, security', () => {
       expect(th.r.map((z) => z.name)).toEqual(expect.arrayContaining(["St Patrick's Day", "Mother's Day", "Easter"]));
       expect(th.r.find((z) => z.name === 'Easter')?.on).toBe('2027-03-28');
       await expectError(as(db, user(await createUser(db, 'Nosy')), `select upcoming_themes()`), 'forbidden');
+    });
+
+    it('members booked into an instructor’s classes hear about the birthday a week before and on the day', async () => {
+      const t2 = await teacher('Bdayteach');
+      const { rows: [{ tz }] } = await db.query(`select timezone tz from app_settings`);
+      const { rows: [{ late }] } = await db.query(`select (now() at time zone $1)::time >= '10:00' late`, [tz]);
+      await db.query(`update profiles set date_of_birth = ((now() at time zone $2)::date + 7) - interval '30 years' where id = $1`, [t2.uid, tz]);
+      const fan = await createUser(db, 'BdayFan');
+      await buy(fan, 'multi-8');
+      await book(fan, await taughtBy(t2.instructorId, 60 * 24 * 3, 'fitdance'));
+      await as(db, service, `select queue_member_instructor_birthdays()`);
+      await as(db, service, `select queue_member_instructor_birthdays()`);
+      const { rows } = await db.query(`select payload->>'phase' phase from notification_outbox where user_id = $1 and kind = 'instructor_birthday_member'`, [fan]);
+      expect(rows.map((r) => r.phase)).toEqual(late ? ['week_before'] : []);
     });
 
     it('linking an account makes that person an instructor', async () => {
@@ -1547,7 +1632,7 @@ run('database: plans, booking, allowances, pauses, security', () => {
   describe('notifications', () => {
     it('the admin Today page has the numbers, for admins only', async () => {
       const [d] = await as<{ r: Record<string, number> }>(db, user(admin), `select admin_dashboard() r`);
-      expect(Object.keys(d.r).sort()).toEqual(['active_monthly', 'bookings_today', 'ending_monthly', 'failed_monthly_payments', 'new_members_week',
+      expect(Object.keys(d.r).sort()).toEqual(['active_monthly', 'bookings_today', 'ending_monthly', 'failed_monthly_payments', 'finance', 'new_members_week',
         'payments_to_review', 'payments_week', 'revenue_week_cents', 'ticket_refunds', 'unfinished_checkouts']);
       const c = await createUser(db, 'NotAdminDash');
       await expectError(as(db, user(c), `select admin_dashboard()`), 'forbidden');

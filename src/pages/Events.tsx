@@ -101,10 +101,10 @@ export function EventCard({ e, onEdit, admin }: { e: StudioEvent; onEdit?: () =>
           <div><dt className="inline text-muted">Price: </dt><dd className="inline">{formatPrice(e.price_cents)}{e.member_price_cents != null ? ` · members ${formatPrice(e.member_price_cents)}` : ''}</dd></div>
         )}
         {e.session && <div><dt className="inline text-muted">Booked: </dt><dd className="inline">{e.session.booked_count}/{e.session.capacity}</dd></div>}
-        {e.kind === 'workshop' && e.status === 'published' && (
+        {e.kind === 'workshop' && e.status === 'published' && e.ticket_revenue_cents != null && (
           <div><dt className="inline text-muted">Tickets sold: </dt><dd className="inline">{e.tickets_sold} · {formatPrice(e.ticket_revenue_cents)}</dd></div>
         )}
-        {e.kind === 'workshop' && e.status !== 'declined' && e.status !== 'cancelled' && (
+        {e.kind === 'workshop' && e.status !== 'declined' && e.status !== 'cancelled' && e.instructor_earnings_cents != null && (
           <div className="sm:col-span-2">
             <dt className="inline text-muted">Split {e.instructor_share_pct}/{100 - e.instructor_share_pct} after card fees: </dt>
             <dd className="inline">

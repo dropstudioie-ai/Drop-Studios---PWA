@@ -86,7 +86,7 @@ export async function createUser(
     `${name.toLowerCase()}@example.com`,
     { full_name: name },
   ]);
-  if (role !== 'customer') await db.query(`update public.profiles set role = $2 where id = $1`, [id, role]);
+  if (role !== 'customer') await db.query(`update public.profiles set role = $2, finance_access = $3 where id = $1`, [id, role, role === 'admin']);
   // Paying needs a mobile number; give each test user a unique one unless told otherwise.
   const phone = opts.phone === undefined ? `08${String(parseInt(id.replace(/-/g, '').slice(0, 8), 16) % 100000000).padStart(8, '0')}` : opts.phone;
   if (phone) await db.query(`update public.profiles set phone = $2 where id = $1`, [id, phone]);

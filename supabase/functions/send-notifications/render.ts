@@ -268,6 +268,28 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
           text: `${hi}\n\nSorry, the studio couldn't approve ${p.title} (${when(p.starts_at)}).${p.note ? `\n\n${p.note}` : ''}\n\nYou can suggest another date in the app.\n\nDrop Studios`,
           url: '/teach/events',
         };
+    case 'feedback_request': {
+      const why = p.reason === 'first_in_style' ? 'It was your first class in this style, so'
+        : p.reason === 'event' ? 'You came to a special event, so'
+        : 'You\'ve been coming regularly, so';
+      return {
+        subject: `⭐ How was ${p.title}?`,
+        text: `${hi}\n\nThanks for dancing with us at ${p.title} (${when(p.starts_at)}${p.instructor ? ` with ${p.instructor}` : ''}).\n\n${why} we'd love to know how it went. It takes 20 seconds:\n\n${site()}/feedback/${p.feedback_id}\n\nYour instructor sees your rating and comment, but not your name.\n\nDrop Studios`,
+        url: `/feedback/${p.feedback_id}`,
+      };
+    }
+    case 'instructor_birthday_member':
+      return p.phase === 'on_day'
+        ? {
+          subject: `🎂 It's ${p.instructor_name}'s birthday today!`,
+          text: `${hi}\n\nIt's ${p.instructor_name}'s birthday today, and you're booked into their class: ${p.title} at ${when(p.starts_at)}.\n\nBring the birthday energy and help us make it a special one! 🎉\n\nDrop Studios`,
+          url: '/account',
+        }
+        : {
+          subject: `🎂 ${p.instructor_name}'s birthday is coming up`,
+          text: `${hi}\n\nA little secret: ${p.instructor_name}'s birthday is on ${longDate(p.birthday)}. You're booked into their class ${p.title} on ${when(p.starts_at)}, so come ready to celebrate with them! 🎉\n\nDrop Studios`,
+          url: '/account',
+        };
     case 'membership_cancelled': {
       const n = Number(p.bookings_cancelled) || 0;
       return {

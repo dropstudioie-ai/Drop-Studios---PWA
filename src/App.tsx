@@ -20,6 +20,8 @@ const Teach = lazy(() => import('./pages/Teach'));
 const Events = lazy(() => import('./pages/Events'));
 const OrganiseEvent = lazy(() => import('./pages/Events').then((m) => ({ default: m.OrganiseEvent })));
 const AdminEvents = lazy(() => import('./pages/admin/Events'));
+const AdminFeedback = lazy(() => import('./pages/admin/Feedback'));
+const FeedbackPage = lazy(() => import('./pages/Feedback'));
 const AdminLayout = lazy(() => import('./pages/admin/AdminLayout'));
 const AdminOverview = lazy(() => import('./pages/admin/Overview'));
 const AdminTimetable = lazy(() => import('./pages/admin/Timetable'));
@@ -72,6 +74,7 @@ export default function App() {
                 <Route path="checkout/cancelled" element={<CheckoutCancelled />} />
                 <Route path="checkout/:code" element={<RequireAuth><Checkout /></RequireAuth>} />
                 <Route path="account" element={<RequireAuth><Account /></RequireAuth>} />
+                <Route path="feedback/:id" element={<RequireAuth><FeedbackPage /></RequireAuth>} />
                 <Route path="teach" element={<RequireStaff><Teach /></RequireStaff>} />
                 <Route path="teach/events" element={<RequireStaff><Events /></RequireStaff>} />
                 <Route path="teach/events/new" element={<RequireStaff><OrganiseEvent /></RequireStaff>} />
@@ -80,6 +83,7 @@ export default function App() {
                   <Route path="timetable" element={<AdminTimetable />} />
                   <Route path="bookings" element={<AdminBookings />} />
                   <Route path="events" element={<AdminEvents />} />
+                  <Route path="feedback" element={<AdminFeedback />} />
                   <Route path="customers" element={<AdminCustomers />} />
                   <Route path="plans" element={<AdminPlans />} />
                   <Route path="styles" element={<AdminStyles />} />

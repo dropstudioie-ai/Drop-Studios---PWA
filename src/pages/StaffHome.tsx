@@ -10,10 +10,12 @@ import { addDaysToKey, fmt, formatKey, localDateKey, zonedTime } from '../domain
 import { StaffRoster } from '../components/StaffRoster';
 import { ErrorNotice, PageSpinner } from '../components/ui';
 import { events } from '../lib/events';
+import { feedback, type FeedbackItem } from '../lib/feedback';
+import { FeedbackList, FeedbackSummary } from './Feedback';
 
 interface Dashboard {
   payments_to_review: number; unfinished_checkouts: number; failed_monthly_payments: number; ticket_refunds: number;
-  revenue_week_cents: number; payments_week: number; new_members_week: number; active_monthly: number; ending_monthly: number; bookings_today: number;
+  revenue_week_cents?: number; payments_week?: number; finance?: boolean; new_members_week: number; active_monthly: number; ending_monthly: number; bookings_today: number;
 }
 
 /** Home screen for admins and instructors: today's classes first, then what matters for their job. */
@@ -128,7 +130,7 @@ function AdminToday({ todays, onOpen }: { todays: StaffSession[]; onOpen: (id: s
         <section aria-labelledby="week-h">
           <h2 id="week-h" className="text-xl font-black">This week</h2>
           <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Stat label="Revenue" value={formatPrice(v.revenue_week_cents)} hint={`${v.payments_week} payments`} />
+            {v.revenue_week_cents != null && <Stat label="Revenue" value={formatPrice(v.revenue_week_cents)} hint={`${v.payments_week} payments`} />}
             <Stat label="New members" value={String(v.new_members_week)} />
             <Stat label="Monthly members" value={String(v.active_monthly)} />
             <Stat label="Booked today" value={String(v.bookings_today)} />
@@ -149,7 +151,7 @@ function AdminToday({ todays, onOpen }: { todays: StaffSession[]; onOpen: (id: s
         <h2 id="go-h" className="text-xl font-black">Manage</h2>
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
           {[['Members', '/admin/customers'], ['Timetable', '/admin/timetable'], ['Bookings', '/admin/bookings'], ['Plans & prices', '/admin/plans'],
-            ['Instructors', '/admin/instructors'], ['Sales & reports', '/admin'], ['Settings', '/admin/settings'], ['Audit log', '/admin/audit']].map(([label, to]) => (
+            ['Instructors', '/admin/instructors'], [v?.finance === false ? 'Overview' : 'Sales & reports', '/admin'], ['Settings', '/admin/settings'], ['Audit log', '/admin/audit']].map(([label, to]) => (
             <Link key={to} to={to} className="card p-4 text-center font-semibold hover:shadow-md">{label}</Link>
           ))}
         </div>
@@ -199,6 +201,8 @@ function InstructorToday({ upcoming, today, onOpen }: { upcoming: StaffSession[]
 
       <OrganisePrompt />
 
+      <InstructorFeedback />
+
       <section className="card p-5" aria-labelledby="free-h">
         <h2 id="free-h" className="font-extrabold">Want to take a class?</h2>
         <p className="mt-1 text-sm text-ink-soft">As an instructor you can book any class for free from the timetable.</p>
@@ -238,6 +242,21 @@ function OrganisePrompt() {
         </ul>
       )}
       <Link to="/teach/events/new" className="btn-accent btn-sm mt-4">Organise an event</Link>
+    </section>
+  );
+}
+
+function InstructorFeedback() {
+  const [all, setAll] = useState(false);
+  const fb = useAsync(() => feedback.staff(90).catch(() => [] as FeedbackItem[]), []);
+  const items = fb.data ?? [];
+  return (
+    <section aria-labelledby="fb-h">
+      <h2 id="fb-h" className="text-xl font-black">Your feedback</h2>
+      <p className="mt-1 text-xs text-muted">Members are asked after their first class in a style, every 6th class and after events. Names are kept private.</p>
+      <div className="mt-2"><FeedbackSummary items={items} /></div>
+      {items.length > 0 && <div className="mt-3"><FeedbackList items={all ? items : items.slice(0, 3)} /></div>}
+      {items.length > 3 && <button className="mt-2 text-sm font-semibold text-brand-700" onClick={() => setAll(!all)}>{all ? 'Show less' : `Show all ${items.length}`}</button>}
     </section>
   );
 }

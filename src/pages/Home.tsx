@@ -4,13 +4,13 @@ import { useAsync } from '../lib/useAsync';
 import { formatPrice } from '../domain/money';
 import { classesLabel, sortPlans } from '../domain/plans';
 import { addDaysToKey, fmt, localDateKey, zonedTime } from '../domain/time';
-import { availabilityLabel } from '../domain/booking';
 import { STUDIO } from '../config/studio';
 import { useAuth } from '../auth/AuthProvider';
 import { CalendarIcon, PinIcon, TicketIcon, UserIcon } from '../components/icons';
 import { isStandalone } from '../components/pwa';
 import { classImage } from '../config/classImages';
 import StaffHome from './StaffHome';
+import { FeedbackPrompt } from './Feedback';
 
 export default function Home() {
   const { isStaff } = useAuth();
@@ -23,62 +23,47 @@ function MemberHome() {
   const today = localDateKey(new Date());
   const upcoming = useAsync(async () => {
     const list = await api.sessions(new Date().toISOString(), zonedTime(addDaysToKey(today, 3)).toISOString());
-    return list.filter((s) => s.status === 'scheduled').slice(0, 6);
+    return list.filter((s) => s.status === 'scheduled' && new Date(s.starts_at) > new Date()).slice(0, 6);
   }, [today]);
   const styles = useAsync(() => api.styles(), []);
   const plans = useAsync(() => api.plans(), []);
   const intro = plans.data?.find((p) => p.first_time_only);
   const cheapestRegular = sortPlans(plans.data?.filter((p) => !p.first_time_only) ?? [])[0];
-  const next = upcoming.data?.find((s) => !s.is_special) ?? upcoming.data?.[0];
 
   return (
     <>
       <section className="relative overflow-hidden bg-ink text-white">
         <div className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-brand-600 opacity-60 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-32 -left-16 h-80 w-80 rounded-full bg-accent-500 opacity-40 blur-3xl" />
-        <div className="container-page relative grid gap-10 py-12 sm:py-20 lg:grid-cols-[1.4fr_1fr] lg:items-center">
-          <div>
-            <p className="chip bg-white/10 text-accent-400">{STUDIO.tagline} · {STUDIO.city}</p>
-            <h1 className="mt-4 text-5xl font-black leading-[0.95] sm:text-7xl">
-              Feel the beat.<br /><span className="text-accent-500">Drop</span> in.
-            </h1>
-            <p className="mt-5 max-w-xl text-lg text-white/80">
-              Dance and fitness classes for every level. Book your spot in seconds, straight from your phone.
-            </p>
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Link to="/timetable" className="btn-accent text-lg">View timetable</Link>
-              <Link to="/memberships" className="btn border-2 border-white/30 text-lg text-white hover:bg-white/10">
-                {intro ? `New here? ${classesLabel(intro.class_count)} for ${formatPrice(intro.price_cents, intro.currency)}` : 'See memberships'}
-              </Link>
-            </div>
+        <div className="container-page relative py-8 sm:py-12">
+          <p className="chip bg-white/10 text-accent-400">{STUDIO.tagline} · {STUDIO.city}</p>
+          <h1 className="mt-3 text-4xl font-black leading-[0.95] sm:text-6xl">
+            {session ? <>Ready to <span className="text-accent-500">dance?</span></> : <>Book your <span className="text-accent-500">first class.</span></>}
+          </h1>
+          <p className="mt-3 max-w-xl text-white/80">
+            {session
+              ? 'Pick a class below and book your spot in seconds.'
+              : <>Dance and fitness classes for every level in Dublin.{intro ? <> New here? <strong className="text-white">{classesLabel(intro.class_count)} for {formatPrice(intro.price_cents, intro.currency)}</strong>, or come as a Drop In and <strong className="text-white">bring a friend free</strong>.</> : ''}</>}
+          </p>
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+            {!session && intro
+              ? <Link to={`/checkout/${intro.code}`} className="btn-accent text-lg">Start with the Intro Offer</Link>
+              : <Link to="/timetable" className="btn-accent text-lg">Book a class</Link>}
+            <Link to="/timetable" className="btn border-2 border-white/30 text-lg text-white hover:bg-white/10">{!session && intro ? 'See the timetable' : 'Full timetable'}</Link>
           </div>
-
-          {next && (
-            <Link to="/timetable" className="block rounded-3xl border border-white/15 bg-white/10 p-5 backdrop-blur transition hover:bg-white/15">
-              <p className="text-xs font-bold uppercase tracking-widest text-accent-400">Next class</p>
-              <p className="mt-2 font-display text-2xl font-black">{next.title}</p>
-              <p className="mt-1 text-white/80">{fmt.weekdayLong(next.starts_at)} · {fmt.time(next.starts_at)}</p>
-              <div className="mt-4 flex items-center justify-between text-sm">
-                <span className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ background: next.style?.color }} />
-                  {next.style?.name}{next.instructor ? ` · ${next.instructor.full_name}` : ''}
-                </span>
-                {availabilityLabel(next.availability) && <span className="font-semibold text-accent-400">{availabilityLabel(next.availability)}</span>}
-              </div>
-            </Link>
-          )}
         </div>
-
       </section>
+
+      {session && <div className="container-page pt-6"><FeedbackPrompt /></div>}
 
       <section className="container-page py-10 sm:py-12">
         <div className="flex items-end justify-between">
-          <h2 className="text-2xl font-black sm:text-3xl">Coming up</h2>
+          <h2 className="text-2xl font-black sm:text-3xl">Next classes</h2>
           <Link to="/timetable" className="text-sm font-semibold text-brand-700">Full timetable →</Link>
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {upcoming.data?.map((s) => (
-            <Link key={s.id} to="/timetable" className="card flex items-center gap-4 p-4 transition hover:shadow-md">
+            <Link key={s.id} to={`/timetable?class=${s.id}`} className="card flex items-center gap-4 p-4 transition hover:shadow-md">
               <span className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-xl text-white" style={{ background: s.style?.color ?? '#1f43e6' }}>
                 <span className="text-[10px] font-semibold uppercase">{fmt.weekdayShort(s.starts_at)}</span>
                 <span className="font-display font-extrabold">{fmt.time(s.starts_at)}</span>
