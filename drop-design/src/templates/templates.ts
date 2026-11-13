@@ -5,7 +5,9 @@ import { makeImage } from '../model/elements';
 
 const W = '#ffffff', INK = '#0b0f19', LIME = '#c6ff00', ORANGE = '#ff7a00', BLUE = '#1f43e6';
 
-export const TEMPLATES: Template[] = [
+import { ENGAGEMENT_TEMPLATES, SEASONAL_TEMPLATES } from './seasonal';
+
+const BASE_TEMPLATES: Template[] = [
   // ───────────── Fitness and Gym ─────────────
   {
     id: 'hiit-core', name: 'HIIT & Core class poster', category: 'Fitness and Gym', format: 'a4-portrait', tags: ['hiit', 'core', 'class', 'poster'],
@@ -369,10 +371,13 @@ export const TEMPLATES: Template[] = [
   },
 ];
 
+/** Seasonal and engagement templates first: they are the ones used most week to week. */
+export const TEMPLATES: Template[] = [...SEASONAL_TEMPLATES, ...ENGAGEMENT_TEMPLATES, ...BASE_TEMPLATES];
+
 // A plain image element helper re-exported for the Drop event generator.
 export function photoFrame(src: string, w: number, h: number, x: number, y: number, iw: number, ih: number, radius = 0) {
   return makeImage({ src, x, y, width: w, height: h, crop: coverCrop(iw, ih, w, h), cornerRadius: radius });
 }
 export { lib };
 
-export const TEMPLATE_CATEGORIES = ['Fitness and Gym', 'Corporate Wellness', 'Social Media', 'Business and Presentations'] as const;
+export const TEMPLATE_CATEGORIES = ['Important Dates', 'High Engagement', 'Fitness and Gym', 'Corporate Wellness', 'Social Media', 'Business and Presentations'] as const;

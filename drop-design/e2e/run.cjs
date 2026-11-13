@@ -143,6 +143,17 @@ async function mockDrop(ctx, role, log) {
   await page.keyboard.press('Escape');
   e = await els(page);
   check('text edited in place', e[0].text === 'Summer HIIT', e[0].text);
+  // Typing then clicking elsewhere on the canvas must keep the words.
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('[data-testid=text-editor]');
+  await page.keyboard.press('Control+A');
+  await page.keyboard.type('Summer HIIT Club');
+  const cbox = await page.locator('[data-testid=canvas]').boundingBox();
+  await page.mouse.click(cbox.x + 8, cbox.y + 8);
+  await page.waitForTimeout(200);
+  e = await els(page);
+  check('typing is kept when clicking away', e[0].text === 'Summer HIIT Club', e[0].text);
+  await ed(page, () => { const s = window.__dropEditor.getState(); s.select([s.design.pages[0].elements[0].id]); });
   await page.selectOption('select[aria-label=Font]', 'Anton');
   await page.fill('input[aria-label=Size]', '120');
   e = await els(page);

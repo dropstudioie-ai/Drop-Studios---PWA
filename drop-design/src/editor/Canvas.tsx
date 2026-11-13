@@ -283,21 +283,31 @@ export default function Canvas() {
 function TextEditor({ el, stage, zoom }: { el: TextElement; stage: Konva.Stage; zoom: number }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const [value, setValue] = useState(el.text);
+  const valueRef = useRef(el.text);
+  const original = useRef(el.text);
+  const committed = useRef(false);
   const node = stage.findOne(`#${el.id}`);
   const pos = node?.getAbsolutePosition() ?? { x: 0, y: 0 };
+  // Save the words however editing ends: Esc, clicking elsewhere on the canvas or the page,
+  // selecting another element, or the editor closing for any other reason.
+  const commit = () => {
+    if (committed.current) return;
+    committed.current = true;
+    if (valueRef.current !== original.current) useEditor.getState().updateElement(el.id, { text: valueRef.current } as Partial<DesignElement>);
+  };
+  useEffect(() => {
+    committed.current = false; // (React may run effects twice in development)
+    return () => commit();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { const t = ref.current; if (t) { t.focus(); t.select(); } }, []);
   useEffect(() => { const t = ref.current; if (t) { t.style.height = 'auto'; t.style.height = `${t.scrollHeight}px`; } }, [value]);
-  const done = () => {
-    const api = useEditor.getState();
-    if (value !== el.text) api.updateElement(el.id, { text: value } as Partial<DesignElement>);
-    api.setEditingText(null);
-  };
+  const done = () => { commit(); useEditor.getState().setEditingText(null); };
   return (
     <textarea
       ref={ref}
       data-testid="text-editor"
       value={value}
-      onChange={(e) => setValue(e.target.value)}
+      onChange={(e) => { setValue(e.target.value); valueRef.current = e.target.value; }}
       onBlur={done}
       onKeyDown={(e) => {
         e.stopPropagation();
@@ -308,7 +318,10 @@ function TextEditor({ el, stage, zoom }: { el: TextElement; stage: Konva.Stage; 
         position: 'absolute', left: pos.x, top: pos.y, width: el.width * zoom, minHeight: el.fontSize * el.lineHeight * zoom,
         transform: `rotate(${el.rotation}deg)`, transformOrigin: 'top left',
         fontFamily: el.fontFamily, fontSize: el.fontSize * zoom, fontWeight: el.fontWeight, fontStyle: el.italic ? 'italic' : 'normal',
-        lineHeight: el.lineHeight, letterSpacing: el.letterSpacing * zoom, color: el.fill, textAlign: el.align, textTransform: el.uppercase ? 'uppercase' : 'none',
+        lineHeight: el.lineHeight, letterSpacing: el.letterSpacing * zoom,
+        // Hollow (outline-only) text would be invisible while typing, so show it in its outline colour.
+        color: /rgba\(0, ?0, ?0, ?0\)|transparent/.test(el.fill) ? (el.stroke?.color ?? '#000') : el.fill,
+        textAlign: el.align, textTransform: el.uppercase ? 'uppercase' : 'none',
         background: 'transparent', border: 'none', outline: '2px solid #8b5cf6', outlineOffset: 2, padding: 0, margin: 0, resize: 'none', overflow: 'hidden',
       }}
     />
