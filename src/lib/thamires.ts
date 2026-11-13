@@ -1,11 +1,11 @@
 import { supabase } from './supabase';
 
 export interface ThSettings { enabled: boolean; auto_reply: boolean; auto_tag_thanks: boolean; daily_story: boolean; story_hour: number; notes: string | null }
-export interface ThThread { id: string; ig_user_id: string; username: string | null; display_name: string | null; status: 'open' | 'needs_human' | 'closed'; last_inbound_at: string | null; last_message_at: string; language: string | null }
+export interface ThThread { id: string; ig_user_id: string; username: string | null; display_name: string | null; status: 'open' | 'needs_human' | 'closed'; last_inbound_at: string | null; last_message_at: string; language: string | null; memory: string | null }
 export interface ThMessage { id: string; thread_id: string; direction: 'in' | 'out'; kind: string; text: string; status: 'received' | 'draft' | 'sent' | 'rejected' | 'failed'; needs_human: boolean; reason: string | null; translation: string | null; error: string | null; created_at: string }
 export interface ThMention { id: string; kind: 'post' | 'story'; username: string | null; permalink: string | null; caption: string | null; media_url: string | null; reply_text: string | null; reply_status: 'draft' | 'sent' | 'rejected' | 'failed' | 'skipped'; error: string | null; reshared: boolean; received_at: string }
 export interface ThStory { id: string; story_date: string; title: string; lines: { time: string; title: string; instructor: string | null; style_slug: string | null }[]; art_slug: string | null; status: string; error: string | null }
-export interface ThDraft { reply: string; needs_human: boolean; reason: string; topic: string; language: string; offered_language: boolean; translation_en: string }
+export interface ThDraft { reply: string; needs_human: boolean; reason: string; topic: string; language: string; offered_language: boolean; translation_en: string; memory: string }
 export interface Turn { from: 'member' | 'thamires'; text: string }
 
 async function call<T>(body: Record<string, unknown>): Promise<T> {
@@ -28,10 +28,11 @@ export const thamires = {
   messages: (threadId: string) => rows<ThMessage[]>(supabase.from('assistant_messages').select('*').eq('thread_id', threadId).neq('status', 'rejected').order('created_at')),
   mentions: () => rows<ThMention[]>(supabase.from('assistant_mentions').select('*').order('received_at', { ascending: false }).limit(30)),
   story: (date: string) => rows<ThStory[]>(supabase.from('assistant_stories').select('*').eq('story_date', date)).then((r) => r[0] ?? null),
-  test: (history: Turn[], person?: { username?: string; display_name?: string; language?: string | null; language_offered?: boolean }) => call<ThDraft>({ action: 'test', history, person }),
+  test: (history: Turn[], person?: { username?: string; display_name?: string; language?: string | null; language_offered?: boolean; memory?: string | null }) => call<ThDraft>({ action: 'test', history, person }),
   send: (messageId: string, text: string) => call({ action: 'send', message_id: messageId, text }),
   reject: async (messageId: string) => { const r = await supabase.rpc('assistant_reject', { p_message_id: messageId }); if (r.error) throw new Error(r.error.message); },
   reply: (threadId: string, text: string) => call({ action: 'reply', thread_id: threadId, text }),
+  forget: (threadId: string) => call({ action: 'forget', thread_id: threadId }),
   threadStatus: (threadId: string, status: string) => call({ action: 'thread_status', thread_id: threadId, status }),
   mentionSend: (id: string, text: string) => call({ action: 'mention_send', mention_id: id, text }),
   mentionSkip: (id: string) => call({ action: 'mention_skip', mention_id: id }),

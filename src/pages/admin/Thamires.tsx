@@ -96,6 +96,12 @@ function Conversations({ reload }: { reload: number }) {
         <div className="card p-4">
           <div className="flex items-center justify-between"><p className="font-bold">@{t.username}</p>
             {t.status === 'needs_human' && <button className="btn-ghost btn-sm" onClick={() => void thamires.threadStatus(t.id, 'open').then(() => threads.reload())}>Mark handled</button>}</div>
+          {t.memory && (
+            <div className="mt-2 rounded-xl bg-accent-50 p-3 text-sm">
+              <p><strong>💭 What Thamires remembers:</strong> {t.memory}</p>
+              <button className="mt-1 text-xs font-semibold text-accent-600 underline" onClick={async () => { try { await thamires.forget(t.id); threads.reload(); toast('Forgotten'); } catch (e) { toast((e as Error).message, 'error'); } }}>Forget this</button>
+            </div>
+          )}
           <ul className="mt-3 max-h-96 space-y-2 overflow-y-auto">
             {(msgs.data ?? []).map((m) => (
               <li key={m.id} className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm ${m.direction === 'in' ? 'bg-canvas' : 'ml-auto bg-brand-600 text-white'} ${m.status === 'draft' ? 'opacity-60' : ''}`}>
@@ -190,11 +196,13 @@ function TryHer() {
   const [meta, setMeta] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [lang, setLang] = useState<{ language: string | null; offered: boolean }>({ language: null, offered: false });
+  const [memory, setMemory] = useState<string | null>(null);
   async function ask() {
     const next = [...history, { from: 'member' as const, text: text.trim() }];
     setHistory(next); setText(''); setBusy(true);
     try {
-      const d = await thamires.test(next, { display_name: name || undefined, language: lang.language, language_offered: lang.offered });
+      const d = await thamires.test(next, { display_name: name || undefined, language: lang.language, language_offered: lang.offered, memory });
+      if (d.memory) setMemory(d.memory);
       setHistory([...next, { from: 'thamires', text: d.reply }]);
       setLang({ language: d.offered_language ? lang.language : d.language, offered: lang.offered || d.offered_language });
       setMeta(`${d.language} · ${d.topic}${d.needs_human ? ' · would wait for a person' : ''} · ${d.reason}${d.translation_en ? ` · In English: ${d.translation_en}` : ''}`);
@@ -203,17 +211,18 @@ function TryHer() {
   }
   return (
     <div className="card p-4">
-      <p className="text-sm text-muted">Ask her anything a member might, in any language, to check her answers. Nothing is sent to Instagram.</p>
+      <p className="text-sm text-muted">Ask her anything a member might, in any language, to check her answers. Nothing is sent to Instagram. Press “New chat” to see how she greets someone coming back: she keeps what she remembered.</p>
       <input className="input mt-2" value={name} onChange={(e) => setName(e.target.value)} placeholder="Pretend name (optional), e.g. João Silva" />
       <ul className="mt-3 max-h-80 space-y-2 overflow-y-auto">
         {history.map((t, i) => <li key={i} className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm ${t.from === 'member' ? 'bg-canvas' : 'ml-auto bg-brand-600 text-white'}`}>{t.text}</li>)}
         {busy && <li className="ml-auto w-fit rounded-2xl bg-brand-50 px-3 py-2 text-sm">Thamires is typing…</li>}
       </ul>
       {meta && <p className="mt-2 text-xs text-muted">{meta}</p>}
+      {memory && <p className="mt-1 text-xs text-accent-600">💭 She’d remember: {memory}</p>}
       <form className="mt-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); if (text.trim()) void ask(); }}>
         <input className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. Is there a beginners heels class this week?" />
         <button className="btn-primary btn-sm" disabled={busy || !text.trim()}>Ask</button>
-        {history.length > 0 && <button type="button" className="btn-ghost btn-sm" onClick={() => { setHistory([]); setMeta(null); setLang({ language: null, offered: false }); }}>Reset</button>}
+        {history.length > 0 && <button type="button" className="btn-ghost btn-sm" onClick={() => { setHistory([]); setMeta(null); setLang({ language: null, offered: false }); }}>New chat</button>}
       </form>
     </div>
   );

@@ -20,12 +20,13 @@ async function settings(db: Db) {
   return data as { enabled: boolean; auto_reply: boolean; auto_tag_thanks: boolean; daily_story: boolean; story_hour: number } | null;
 }
 
-interface Person { username?: string | null; display_name?: string | null; language?: string | null; language_offered?: boolean }
+interface Person { username?: string | null; display_name?: string | null; language?: string | null; language_offered?: boolean; memory?: string | null; last_inbound_at?: string | null }
 async function draft(history: Turn[], disclose: boolean, task: 'dm' | 'thanks', db: Db, who: Person = {}): Promise<Draft | null> {
   const client = anthropic();
   if (!client) return null;
   const { data: knowledge } = await db.rpc('assistant_knowledge');
-  return draftReply({ client }, { history, knowledge, disclose, task, person: { username: who.username, name: who.display_name }, language: who.language, languageOffered: who.language_offered });
+  return draftReply({ client }, { history, knowledge, disclose, task, person: { username: who.username, name: who.display_name }, language: who.language, languageOffered: who.language_offered,
+    memory: who.memory, daysSinceLastChat: who.last_inbound_at ? Math.floor((Date.now() - new Date(who.last_inbound_at).getTime()) / 864e5) : null });
 }
 
 /** Remember the language the conversation settled on, and that she offered to switch. */
@@ -34,16 +35,19 @@ async function rememberLanguage(db: Db, threadId: string, d: Draft, history: Tur
   if (d.offered_language) patch.language_offered = true;
   // Only lock in a language once the person has written in it (not just because she offered it).
   if (d.language && history.some((t) => t.from === 'member') && !d.offered_language) patch.language = d.language;
+  if (d.memory) { patch.memory = d.memory; patch.memory_updated_at = new Date().toISOString(); }
   if (Object.keys(patch).length) await db.from('assistant_threads').update(patch).eq('id', threadId);
 }
 
-async function thread(db: Db, igUserId: string) {
+interface ThreadRow { id: string; disclosed: boolean; username: string | null; display_name: string | null; language: string | null; language_offered: boolean; memory: string | null; last_inbound_at: string | null }
+
+async function thread(db: Db, igUserId: string): Promise<ThreadRow> {
   const { data: existing } = await db.from('assistant_threads').select('*').eq('ig_user_id', igUserId).maybeSingle();
-  if (existing) return existing as { id: string; disclosed: boolean; username: string | null };
+  if (existing) return existing as ThreadRow;
   const cfg = igConfig();
   const prof = cfg ? await ig.profile(cfg, igUserId) : {};
   const { data } = await db.from('assistant_threads').upsert({ ig_user_id: igUserId, username: prof.username ?? null, display_name: prof.name ?? null }, { onConflict: 'ig_user_id' }).select().single();
-  return data as { id: string; disclosed: boolean; username: string | null; display_name: string | null; language: string | null; language_offered: boolean };
+  return data as { id: string; disclosed: boolean; username: string | null; display_name: string | null; language: string | null; language_offered: boolean; memory: string | null; last_inbound_at: string | null };
 }
 
 async function history(db: Db, threadId: string): Promise<Turn[]> {
@@ -91,7 +95,9 @@ async function handleEvent(db: Db, ev: IgEvent) {
   const text = ev.type === 'story_mention' ? '[Mentioned Drop in their Story]' : ev.text;
   const { error: dup } = await db.from('assistant_messages').insert({ thread_id: t.id, direction: 'in', kind: ev.type === 'message' ? 'dm' : ev.type, text, ig_message_id: ev.mid, status: 'received' });
   if (dup) return; // Instagram re-delivered the same message
+  const previousInbound = t.last_inbound_at;
   await db.from('assistant_threads').update({ last_inbound_at: new Date().toISOString(), last_message_at: new Date().toISOString() }).eq('id', t.id);
+  t.last_inbound_at = previousInbound;
   if (!s?.enabled) return;
 
   if (ev.type === 'story_mention') {
@@ -207,6 +213,9 @@ Deno.serve(async (req) => {
         await db.from('assistant_threads').update({ status: 'open' }).eq('id', String(body.thread_id));
         return json(req, { ok: true });
       }
+      case 'forget': // clear what Thamires remembers about someone
+        await db.from('assistant_threads').update({ memory: null, memory_updated_at: null }).eq('id', String(body.thread_id));
+        return json(req, { ok: true });
       case 'thread_status':
         await db.from('assistant_threads').update({ status: String(body.status) }).eq('id', String(body.thread_id));
         return json(req, { ok: true });

@@ -26,6 +26,8 @@ create table if not exists public.assistant_threads (
   disclosed boolean not null default false,  -- has Thamires said she's an AI assistant in this chat?
   language text,                             -- the language this person prefers (e.g. 'Portuguese (Brazil)')
   language_offered boolean not null default false, -- has she offered to switch to their native language?
+  memory text,                               -- friendly notes to pick up next time (no health, money or private details)
+  memory_updated_at timestamptz,
   created_at timestamptz not null default now()
 );
 

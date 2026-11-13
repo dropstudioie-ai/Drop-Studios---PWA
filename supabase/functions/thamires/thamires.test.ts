@@ -64,3 +64,16 @@ Deno.test('talks in the person’s native language and tells the team what it sa
   const schema = JSON.stringify(lastReq.output_config);
   assertStringIncludes(schema, 'translation_en');
 });
+
+Deno.test('easy-going and funny, remembers people and follows up', async () => {
+  assertStringIncludes(PERSONA, 'Easy-going, funny and always polite');
+  assertStringIncludes(PERSONA, 'small talk');
+  assertStringIncludes(PERSONA, 'Read the room');
+  const d = await draftReply({ client: fakeClient({ reply: 'Welcome back! How did heels go? 😄', needs_human: false, reason: 'x', topic: 'class_info', language: 'English', offered_language: false, translation_en: '', memory: 'Aoife. Took her first heels class.' }) },
+    { history: [{ from: 'member', text: 'Hi again!' }], knowledge: {}, disclose: false, memory: 'Aoife. First heels class planned for Monday.', daysSinceLastChat: 5 });
+  const sys = JSON.stringify(lastReq.system);
+  assertStringIncludes(sys, 'First heels class planned for Monday');
+  assertStringIncludes(sys, 'coming back after 5 days');
+  assertEquals(d.memory, 'Aoife. Took her first heels class.');
+  assertStringIncludes(JSON.stringify(lastReq.output_config), 'Never store health');
+});
