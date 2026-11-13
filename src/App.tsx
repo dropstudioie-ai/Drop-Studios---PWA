@@ -24,6 +24,7 @@ const Events = lazy(() => import('./pages/Events'));
 const OrganiseEvent = lazy(() => import('./pages/Events').then((m) => ({ default: m.OrganiseEvent })));
 const AdminEvents = lazy(() => import('./pages/admin/Events'));
 const AdminFeedback = lazy(() => import('./pages/admin/Feedback'));
+const AdminThamires = lazy(() => import('./pages/admin/Thamires'));
 const FeedbackPage = lazy(() => import('./pages/Feedback'));
 const AdminLayout = lazy(() => import('./pages/admin/AdminLayout'));
 const AdminOverview = lazy(() => import('./pages/admin/Overview'));
@@ -90,6 +91,7 @@ export default function App() {
                   <Route path="bookings" element={<AdminBookings />} />
                   <Route path="events" element={<AdminEvents />} />
                   <Route path="feedback" element={<AdminFeedback />} />
+                  <Route path="thamires" element={<AdminThamires />} />
                   <Route path="customers" element={<AdminCustomers />} />
                   <Route path="plans" element={<AdminPlans />} />
                   <Route path="styles" element={<AdminStyles />} />

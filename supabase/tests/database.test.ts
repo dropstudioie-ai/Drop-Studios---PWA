@@ -1826,4 +1826,26 @@ run('database: plans, booking, allowances, pauses, security', () => {
       expect(a.revenue_per_attended_class_cents).toBeNull(); // nobody marked attended yet
     });
   });
+  describe('Thamires (Instagram assistant)', () => {
+    it('only admins can see her inbox; knowledge has plans, classes and policies', async () => {
+      const m = await createUser(db, 'Snoop');
+      const { rows: [th] } = await db.query(`insert into assistant_threads (ig_user_id, username) values ('ig1', 'dancer') returning id`);
+      const { rows: [msg] } = await db.query(`insert into assistant_messages (thread_id, direction, text, status) values ($1, 'out', 'Hi!', 'draft') returning id`, [th.id]);
+      expect(await as(db, user(m), `select * from assistant_messages`)).toHaveLength(0);
+      expect(await as(db, user(admin), `select * from assistant_messages`)).toHaveLength(1);
+      await expect(as(db, user(m), `update assistant_settings set enabled = true`)).resolves.toBeDefined();
+      expect((await db.query(`select enabled from assistant_settings`)).rows[0].enabled).toBe(false); // RLS: no rows updated
+      await expect(as(db, user(m), `select assistant_knowledge()`)).rejects.toThrow(/permission denied/);
+      const [k] = await as<{ k: { plans: { name: string }[]; styles: unknown[]; policies: { free_cancellation_minutes_before: number } } }>(db, service, `select assistant_knowledge() k`);
+      expect(k.k.plans.length).toBeGreaterThan(0);
+      expect(k.k.policies.free_cancellation_minutes_before).toBe(30);
+      await expectError(as(db, user(m), `select assistant_reject($1)`, [msg.id]), 'forbidden');
+      await as(db, user(admin), `select assistant_reject($1)`, [msg.id]);
+      expect((await db.query(`select status from assistant_messages where id = $1`, [msg.id])).rows[0].status).toBe('rejected');
+      await as(db, service, `select _assistant_notify('assistant_draft', '{"username":"dancer"}', 'd1')`);
+      await as(db, service, `select _assistant_notify('assistant_draft', '{"username":"dancer"}', 'd1')`);
+      const { rows } = await db.query(`select count(*)::int n from notification_outbox where kind = 'assistant_draft'`);
+      expect(rows[0].n).toBe((await db.query(`select count(*)::int n from profiles where role = 'admin'`)).rows[0].n);
+    });
+  });
 });

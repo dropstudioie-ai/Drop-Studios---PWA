@@ -156,3 +156,11 @@ Deno.test('instructors are asked to write their bio and class details', () => {
   assertStringIncludes(m.text, 'your Heels class');
   assertStringIncludes(m.text, 'what to wear');
 });
+
+Deno.test('Thamires alerts point admins to her page', () => {
+  const d = render({ kind: 'assistant_draft', full_name: 'Jorge', payload: { username: 'dancer1', preview: 'Is there heels today?', needs_human: true } })!;
+  assertStringIncludes(d.subject, 'needs you');
+  assertEquals(d.url, '/admin/thamires');
+  assertStringIncludes(render({ kind: 'assistant_tag', full_name: null, payload: { username: 'x', kind: 'story' } })!.text, 'reshare');
+  assertStringIncludes(render({ kind: 'assistant_story', full_name: null, payload: { classes: 3 } })!.subject, '3 classes');
+});

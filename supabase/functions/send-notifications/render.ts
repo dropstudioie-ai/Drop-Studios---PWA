@@ -296,6 +296,24 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
         text: `${hi}\n\nEach class now has its own page on the Drop website and app, so new people can find us on Google and know what to expect before they come.\n\nWe wrote a first draft for ${p.styles ? `your ${p.styles} class` : 'your classes'}, but nobody describes it better than you. It takes about 5 minutes:\n\n1. Your bio: who you are, your dance background and what people love about your classes.\n2. Your class: what it's like, the level, what to wear, anything to bring, and tips for someone's first time.\n\nOpen this link, check the draft and change anything you like:\n${site()}/teach/profile\n\nThank you!\nDrop Studios`,
         url: '/teach/profile',
       };
+    case 'assistant_draft':
+      return {
+        subject: p.needs_human ? `💬 Thamires needs you: message from @${p.username}` : `💬 Thamires drafted a reply to @${p.username}`,
+        text: `${hi}\n\n@${p.username} sent a message on Instagram:\n“${p.preview}”\n\n${p.needs_human ? 'Thamires thinks a person should handle this one.' : 'Thamires has a reply ready for you to approve.'}\n\n${site()}/admin/thamires\n\nDrop Studios`,
+        url: '/admin/thamires',
+      };
+    case 'assistant_tag':
+      return {
+        subject: `📸 @${p.username} tagged Drop in a ${p.kind === 'story' ? 'Story' : 'post'}`,
+        text: `${hi}\n\n@${p.username} tagged Drop in their ${p.kind === 'story' ? 'Story' : 'post'}. Thamires has a thank-you ready to approve${p.kind === 'story' ? ', and you can reshare it from Instagram' : ''}.\n\n${site()}/admin/thamires\n\nDrop Studios`,
+        url: '/admin/thamires',
+      };
+    case 'assistant_story':
+      return {
+        subject: `🗓️ Today's Drop Story is ready (${p.classes} class${p.classes === 1 ? '' : 'es'})`,
+        text: `${hi}\n\nThamires prepared today's Story with the class times. Check it and publish it in one tap:\n\n${site()}/admin/thamires\n\nDrop Studios`,
+        url: '/admin/thamires',
+      };
     case 'membership_cancelled': {
       const n = Number(p.bookings_cancelled) || 0;
       return {
