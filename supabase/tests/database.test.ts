@@ -1214,6 +1214,24 @@ run('database: plans, booking, allowances, pauses, security', () => {
       expect((await db.query(`select title, description from studio_events where id = $1`, [r.r.event_id])).rows[0]).toEqual({ title: 'Spooky FitDance', description: 'Boo' });
     });
 
+    it('event artwork from Drop Design: only the organiser or an admin can upload and attach it', async () => {
+      const t = await teacher('Artist');
+      const other = await teacher('NotArtist');
+      const s = await taughtBy(t.instructorId, 3000, 'fitdance');
+      const [r] = await as<{ r: { event_id: string } }>(db, user(t.uid), `select organise_special_class($1, 'Neon FitDance', null, 'Neon') r`, [s]);
+      const ev = r.r.event_id;
+      const path = `${ev}/poster.png`;
+      await expect(as(db, user(other.uid), `insert into storage.objects (bucket_id, name) values ('event-art', $1)`, [`${ev}/x.png`])).rejects.toThrow(/row-level security/);
+      await as(db, user(t.uid), `insert into storage.objects (bucket_id, name) values ('event-art', $1)`, [path]);
+      await expectError(as(db, user(other.uid), `select set_event_artwork($1, $2)`, [ev, path]), 'forbidden');
+      await expectError(as(db, user(t.uid), `select set_event_artwork($1, $2)`, [ev, `${ev}/missing.png`]), 'artwork_not_uploaded');
+      await as(db, user(t.uid), `select set_event_artwork($1, $2)`, [ev, path]);
+      const [tt] = await as<{ r: { event: { artwork_path: string } | null }[] }>(db, anon, `select timetable(null, null, $1) r`, [s]);
+      expect(tt.r[0].event?.artwork_path).toBe(path);
+      const [mine] = await as<{ r: { artwork_path: string }[] }>(db, user(t.uid), `select my_events() r`);
+      expect(mine.r[0].artwork_path).toBe(path);
+    });
+
     it('instructors can’t change an approved workshop price or spam events', async () => {
       const t = await teacher('Hardened');
       const st = await styleId('heels');

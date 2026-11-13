@@ -1,3 +1,4 @@
+import { artworkUrl } from '../lib/events';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
@@ -368,6 +369,7 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
 export function EventDetails({ event }: { event: NonNullable<ClassSession['event']> }) {
   return (
     <div className="mt-3 rounded-xl border-2 border-accent-500 bg-white p-3">
+      {event.artwork_path && <img src={artworkUrl(event.artwork_path)!} alt={`${event.title} poster`} className="mb-3 w-full rounded-lg" loading="lazy" />}
       <p className="text-xs font-bold uppercase tracking-wide text-accent-600">{event.kind === 'workshop' ? 'Workshop' : 'Special themed class'}</p>
       <p className="font-display text-lg font-extrabold">{event.emoji ?? '✨'} {event.title}</p>
       {event.description && <p className="mt-1 whitespace-pre-line text-sm text-ink-soft">{event.description}</p>}

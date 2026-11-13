@@ -9,6 +9,7 @@ const MESSAGES: Record<string, string> = {
   outside_booking_window: 'Bookings open 3 weeks before each class.',
   already_booked: 'You’re already booked into this class.',
   title_required: 'Give it a name.',
+  artwork_not_uploaded: 'The artwork upload didn’t finish. Please try again.',
   not_instructor: 'Only instructors can do that.',
   not_your_class: 'You can only describe the classes you teach.',
   bio_too_short: 'Please write a little more about yourself (at least 2 sentences).',

@@ -91,6 +91,7 @@ export interface SessionEvent {
   description: string | null;
   dress_code: string | null;
   emoji: string | null;
+  artwork_path?: string | null;
 }
 
 export type Availability = 'available' | 'almost_full' | 'full';

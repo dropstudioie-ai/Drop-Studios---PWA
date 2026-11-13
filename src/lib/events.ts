@@ -9,6 +9,7 @@ export interface StudioEvent {
   kind: 'special_class' | 'workshop';
   status: 'pending' | 'published' | 'declined' | 'cancelled';
   instructor_id: string;
+  artwork_path?: string | null;
   instructor: string | null;
   title: string;
   description: string | null;
@@ -90,3 +91,7 @@ export function euroToCents(v: string): number | null {
   if (!/^\d+(\.\d{1,2})?$/.test(t)) return NaN;
   return Math.round(Number(t) * 100);
 }
+
+/** Public URL of an event's artwork (made in Drop Design). */
+export const artworkUrl = (path: string | null | undefined) =>
+  path ? `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/event-art/${path}` : null;

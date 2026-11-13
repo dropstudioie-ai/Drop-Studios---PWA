@@ -4,7 +4,7 @@ import { api } from '../api';
 import type { StaffSession } from '../api/types';
 import { useAuth } from '../auth/AuthProvider';
 import { useAsync } from '../lib/useAsync';
-import { euroToCents, events, type StudioEvent, type Theme } from '../lib/events';
+import { euroToCents, events, type StudioEvent, type Theme, artworkUrl } from '../lib/events';
 import { formatPrice } from '../domain/money';
 import { addDaysToKey, fmt, formatKey, localDateKey, zonedTime } from '../domain/time';
 import { EmptyState, ErrorNotice, Field, Notice, PageSpinner, Sheet, Spinner, useToast } from '../components/ui';
@@ -89,6 +89,7 @@ export function EventCard({ e, onEdit, admin }: { e: StudioEvent; onEdit?: () =>
             {e.kind === 'workshop' ? 'Workshop / gathering' : 'Special class'}{admin && e.instructor ? ` · ${e.instructor}` : ''}
           </p>
           <p className="font-display text-lg font-extrabold">{e.theme?.emoji ?? '✨'} {e.title}</p>
+          {e.artwork_path && <img src={artworkUrl(e.artwork_path)!} alt="" className="my-2 w-32 rounded-lg" loading="lazy" />}
           {start && <p className="text-sm text-ink-soft">{fmt.dateTime(start)}{e.session && e.kind === 'special_class' ? ` · ${e.session.title}` : ''}</p>}
         </div>
         <span className={`chip ${past && e.status === 'published' ? 'bg-canvas text-muted' : cls}`}>{past && e.status === 'published' ? 'Done' : label}</span>
