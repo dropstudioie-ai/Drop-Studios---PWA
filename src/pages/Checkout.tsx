@@ -16,6 +16,7 @@ import { EmptyState, ErrorNotice, Notice, PageSpinner, Spinner } from '../compon
 import { useAuth } from '../auth/AuthProvider';
 import { StudioPhoto } from '../components/StudioPhoto';
 import { PhoneGate } from '../components/PhoneGate';
+import { PhotoGate } from '../components/PhotoGate';
 
 export default function Checkout() {
   const { code = '' } = useParams();
@@ -121,7 +122,7 @@ export default function Checkout() {
         </section>
       )}
 
-      {needsPhoto && <div className="mt-4"><Notice tone="warn">{messageFor('profile_photo_required')} <Link className="font-semibold underline" to="/account#photo">Add your photo</Link></Notice></div>}
+      {needsPhoto && <div className="mt-4"><PhotoGate /></div>}
       {introBlocked && <div className="mt-4"><Notice tone="warn">The Intro Offer is for first-time customers only. <Link className="font-semibold underline" to="/memberships">See other memberships</Link></Notice></div>}
 
       {needsStyle && (

@@ -12,6 +12,7 @@ import { fmt } from '../domain/time';
 import { renewalLink, renewalOffer, type RenewalOffer } from '../domain/renewal';
 import { useAuth } from '../auth/AuthProvider';
 import { PhoneGate } from './PhoneGate';
+import { PhotoGate } from './PhotoGate';
 import { ClockIcon, UserIcon } from './icons';
 import { ErrorNotice, Notice, Sheet, Spinner, useToast } from './ui';
 
@@ -37,6 +38,7 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
   const auth = useAuth();
   const profile = auth.profile;
   const [askPhone, setAskPhone] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const userId = auth.session?.user.id;
   const isStaff = auth.isStaff;
   const [staffFree, setStaffFree] = useState(false);
@@ -68,7 +70,7 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
       .catch((e) => live && setError((e as Error).message))
       .finally(() => live && setLoading(false));
     return () => { live = false; };
-  }, [session, userId, isStaff]);
+  }, [session, userId, isStaff, reloadKey]);
 
   if (!session) return null;
   const start = new Date(session.starts_at);
@@ -241,12 +243,7 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
           </div>
         )}
 
-        {needsPhoto && !staffMode && scheduled && !opts?.session_issue && (
-          <div className="space-y-3">
-            <Notice tone="warn">{messageFor('profile_photo_required')}</Notice>
-            <Link to="/account#photo" className="btn-accent w-full">Add profile photo</Link>
-          </div>
-        )}
+        {needsPhoto && !staffMode && scheduled && <PhotoGate onAdded={() => setReloadKey((k) => k + 1)} />}
 
         {/* Special event: buy a ticket */}
         {opts && canAct && scheduled && session.is_special && (
