@@ -61,15 +61,23 @@ export function generateOptions(b: Brief): Design[] {
   const bgFill: Fill = grad([m.bg, m.bg2], 160);
   const TITLE = b.title.toUpperCase();
 
+  // Rough line count so wrapped lines never overlap the next row.
+  const lines = (text: string, size: number, width: number) => Math.max(1, Math.ceil((text.length * size * 0.56) / width));
   const details = (x: number, y: number, w: number, color: string, accent: string): DesignElement[] => {
     const out: DesignElement[] = [];
     let yy = y;
-    if (when) { out.push(ic('Calendar', x, yy, 46 * u, accent), t(when, x + 64 * u, yy + 4 * u, w - 64 * u, 34 * u, { fontFamily: m.body, fontWeight: 700, fill: color })); yy += 64 * u; }
-    if (b.instructor) { out.push(ic('User', x, yy, 46 * u, accent), t(`with ${b.instructor}`, x + 64 * u, yy + 4 * u, w - 64 * u, 34 * u, { fontFamily: m.body, fontWeight: 600, fill: color })); yy += 64 * u; }
-    if (b.price) { out.push(ic('Ticket', x, yy, 46 * u, accent), t(b.price, x + 64 * u, yy + 4 * u, w - 64 * u, 34 * u, { fontFamily: m.body, fontWeight: 700, fill: color })); yy += 64 * u; }
+    const row = (icon: string, text: string, weight: number) => {
+      const size = 34 * u, tw = w - 64 * u;
+      out.push(ic(icon, x, yy, 46 * u, accent), t(text, x + 64 * u, yy + 4 * u, tw, size, { fontFamily: m.body, fontWeight: weight, fill: color, lineHeight: 1.2 }));
+      yy += Math.max(64 * u, lines(text, size, tw) * size * 1.2 + 22 * u);
+    };
+    if (when) row('Calendar', when, 700);
+    if (b.instructor) row('User', `with ${b.instructor}`, 600);
+    if (b.price) row('Ticket', b.price, 700);
     if (wear) out.push(t(wear, x, yy + 10 * u, w, 26 * u, { fontFamily: m.body, fontWeight: 500, fill: color, opacity: 0.85, lineHeight: 1.35 }));
     return out;
   };
+  const pillW = Math.min(W - pad * 2, (b.kicker.length * 26 * 0.72 + 70) * u);
 
   const options: { name: string; pages: () => ReturnType<typeof page>[] }[] = [
     {
@@ -77,8 +85,8 @@ export function generateOptions(b: Brief): Design[] {
       pages: () => [page(m.bg, [
         ...photo(p1, 0, 0, W, H * 0.62),
         r(0, H * 0.38, W, H * 0.25, grad([`${m.bg}00`, m.bg], 180)),
-        sh('rect', pad, pad, 360 * u, 64 * u, m.accent, { cornerRadius: 32 * u }),
-        t(b.kicker.toUpperCase(), pad, pad + 17 * u, 360 * u, 26 * u, { fontFamily: m.body, fontWeight: 900, fill: m.bg, align: 'center', letterSpacing: 2 * u }),
+        sh('rect', pad, pad, pillW, 64 * u, m.accent, { cornerRadius: 32 * u }),
+        t(b.kicker.toUpperCase(), pad, pad + 17 * u, pillW, 26 * u, { fontFamily: m.body, fontWeight: 900, fill: m.bg, align: 'center', letterSpacing: 2 * u }),
         t(TITLE, pad, H * 0.56, W - pad * 2, fit(TITLE, W - pad * 2, 170 * u), { fontFamily: m.head, fontWeight: m.head === 'Anton' ? 400 : 900, fill: m.accent, lineHeight: 0.95 }),
         ...details(pad, H * 0.78, W - pad * 2, m.ink, m.accent),
       ])],
