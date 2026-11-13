@@ -47,7 +47,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     canInvoice: isAdmin && profile?.finance_access !== false,
     signIn: async (email, password) => {
       const { error } = await drop.auth.signInWithPassword({ email: email.trim(), password });
-      if (error) throw new Error(error.message === 'Invalid login credentials' ? 'Wrong email or password.' : error.message);
+      if (error) {
+        if (error.message === 'Invalid login credentials') throw new Error('Wrong email or password.');
+        if (/fetch|network/i.test(error.message)) throw new Error('Couldn’t reach Drop. Check your internet connection. If you use an ad or tracker blocker, allow this page (localhost) and try again.');
+        throw new Error(error.message);
+      }
     },
     signOut: async () => { await drop.auth.signOut(); },
   };

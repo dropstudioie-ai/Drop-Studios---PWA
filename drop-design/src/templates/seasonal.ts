@@ -1,4 +1,4 @@
-// Original templates for the important dates in the Drop calendar, plus post formats that
+// Original dance-studio templates for the important dates in the Drop calendar, plus post formats that
 // typically get the most engagement (giveaways, countdowns, save-worthy carousels, polls,
 // testimonials, meet-the-instructor). Laid out for 4:5 feed posts and 9:16 stories.
 import type { DesignElement, Fill } from '../model/types';
@@ -164,7 +164,7 @@ export const ENGAGEMENT_TEMPLATES: Template[] = [
     ])],
   },
   {
-    id: 'eng-carousel', name: 'Save this workout (carousel)', category: 'High Engagement', format: 'ig-portrait', tags: ['carousel', 'save', 'workout', 'tips', 'swipe'],
+    id: 'eng-carousel', name: 'Save this warm-up (carousel)', category: 'High Engagement', format: 'ig-portrait', tags: ['carousel', 'save', 'warm-up', 'tips', 'swipe'],
     pages: () => [
       page(LIME, [
         t('SAVE THIS 🔖', 70, 80, 600, 40, { fontWeight: 900, letterSpacing: 4, fill: INK }),

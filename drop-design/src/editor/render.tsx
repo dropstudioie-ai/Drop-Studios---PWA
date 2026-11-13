@@ -11,6 +11,7 @@ export interface NodeHandlers {
   draggable?: boolean;
   onPointerDown?: (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>, el: DesignElement) => void;
   onDblClick?: (el: DesignElement) => void;
+  onClick?: (el: DesignElement) => void;
   onDragStart?: (e: Konva.KonvaEventObject<DragEvent>, el: DesignElement) => void;
   onDragMove?: (e: Konva.KonvaEventObject<DragEvent>, el: DesignElement) => void;
   onDragEnd?: (e: Konva.KonvaEventObject<DragEvent>, el: DesignElement) => void;
@@ -176,6 +177,8 @@ export function ElementNode({ el, h, nested }: { el: DesignElement; h?: NodeHand
       onMouseDown: (e: Konva.KonvaEventObject<MouseEvent>) => h!.onPointerDown?.(e, el),
       onTouchStart: (e: Konva.KonvaEventObject<TouchEvent>) => h!.onPointerDown?.(e, el),
       onDblClick: () => h!.onDblClick?.(el),
+      onClick: () => h!.onClick?.(el),
+      onTap: () => h!.onClick?.(el),
       onDblTap: () => h!.onDblClick?.(el),
       onDragStart: (e: Konva.KonvaEventObject<DragEvent>) => h!.onDragStart?.(e, el),
       onDragMove: (e: Konva.KonvaEventObject<DragEvent>) => h!.onDragMove?.(e, el),

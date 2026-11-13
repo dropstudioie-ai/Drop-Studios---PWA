@@ -6,8 +6,8 @@
   "height": 900,
   "categories": [
    "drop",
-   "fitness",
-   "gym",
+   "dance",
+   "studio",
    "people"
   ]
  },
@@ -18,8 +18,8 @@
   "height": 900,
   "categories": [
    "drop",
-   "fitness",
-   "gym"
+   "dance",
+   "studio"
   ]
  },
  {
@@ -29,9 +29,8 @@
   "height": 900,
   "categories": [
    "drop",
-   "fitness",
-   "gym",
-   "wellness"
+   "dance",
+   "studio"
   ]
  },
  {
@@ -41,8 +40,8 @@
   "height": 900,
   "categories": [
    "drop",
-   "fitness",
-   "gym"
+   "dance",
+   "studio"
   ]
  },
  {
@@ -52,8 +51,8 @@
   "height": 900,
   "categories": [
    "drop",
-   "fitness",
-   "gym"
+   "dance",
+   "studio"
   ]
  },
  {
@@ -63,8 +62,8 @@
   "height": 900,
   "categories": [
    "drop",
-   "fitness",
-   "gym"
+   "dance",
+   "studio"
   ]
  },
  {
@@ -74,8 +73,8 @@
   "height": 900,
   "categories": [
    "drop",
-   "fitness",
-   "gym",
+   "dance",
+   "studio",
    "people"
   ]
  },
@@ -86,8 +85,8 @@
   "height": 900,
   "categories": [
    "drop",
-   "fitness",
-   "gym",
+   "dance",
+   "studio",
    "people"
   ]
  },
@@ -98,8 +97,8 @@
   "height": 900,
   "categories": [
    "drop",
-   "fitness",
-   "gym",
+   "dance",
+   "studio",
    "people"
   ]
  },
@@ -110,8 +109,8 @@
   "height": 900,
   "categories": [
    "drop",
-   "fitness",
-   "gym"
+   "dance",
+   "studio"
   ]
  },
  {
@@ -121,8 +120,8 @@
   "height": 900,
   "categories": [
    "drop",
-   "fitness",
-   "gym"
+   "dance",
+   "studio"
   ]
  },
  {
@@ -132,8 +131,8 @@
   "height": 900,
   "categories": [
    "drop",
-   "fitness",
-   "gym"
+   "dance",
+   "studio"
   ]
  },
  {
@@ -143,8 +142,8 @@
   "height": 1600,
   "categories": [
    "drop",
-   "fitness",
-   "gym",
+   "dance",
+   "studio",
    "people"
   ]
  },
@@ -155,9 +154,8 @@
   "height": 1600,
   "categories": [
    "drop",
-   "fitness",
-   "gym",
-   "wellness"
+   "dance",
+   "studio"
   ]
  },
  {
@@ -167,8 +165,8 @@
   "height": 1600,
   "categories": [
    "drop",
-   "fitness",
-   "gym"
+   "dance",
+   "studio"
   ]
  },
  {
@@ -178,8 +176,8 @@
   "height": 1600,
   "categories": [
    "drop",
-   "fitness",
-   "gym",
+   "dance",
+   "studio",
    "people"
   ]
  },
@@ -190,9 +188,8 @@
   "height": 1600,
   "categories": [
    "drop",
-   "fitness",
-   "gym",
-   "wellness"
+   "dance",
+   "studio"
   ]
  },
  {
@@ -202,8 +199,8 @@
   "height": 1600,
   "categories": [
    "drop",
-   "fitness",
-   "gym",
+   "dance",
+   "studio",
    "people"
   ]
  },
@@ -214,8 +211,8 @@
   "height": 1600,
   "categories": [
    "drop",
-   "fitness",
-   "gym",
+   "dance",
+   "studio",
    "people"
   ]
  },
@@ -226,8 +223,8 @@
   "height": 1600,
   "categories": [
    "drop",
-   "fitness",
-   "gym",
+   "dance",
+   "studio",
    "people"
   ]
  },
@@ -238,8 +235,8 @@
   "height": 1165,
   "categories": [
    "drop",
-   "fitness",
-   "gym",
+   "dance",
+   "studio",
    "people"
   ]
  },
@@ -250,8 +247,8 @@
   "height": 1458,
   "categories": [
    "drop",
-   "fitness",
-   "gym"
+   "dance",
+   "studio"
   ]
  },
  {
@@ -261,8 +258,8 @@
   "height": 1600,
   "categories": [
    "drop",
-   "fitness",
-   "gym"
+   "dance",
+   "studio"
   ]
  },
  {
@@ -272,8 +269,8 @@
   "height": 1600,
   "categories": [
    "drop",
-   "fitness",
-   "gym"
+   "dance",
+   "studio"
   ]
  },
  {
@@ -283,8 +280,8 @@
   "height": 1600,
   "categories": [
    "drop",
-   "fitness",
-   "gym",
+   "dance",
+   "studio",
    "people"
   ]
  },
@@ -295,8 +292,8 @@
   "height": 1333,
   "categories": [
    "drop",
-   "fitness",
-   "gym"
+   "dance",
+   "studio"
   ]
  },
  {
@@ -306,8 +303,8 @@
   "height": 1333,
   "categories": [
    "drop",
-   "fitness",
-   "gym"
+   "dance",
+   "studio"
   ]
  },
  {
@@ -317,8 +314,8 @@
   "height": 1600,
   "categories": [
    "drop",
-   "fitness",
-   "gym",
+   "dance",
+   "studio",
    "people"
   ]
  },
@@ -422,70 +419,66 @@
   ]
  },
  {
-  "src": "/library/vector/illo-bike.svg",
-  "name": "Bike",
+  "src": "/library/vector/illo-dancer.svg",
+  "name": "Dancer",
   "width": 1080,
   "height": 1080,
   "categories": [
-   "equipment",
-   "fitness"
+   "dance"
   ]
  },
  {
-  "src": "/library/vector/illo-bottle.svg",
-  "name": "Bottle",
+  "src": "/library/vector/illo-disco-ball.svg",
+  "name": "Disco ball",
   "width": 1080,
   "height": 1080,
   "categories": [
-   "equipment",
-   "fitness"
+   "party"
   ]
  },
  {
-  "src": "/library/vector/illo-dumbbell.svg",
-  "name": "Dumbbell",
+  "src": "/library/vector/illo-headphones.svg",
+  "name": "Headphones",
   "width": 1080,
   "height": 1080,
   "categories": [
-   "equipment",
-   "fitness"
+   "music"
   ]
  },
  {
-  "src": "/library/vector/illo-heart-rate.svg",
-  "name": "Heart rate",
+  "src": "/library/vector/illo-high-heel.svg",
+  "name": "High heel",
   "width": 1080,
   "height": 1080,
   "categories": [
-   "wellness"
+   "dance"
   ]
  },
  {
-  "src": "/library/vector/illo-kettlebell.svg",
-  "name": "Kettlebell",
+  "src": "/library/vector/illo-microphone.svg",
+  "name": "Microphone",
   "width": 1080,
   "height": 1080,
   "categories": [
-   "equipment",
-   "fitness"
+   "music"
   ]
  },
  {
-  "src": "/library/vector/illo-laptop-wellness.svg",
-  "name": "Laptop wellness",
+  "src": "/library/vector/illo-music-notes.svg",
+  "name": "Music notes",
   "width": 1080,
   "height": 1080,
   "categories": [
-   "corporate"
+   "music"
   ]
  },
  {
-  "src": "/library/vector/illo-plant.svg",
-  "name": "Plant",
+  "src": "/library/vector/illo-sneaker.svg",
+  "name": "Sneaker",
   "width": 1080,
   "height": 1080,
   "categories": [
-   "wellness"
+   "dance"
   ]
  },
  {
@@ -494,7 +487,7 @@
   "width": 1080,
   "height": 1080,
   "categories": [
-   "wellness"
+   "party"
   ]
  },
  {
@@ -503,17 +496,16 @@
   "width": 1080,
   "height": 1080,
   "categories": [
-   "corporate"
+   "party"
   ]
  },
  {
-  "src": "/library/vector/illo-yoga-mat.svg",
-  "name": "Yoga mat",
+  "src": "/library/vector/illo-vinyl.svg",
+  "name": "Vinyl",
   "width": 1080,
   "height": 1080,
   "categories": [
-   "equipment",
-   "fitness"
+   "music"
   ]
  },
  {

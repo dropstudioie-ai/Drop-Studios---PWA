@@ -4,7 +4,7 @@ import Konva from 'konva';
 import { currentPage, useEditor } from '../store/editor';
 import { PageContent, type NodeHandlers } from './render';
 import type { DesignElement, TextElement } from '../model/types';
-import { bounds, scaleElement } from '../model/elements';
+import { bounds, scaleElement, walkElements } from '../model/elements';
 import { dropPayloadToElements, DRAG_MIME } from './dropPayload';
 import { importFiles } from '../assets/upload';
 
@@ -27,6 +27,11 @@ export function snapBox(box: { x: number; y: number; width: number; height: numb
   return { dx: best.dx, dy: bestY.dy, guides };
 }
 
+let typedStart: string | null = null;
+/** Open the text editor because the user started typing; their first character replaces the text. */
+export function startTypingInto(id: string, firstChar: string) { typedStart = firstChar; useEditor.getState().setEditingText(id); }
+function takeTypedStart() { const v = typedStart; typedStart = null; return v; }
+
 export default function Canvas() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
@@ -36,6 +41,7 @@ export default function Canvas() {
   const [guides, setGuides] = useState<Guide[]>([]);
   const [band, setBand] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const dragStart = useRef<Map<string, { x: number; y: number }>>(new Map());
+  const wasOnlySelected = useRef(false);
 
   const design = useEditor((s) => s.design);
   const pageIndex = useEditor((s) => s.pageIndex);
@@ -49,6 +55,23 @@ export default function Canvas() {
   const api = useEditor.getState;
 
   const W = design?.width ?? 1080, H = design?.height ?? 1080;
+  // Web fonts can arrive after the first draw: when a font the design uses finishes loading,
+  // re-render the page once so text uses the right font and size.
+  const [fontEpoch, setFontEpoch] = useState(0);
+  const fontKey = useMemo(() => {
+    const set = new Set<string>();
+    design?.pages.forEach((p) => walkElements(p.elements, (e) => { if (e.type === 'text') set.add(`${e.italic ? 'italic ' : ''}${e.fontWeight} 40px "${e.fontFamily}"`); }));
+    return [...set].sort().join('|');
+  }, [design]);
+  useEffect(() => {
+    if (!('fonts' in document) || !fontKey) return;
+    const specs = fontKey.split('|');
+    const missing = specs.filter((f) => !document.fonts.check(f));
+    if (!missing.length) return;
+    let live = true;
+    void Promise.all(missing.map((f) => document.fonts.load(f).catch(() => []))).then(() => { if (live) setFontEpoch((n) => n + 1); });
+    return () => { live = false; };
+  }, [fontKey]);
   // Exposed for automated browser tests (screen position of the page).
   useEffect(() => { (window as unknown as { __dropCanvas?: unknown }).__dropCanvas = { pan, zoom }; }, [pan, zoom]);
 
@@ -90,7 +113,7 @@ export default function Canvas() {
     const nodes = selectedEls.filter((e) => !e.locked && !e.hidden && e.id !== editingTextId).map((e) => st.findOne(`#${e.id}`)).filter(Boolean) as Konva.Node[];
     tr.nodes(nodes);
     tr.getLayer()?.batchDraw();
-  }, [selectedEls, editingTextId, page]);
+  }, [selectedEls, editingTextId, page, fontEpoch]);
 
   const toPage = (p: { x: number; y: number }) => ({ x: (p.x - pan.x) / zoom, y: (p.y - pan.y) / zoom });
 
@@ -98,11 +121,20 @@ export default function Canvas() {
     onPointerDown: (e, el) => {
       e.cancelBubble = true;
       const ev = e.evt as MouseEvent;
+      const st = api();
+      wasOnlySelected.current = st.selectedIds.length === 1 && st.selectedIds[0] === el.id;
       const additive = ev.shiftKey || ev.metaKey || ev.ctrlKey;
       if (additive) api().select([el.id], true);
       else if (!api().selectedIds.includes(el.id)) api().select([el.id]);
     },
-    onDblClick: (el) => { if (el.type === 'text' && !el.locked) api().setEditingText(el.id); },
+    onDblClick: (el) => {
+      if (el.locked) return;
+      if (el.type === 'text') api().setEditingText(el.id);
+      // Double-clicking a group ungroups it so each piece (and its text) can be edited.
+      if (el.type === 'group') { api().select([el.id]); api().ungroup(); }
+    },
+    // Clicking a text that is already selected starts editing it (no double-click needed).
+    onClick: (el) => { if (el.type === 'text' && !el.locked && wasOnlySelected.current) api().setEditingText(el.id); },
     onDragStart: (_e, el) => {
       if (!api().selectedIds.includes(el.id)) api().select([el.id]);
       const st = stageRef.current!;
@@ -249,7 +281,7 @@ export default function Canvas() {
         <Layer>
           {/* page shadow */}
           <Rect x={pan.x} y={pan.y} width={W * zoom} height={H * zoom} fill="#fff" shadowColor="#0f172a" shadowBlur={24} shadowOpacity={0.12} shadowOffsetY={6} listening={false} />
-          <Group x={pan.x} y={pan.y} scaleX={zoom} scaleY={zoom} clipX={0} clipY={0} clipWidth={W} clipHeight={H} key={`${design.id}-${pageIndex}`}>
+          <Group x={pan.x} y={pan.y} scaleX={zoom} scaleY={zoom} clipX={0} clipY={0} clipWidth={W} clipHeight={H} key={`${design.id}-${pageIndex}-${fontEpoch}`}>
             <PageContent page={page} width={W} height={H} handlers={handlers} />
           </Group>
           <Group x={pan.x} y={pan.y} scaleX={zoom} scaleY={zoom} listening={false}>
@@ -282,8 +314,9 @@ export default function Canvas() {
 
 function TextEditor({ el, stage, zoom }: { el: TextElement; stage: Konva.Stage; zoom: number }) {
   const ref = useRef<HTMLTextAreaElement>(null);
-  const [value, setValue] = useState(el.text);
-  const valueRef = useRef(el.text);
+  // Typing while a text is selected opens the editor with that first letter replacing the words.
+  const [value, setValue] = useState(() => takeTypedStart() ?? el.text);
+  const valueRef = useRef(value);
   const original = useRef(el.text);
   const committed = useRef(false);
   const node = stage.findOne(`#${el.id}`);
@@ -299,7 +332,11 @@ function TextEditor({ el, stage, zoom }: { el: TextElement; stage: Konva.Stage; 
     committed.current = false; // (React may run effects twice in development)
     return () => commit();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { const t = ref.current; if (t) { t.focus(); t.select(); } }, []);
+  useEffect(() => {
+    const t = ref.current; if (!t) return;
+    t.focus();
+    if (value === el.text) t.select(); else t.setSelectionRange(value.length, value.length);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { const t = ref.current; if (t) { t.style.height = 'auto'; t.style.height = `${t.scrollHeight}px`; } }, [value]);
   const done = () => { commit(); useEditor.getState().setEditingText(null); };
   return (

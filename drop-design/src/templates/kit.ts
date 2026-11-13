@@ -5,7 +5,7 @@ import { formatById } from '../model/types';
 import { makeIcon, makeImage, makeShape, makeText, uid } from '../model/elements';
 import { lib } from '../assets/library';
 
-export type TemplateCategory = 'Fitness and Gym' | 'Important Dates' | 'High Engagement' | 'Corporate Wellness' | 'Social Media' | 'Business and Presentations';
+export type TemplateCategory = 'Important Dates' | 'High Engagement' | 'Dance Classes' | 'Parties & Corporate' | 'Social Media' | 'Business and Presentations';
 
 export interface Template {
   id: string;

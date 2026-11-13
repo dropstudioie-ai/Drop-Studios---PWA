@@ -4,10 +4,10 @@ type IconNode = [string, Record<string, string | number>][];
 const all = lucide as unknown as Record<string, IconNode>;
 
 /** Fitness-friendly icons shown first; search covers the full open-source (ISC) Lucide set. */
-export const FEATURED_ICONS = ['Dumbbell', 'HeartPulse', 'Bike', 'Timer', 'Flame', 'Trophy', 'Medal', 'Zap', 'Activity', 'Footprints',
-  'Heart', 'Apple', 'Salad', 'Droplets', 'Sun', 'Moon', 'Smile', 'Users', 'User', 'Calendar', 'Clock', 'MapPin', 'Phone', 'Mail',
-  'Instagram', 'Facebook', 'Linkedin', 'Star', 'Sparkles', 'Music', 'Headphones', 'Target', 'TrendingUp', 'Award', 'Crown', 'Gift',
-  'Check', 'CircleCheck', 'ArrowRight', 'ChevronRight', 'Leaf', 'Brain', 'Coffee', 'Briefcase', 'Building2', 'Megaphone', 'PartyPopper', 'Ticket'];
+export const FEATURED_ICONS = ['Music', 'Music2', 'Music4', 'Headphones', 'Mic', 'Disc3', 'Speaker', 'Radio', 'Footprints', 'Sparkles',
+  'Star', 'Heart', 'Flame', 'Zap', 'Crown', 'Trophy', 'Medal', 'Award', 'PartyPopper', 'Ticket', 'Video', 'Camera', 'Clapperboard',
+  'Smile', 'Users', 'User', 'Calendar', 'Clock', 'Timer', 'MapPin', 'Phone', 'Mail', 'AtSign', 'Share2', 'MessageCircle',
+  'Gift', 'Sun', 'Moon', 'Check', 'CircleCheck', 'ArrowRight', 'ChevronRight', 'Megaphone', 'Ghost', 'TreePine', 'Clover', 'Egg', 'Rainbow'];
 
 export const iconNames = () => Object.keys(all).filter((k) => Array.isArray(all[k]) && /^[A-Z]/.test(k));
 

@@ -12,12 +12,12 @@ const PRESETS: { label: string; preview: React.CSSProperties; el: Partial<TextEl
   { label: 'Add body text', preview: { fontFamily: 'Inter', fontWeight: 400, fontSize: 14 }, el: { text: 'Add a little bit of body text', fontSize: 34, fontWeight: 400, width: 640, lineHeight: 1.4 } },
 ];
 const COMBOS: { label: string; preview: React.CSSProperties; el: Partial<TextElement> & { text: string } }[] = [
-  { label: 'HIIT', preview: { fontFamily: 'Anton', fontSize: 30 }, el: { text: 'HIIT', fontFamily: 'Anton', fontWeight: 400, fontSize: 220, width: 700 } },
-  { label: 'Power', preview: { fontFamily: 'Archivo Black', fontSize: 22, fontStyle: 'italic' }, el: { text: 'POWER HOUR', fontFamily: 'Archivo Black', fontWeight: 400, italic: true, fontSize: 120, width: 900 } },
-  { label: 'Elegant', preview: { fontFamily: 'Playfair Display', fontSize: 22, fontWeight: 700 }, el: { text: 'Stretch & Reset', fontFamily: 'Playfair Display', fontWeight: 700, fontSize: 110, width: 900 } },
+  { label: 'HIP HOP', preview: { fontFamily: 'Anton', fontSize: 28 }, el: { text: 'HIP HOP', fontFamily: 'Anton', fontWeight: 400, fontSize: 200, width: 900 } },
+  { label: 'Dance night', preview: { fontFamily: 'Archivo Black', fontSize: 22, fontStyle: 'italic' }, el: { text: 'DANCE NIGHT', fontFamily: 'Archivo Black', fontWeight: 400, italic: true, fontSize: 120, width: 900 } },
+  { label: 'Elegant', preview: { fontFamily: 'Playfair Display', fontSize: 22, fontWeight: 700 }, el: { text: 'First Dance', fontFamily: 'Playfair Display', fontWeight: 700, fontSize: 110, width: 900 } },
   { label: 'Spaced', preview: { fontFamily: 'Inter', fontSize: 13, letterSpacing: 4, fontWeight: 800 }, el: { text: 'NEW CLASS', fontWeight: 800, fontSize: 40, letterSpacing: 12, width: 600 } },
-  { label: 'Marker', preview: { fontFamily: 'Permanent Marker', fontSize: 22 }, el: { text: 'Let’s go!', fontFamily: 'Permanent Marker', fontWeight: 400, fontSize: 120, width: 700, fill: '#ff2d55' } },
-  { label: 'Bebas', preview: { fontFamily: 'Bebas Neue', fontSize: 26 }, el: { text: 'PERSONAL TRAINING', fontFamily: 'Bebas Neue', fontWeight: 400, fontSize: 130, width: 1000 } },
+  { label: 'Marker', preview: { fontFamily: 'Permanent Marker', fontSize: 22 }, el: { text: 'Let’s dance!', fontFamily: 'Permanent Marker', fontWeight: 400, fontSize: 120, width: 700, fill: '#ff2d55' } },
+  { label: 'Bebas', preview: { fontFamily: 'Bebas Neue', fontSize: 26 }, el: { text: 'HEELS CLASS', fontFamily: 'Bebas Neue', fontWeight: 400, fontSize: 130, width: 1000 } },
 ];
 
 function build(el: Partial<TextElement> & { text: string }) {

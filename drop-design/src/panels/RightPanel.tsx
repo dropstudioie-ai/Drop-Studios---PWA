@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalSpaceAround, AlignStartHorizontal,
   AlignStartVertical, AlignVerticalSpaceAround, ArrowDownToLine, ArrowUpToLine, Bold, ChevronDown, ChevronUp, Copy, Eye, EyeOff,
@@ -20,12 +20,24 @@ const Section = ({ title, children }: { title: string; children: ReactNode }) =>
 const Tool = ({ title, onClick, active, children, disabled }: { title: string; onClick: () => void; active?: boolean; children: ReactNode; disabled?: boolean }) => (
   <button title={title} aria-label={title} aria-pressed={active} disabled={disabled} onClick={onClick} className={`icon-btn ${active ? 'bg-brand-50 text-brand-700 ring-1 ring-brand-100' : ''}`}>{children}</button>
 );
+/** Number box that lets you clear it and type freely; the change applies once it's a valid number. */
 function Num({ label, value, onChange, step = 1, min }: { label: string; value: number; onChange: (v: number) => void; step?: number; min?: number }) {
+  const shown = String(Math.round(value * 10) / 10);
+  const [text, setText] = useState(shown);
+  const [focused, setFocused] = useState(false);
+  useEffect(() => { if (!focused) setText(shown); }, [shown, focused]);
+  const apply = (t: string) => {
+    const v = Number(t);
+    if (t.trim() !== '' && Number.isFinite(v) && (min == null || v >= min)) onChange(v);
+  };
   return (
     <label className="block">
       <span className="text-[11px] font-semibold text-muted">{label}</span>
-      <input type="number" className="input px-2 py-1.5 tabular-nums" value={Math.round(value * 10) / 10} step={step} min={min}
-        onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v)) onChange(v); }} aria-label={label} />
+      <input type="number" className="input px-2 py-1.5 tabular-nums" value={text} step={step} min={min} aria-label={label}
+        onFocus={() => setFocused(true)}
+        onBlur={() => { setFocused(false); setText(shown); }}
+        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+        onChange={(e) => { setText(e.target.value); apply(e.target.value); }} />
     </label>
   );
 }
@@ -150,6 +162,7 @@ function TextProps({ el }: { el: TextElement }) {
   const fonts = FONTS.includes(el.fontFamily) ? FONTS : [el.fontFamily, ...FONTS];
   return (
     <Section title="Text">
+      <button className="btn-primary w-full" onClick={() => useEditor.getState().setEditingText(el.id)} disabled={el.locked} data-testid="edit-text"><Type size={16} />Edit text</button>
       <select className="input" value={el.fontFamily} onChange={(e) => patch({ fontFamily: e.target.value })} aria-label="Font" style={{ fontFamily: el.fontFamily }}>
         {fonts.map((f) => <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>)}
       </select>
@@ -185,7 +198,7 @@ function TextProps({ el }: { el: TextElement }) {
           <button className="btn-ghost btn-sm" onClick={() => patch({ fill: 'rgba(0,0,0,0)' })}>Hollow letters (outline only)</button>
         </div>
       )}
-      <p className="text-xs text-muted">Double-click the text on the page (or press Enter) to change the words.</p>
+      <p className="text-xs text-muted">Or just start typing, or click the selected text again. Click outside the box when you’re done.</p>
     </Section>
   );
 }

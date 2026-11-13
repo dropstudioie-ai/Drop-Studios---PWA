@@ -8,6 +8,10 @@ import { Toolbar } from '../editor/Toolbar';
 import { LeftSidebar } from '../panels/LeftSidebar';
 import { RightPanel } from '../panels/RightPanel';
 import { PageStrip } from '../editor/PageStrip';
+import { importFiles } from '../assets/upload';
+import { notifyAssets } from '../lib/useAssets';
+import { dropPayloadToElements } from '../editor/dropPayload';
+import { startTypingInto } from '../editor/Canvas';
 
 const Canvas = lazy(() => import('../editor/Canvas'));
 
@@ -47,6 +51,28 @@ function useAutosave() {
   }, []);
 }
 
+function usePasteImages(toast: (t: string, tone?: 'ok' | 'error' | 'info') => void) {
+  useEffect(() => {
+    const onPaste = async (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target?.closest?.('input, textarea, [contenteditable="true"]')) return;
+      const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith('image/'));
+      if (!files.length) { useEditor.getState().paste(); return; } // copied elements
+      e.preventDefault();
+      try {
+        const added = await importFiles(files, 'photo');
+        notifyAssets();
+        const s = useEditor.getState();
+        if (!s.design) return;
+        const els = (await Promise.all(added.map((a) => dropPayloadToElements({ kind: 'asset', id: a.id }, null, { width: s.design!.width, height: s.design!.height })))).flat();
+        if (els.length) s.addElements(els);
+      } catch (err) { toast((err as Error).message, 'error'); }
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, [toast]);
+}
+
 function useShortcuts() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -59,7 +85,7 @@ function useShortcuts() {
       else if (mod && k === 'y') { e.preventDefault(); s.redo(); }
       else if (mod && k === 'c') { s.copy(); }
       else if (mod && k === 'x') { s.cut(); }
-      else if (mod && k === 'v') { e.preventDefault(); s.paste(); }
+      else if (mod && k === 'v') { /* handled on the paste event so images from other apps work too */ }
       else if (mod && k === 'd') { e.preventDefault(); s.duplicateSelected(); }
       else if (mod && k === 'g') { e.preventDefault(); if (e.shiftKey) s.ungroup(); else s.group(); }
       else if (mod && k === 'a') { e.preventDefault(); const p = s.design?.pages[s.pageIndex]; if (p) s.select(p.elements.filter((x) => !x.locked && !x.hidden).map((x) => x.id)); }
@@ -72,9 +98,13 @@ function useShortcuts() {
         e.preventDefault();
         const step = e.shiftKey ? 10 : 1;
         s.nudge(k === 'arrowleft' ? -step : k === 'arrowright' ? step : 0, k === 'arrowup' ? -step : k === 'arrowdown' ? step : 0);
-      } else if (k === 'enter' && s.selectedIds.length === 1) {
+      } else if (s.selectedIds.length === 1 && !mod && !e.altKey && (k === 'enter' || e.key.length === 1)) {
+        // With one text selected: Enter edits it, and typing a letter starts replacing its words.
         const el = s.design?.pages[s.pageIndex].elements.find((x) => x.id === s.selectedIds[0]);
-        if (el?.type === 'text' && !el.locked) { e.preventDefault(); s.setEditingText(el.id); }
+        if (el?.type === 'text' && !el.locked) {
+          e.preventDefault();
+          if (k === 'enter') s.setEditingText(el.id); else startTypingInto(el.id, e.key);
+        }
       }
     };
     window.addEventListener('keydown', onKey);
@@ -103,6 +133,7 @@ export default function EditorPage() {
 
   useAutosave();
   useShortcuts();
+  usePasteImages(toast);
 
   if (missing) {
     return (

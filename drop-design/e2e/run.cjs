@@ -154,8 +154,37 @@ async function mockDrop(ctx, role, log) {
   e = await els(page);
   check('typing is kept when clicking away', e[0].text === 'Summer HIIT Club', e[0].text);
   await ed(page, () => { const s = window.__dropEditor.getState(); s.select([s.design.pages[0].elements[0].id]); });
+  // Just typing with a text selected starts editing (first letter replaces the words).
+  await page.keyboard.type('Heels Night');
+  await page.waitForSelector('[data-testid=text-editor]');
+  await page.locator('[data-testid=canvas]').click({ position: { x: 6, y: 6 } });
+  e = await els(page);
+  check('typing on a selected text edits it', e[0].text === 'Heels Night', e[0].text);
+  // The Edit text button works too.
+  await ed(page, () => { const s = window.__dropEditor.getState(); s.select([s.design.pages[0].elements[0].id]); });
+  await page.click('[data-testid=edit-text]');
+  await page.waitForSelector('[data-testid=text-editor]');
+  await page.keyboard.press('Control+A'); await page.keyboard.type('Summer HIIT Club');
+  await page.keyboard.press('Escape');
+  check('Edit text button', (await els(page))[0].text === 'Summer HIIT Club');
+  // Clicking an already-selected text starts editing.
+  {
+    const t0 = (await els(page))[0];
+    const b0 = await page.locator('[data-testid=canvas]').boundingBox();
+    const c0 = await page.evaluate(() => window.__dropCanvas);
+    const px = b0.x + c0.pan.x + (t0.x + 30) * c0.zoom, py = b0.y + c0.pan.y + (t0.y + t0.height / 2) * c0.zoom;
+    await page.mouse.click(px, py); await page.waitForTimeout(400); await page.mouse.click(px, py);
+    await page.waitForSelector('[data-testid=text-editor]', { timeout: 3000 }).catch(() => {});
+    check('clicking selected text starts editing', (await page.locator('[data-testid=text-editor]').count()) === 1);
+    await page.keyboard.press('Escape');
+  }
+  await ed(page, () => { const s = window.__dropEditor.getState(); s.select([s.design.pages[0].elements[0].id]); });
   await page.selectOption('select[aria-label=Font]', 'Anton');
-  await page.fill('input[aria-label=Size]', '120');
+  // Clearing the size box and typing a new number must work.
+  await page.click('input[aria-label=Size]');
+  await page.keyboard.press('Control+A'); await page.keyboard.press('Backspace');
+  await page.keyboard.type('120');
+  await page.keyboard.press('Enter');
   e = await els(page);
   check('font family and size changed', e[0].fontFamily === 'Anton' && e[0].fontSize === 120);
 
@@ -237,6 +266,18 @@ async function mockDrop(ctx, role, log) {
   check('uploaded photo placed on the page', e.some((x) => x.type === 'image' && x.src.startsWith('asset:')));
   await page.fill('input[type=range][aria-label="Rounded corners"]', '40').catch(() => {});
 
+  // Pasting an image copied from another app adds it to the page.
+  {
+    const before = (await els(page)).length;
+    await page.evaluate(async () => {
+      const c = document.createElement('canvas'); c.width = 200; c.height = 120; c.getContext('2d').fillRect(0, 0, 200, 120);
+      const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+      const dt = new DataTransfer(); dt.items.add(new File([blob], 'screenshot.png', { type: 'image/png' }));
+      window.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt }));
+    });
+    await page.waitForTimeout(800);
+    check('pasting an image from another app', (await els(page)).length === before + 1);
+  }
   // Library image + background + icon
   await page.click('button[aria-pressed]:has-text("Images")');
   await page.locator('button[title^="Drop Studios photo 3"]').first().click();
@@ -308,14 +349,14 @@ async function mockDrop(ctx, role, log) {
   // Templates
   if (want('templates')) {
   await page.goto(base);
-  await page.waitForSelector('[data-testid=template-hiit-core] img', { timeout: 30000 });
+  await page.waitForSelector('[data-testid=template-hip-hop-poster] img', { timeout: 30000 });
   await page.waitForTimeout(2500);
   await page.screenshot({ path: path.join(OUT, 'desktop-templates.png'), fullPage: true });
-  await page.click('[data-testid=template-hiit-core]');
+  await page.click('[data-testid=template-hip-hop-poster]');
   await page.waitForSelector('[data-testid=canvas] canvas');
   await page.waitForTimeout(1200);
   e = await els(page);
-  check('template opens with editable elements', e.length > 8 && e.some((x) => x.type === 'text' && x.text === 'HIIT'));
+  check('template opens with editable elements', e.length > 8 && e.some((x) => x.type === 'text' && x.text === 'HIP HOP'));
   await page.screenshot({ path: path.join(OUT, 'desktop-template-editor.png') });
   check('dashboard lists saved designs', true);
 
