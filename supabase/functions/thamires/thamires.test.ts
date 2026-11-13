@@ -28,8 +28,8 @@ Deno.test('drafts a reply with live knowledge and the disclosure note', async ()
 Deno.test('refusals, bad JSON and sensitive topics go to a person', async () => {
   assertEquals(await draftReply({ client: fakeClient('', 'refusal') }, { history: [{ from: 'member', text: 'x' }], knowledge: {}, disclose: false }), HANDOFF);
   assertEquals(await draftReply({ client: fakeClient('not json') }, { history: [{ from: 'member', text: 'x' }], knowledge: {}, disclose: false }), HANDOFF);
-  assert(!canAutoSend({ reply: 'ok', needs_human: false, reason: '', topic: 'refund_or_payment' }));
-  assert(!canAutoSend({ reply: 'ok', needs_human: true, reason: '', topic: 'prices' }));
+  assert(!canAutoSend({ ...HANDOFF, needs_human: false, topic: 'refund_or_payment' }));
+  assert(!canAutoSend({ ...HANDOFF, needs_human: true, topic: 'prices' }));
 });
 
 Deno.test('webhook signature check', async () => {
@@ -49,4 +49,18 @@ Deno.test('parses DMs, story mentions, story replies and post mentions; ignores 
     { sender: { id: 'ME' }, message: { mid: 'm4', text: 'our reply', is_echo: true } },
   ], changes: [{ field: 'mentions', value: { media_id: 'post1' } }] }] }, 'ME');
   assertEquals(ev.map((e) => e.type), ['message', 'story_mention', 'story_reply', 'post_mention']);
+});
+
+Deno.test('talks in the person’s native language and tells the team what it says', async () => {
+  assertStringIncludes(PERSONA, 'native language');
+  assertStringIncludes(PERSONA, 'Prefere falar em português?');
+  assertStringIncludes(PERSONA, 'offer once');
+  await draftReply({ client: fakeClient({ reply: 'Olá! Sou a Thamires…', needs_human: false, reason: 'x', topic: 'timetable', language: 'Portuguese (Brazil)', offered_language: false, translation_en: 'Them: When is heels? / Reply: Hi! I’m Thamires…' }) },
+    { history: [{ from: 'member', text: 'Quando é a aula de heels?' }], knowledge: {}, disclose: true, person: { name: 'João Silva', username: 'joaos' }, language: 'Portuguese (Brazil)', languageOffered: true });
+  const sys = JSON.stringify(lastReq.system);
+  assertStringIncludes(sys, 'João Silva @joaos');
+  assertStringIncludes(sys, 'preferred language in this conversation: Portuguese (Brazil)');
+  assertStringIncludes(sys, 'already offered to switch language');
+  const schema = JSON.stringify(lastReq.output_config);
+  assertStringIncludes(schema, 'translation_en');
 });

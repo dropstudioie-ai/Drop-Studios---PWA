@@ -20,11 +20,21 @@ async function settings(db: Db) {
   return data as { enabled: boolean; auto_reply: boolean; auto_tag_thanks: boolean; daily_story: boolean; story_hour: number } | null;
 }
 
-async function draft(history: Turn[], disclose: boolean, task: 'dm' | 'thanks', db: Db): Promise<Draft | null> {
+interface Person { username?: string | null; display_name?: string | null; language?: string | null; language_offered?: boolean }
+async function draft(history: Turn[], disclose: boolean, task: 'dm' | 'thanks', db: Db, who: Person = {}): Promise<Draft | null> {
   const client = anthropic();
   if (!client) return null;
   const { data: knowledge } = await db.rpc('assistant_knowledge');
-  return draftReply({ client }, { history, knowledge, disclose, task });
+  return draftReply({ client }, { history, knowledge, disclose, task, person: { username: who.username, name: who.display_name }, language: who.language, languageOffered: who.language_offered });
+}
+
+/** Remember the language the conversation settled on, and that she offered to switch. */
+async function rememberLanguage(db: Db, threadId: string, d: Draft, history: Turn[]) {
+  const patch: Record<string, unknown> = {};
+  if (d.offered_language) patch.language_offered = true;
+  // Only lock in a language once the person has written in it (not just because she offered it).
+  if (d.language && history.some((t) => t.from === 'member') && !d.offered_language) patch.language = d.language;
+  if (Object.keys(patch).length) await db.from('assistant_threads').update(patch).eq('id', threadId);
 }
 
 async function thread(db: Db, igUserId: string) {
@@ -33,7 +43,7 @@ async function thread(db: Db, igUserId: string) {
   const cfg = igConfig();
   const prof = cfg ? await ig.profile(cfg, igUserId) : {};
   const { data } = await db.from('assistant_threads').upsert({ ig_user_id: igUserId, username: prof.username ?? null, display_name: prof.name ?? null }, { onConflict: 'ig_user_id' }).select().single();
-  return data as { id: string; disclosed: boolean; username: string | null };
+  return data as { id: string; disclosed: boolean; username: string | null; display_name: string | null; language: string | null; language_offered: boolean };
 }
 
 async function history(db: Db, threadId: string): Promise<Turn[]> {
@@ -86,7 +96,7 @@ async function handleEvent(db: Db, ev: IgEvent) {
 
   if (ev.type === 'story_mention') {
     const { data: row } = await db.from('assistant_mentions').insert({ ig_media_id: ev.mid, kind: 'story', ig_user_id: ev.from, username: t.username, media_url: ev.url }).select().single();
-    const d = await draft([{ from: 'member', text: `@${t.username ?? 'someone'} mentioned Drop in their Instagram Story.` }], !t.disclosed, 'thanks', db);
+    const d = await draft([{ from: 'member', text: `@${t.username ?? 'someone'} mentioned Drop in their Instagram Story.` }], !t.disclosed, 'thanks', db, t);
     if (!d || !row) return;
     await db.from('assistant_mentions').update({ reply_text: d.reply }).eq('id', row.id);
     if (s.auto_tag_thanks && !d.needs_human && cfg) {
@@ -97,9 +107,11 @@ async function handleEvent(db: Db, ev: IgEvent) {
     return;
   }
 
-  const d = await draft(await history(db, t.id), !t.disclosed, 'dm', db);
+  const hist = await history(db, t.id);
+  const d = await draft(hist, !t.disclosed, 'dm', db, t);
   if (!d) return;
-  const { data: out } = await db.from('assistant_messages').insert({ thread_id: t.id, direction: 'out', kind: 'dm', text: d.reply, status: 'draft', needs_human: d.needs_human, reason: d.reason }).select().single();
+  await rememberLanguage(db, t.id, d, hist);
+  const { data: out } = await db.from('assistant_messages').insert({ thread_id: t.id, direction: 'out', kind: 'dm', text: d.reply, status: 'draft', needs_human: d.needs_human, reason: d.reason, translation: d.translation_en || null }).select().single();
   if (d.needs_human) await db.from('assistant_threads').update({ status: 'needs_human' }).eq('id', t.id);
   if (s.auto_reply && canAutoSend(d) && out) {
     try { await sendDraft(db, out.id, d.reply, null); return; } catch (e) { console.error('auto-send failed', (e as Error).message); }
@@ -176,7 +188,8 @@ Deno.serve(async (req) => {
         return json(req, { instagram: Boolean(igConfig()), claude: Boolean(Deno.env.get('ANTHROPIC_API_KEY')), webhook: Boolean(Deno.env.get('META_APP_SECRET') && Deno.env.get('IG_VERIFY_TOKEN')) });
       case 'test': {
         const turns = (Array.isArray(body.history) ? body.history : []) as Turn[];
-        const d = await draft(turns.filter((t) => typeof t?.text === 'string').slice(-20), turns.filter((t) => t.from !== 'member').length === 0, body.task === 'thanks' ? 'thanks' : 'dm', db);
+        const who = (body.person ?? {}) as Person;
+        const d = await draft(turns.filter((t) => typeof t?.text === 'string').slice(-20), turns.filter((t) => t.from !== 'member').length === 0, body.task === 'thanks' ? 'thanks' : 'dm', db, who);
         if (!d) return json(req, { error: 'claude_not_configured' }, 400);
         return json(req, d);
       }

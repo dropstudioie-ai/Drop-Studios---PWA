@@ -24,6 +24,8 @@ create table if not exists public.assistant_threads (
   last_inbound_at timestamptz,
   last_message_at timestamptz not null default now(),
   disclosed boolean not null default false,  -- has Thamires said she's an AI assistant in this chat?
+  language text,                             -- the language this person prefers (e.g. 'Portuguese (Brazil)')
+  language_offered boolean not null default false, -- has she offered to switch to their native language?
   created_at timestamptz not null default now()
 );
 
@@ -37,6 +39,7 @@ create table if not exists public.assistant_messages (
   status text not null default 'received' check (status in ('received', 'draft', 'sent', 'rejected', 'failed')),
   needs_human boolean not null default false,
   reason text,
+  translation text,  -- English translation for the team when the message isn't in English
   error text,
   created_at timestamptz not null default now(),
   sent_at timestamptz,

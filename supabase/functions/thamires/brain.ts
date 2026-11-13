@@ -9,17 +9,26 @@ export interface Draft {
   reply: string;
   needs_human: boolean;
   reason: string;
+  /** The person's preferred language for this conversation, in English (e.g. "Portuguese (Brazil)"). */
+  language: string;
+  /** True when the reply offers to continue in the person's native language. */
+  offered_language: boolean;
+  /** English translation of the person's last message and of the reply, for the team. Empty when both are English. */
+  translation_en: string;
   topic: 'timetable' | 'prices' | 'booking' | 'class_info' | 'location' | 'events' | 'thanks' | 'complaint' | 'refund_or_payment' | 'other';
 }
 
 export const DRAFT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['reply', 'needs_human', 'reason', 'topic'],
+  required: ['reply', 'needs_human', 'reason', 'topic', 'language', 'offered_language', 'translation_en'],
   properties: {
     reply: { type: 'string', description: 'The Instagram message to send. Short, warm, plain text (no markdown).' },
     needs_human: { type: 'boolean', description: 'True when a person from the studio must handle this.' },
     reason: { type: 'string', description: 'One short sentence for the team explaining the reply or why a person is needed.' },
+    language: { type: 'string', description: 'The language you are replying in, named in English, e.g. "English", "Portuguese (Brazil)", "Spanish".' },
+    offered_language: { type: 'boolean', description: 'True if this reply offers to continue in the person’s native language.' },
+    translation_en: { type: 'string', description: 'If the person’s message or your reply is not in English: "Them: <English translation> / Reply: <English translation>". Otherwise an empty string.' },
     topic: { type: 'string', enum: ['timetable', 'prices', 'booking', 'class_info', 'location', 'events', 'thanks', 'complaint', 'refund_or_payment', 'other'] },
   },
 } as const;
@@ -33,7 +42,11 @@ Who you are
 
 How you write
 - Instagram DM style: warm, upbeat, short (1–4 short sentences). A couple of emojis at most. No markdown, no bullet symbols, no headings.
-- Reply in the language the person writes in (English, Portuguese and Spanish are common at Drop).
+- Talk to each person in their native language whenever possible. Drop's community is international: Portuguese (Brazil), Spanish, Italian, French, Polish and English are all common.
+  - Reply in the language they write in. If they switch language, switch with them.
+  - If they write in English but their name or username strongly suggests another native language and you haven't offered yet (the request says so), answer in English and add one short, friendly offer in that language, e.g. "Prefere falar em português? 🇧🇷" or "¿Prefieres hablar en español?". Never assume: offer once, and if they keep writing in English, stay in English.
+  - Once a preferred language is known for the conversation (the request says so), keep using it.
+  - Links, class names, prices and times stay exactly as in the knowledge.
 - Give one clear next step, usually a link from the knowledge below (a class's booking link, a class page, the timetable, the Intro Offer).
 
 What you know
@@ -70,17 +83,20 @@ function toMessages(history: Turn[]): Anthropic.Beta.BetaMessageParam[] {
 /** Fallback when the model can't produce a usable answer: hand the conversation to a person. */
 export const HANDOFF: Draft = {
   reply: 'Thanks for your message! I’ve passed it to the Drop team and they’ll get back to you here soon 💛',
-  needs_human: true, reason: 'Thamires could not draft a confident reply.', topic: 'other',
+  needs_human: true, reason: 'Thamires could not draft a confident reply.', topic: 'other', language: 'English', offered_language: false, translation_en: '',
 };
 
 export interface BrainDeps { client: Pick<Anthropic, 'beta'> }
 
-export async function draftReply(deps: BrainDeps, o: { history: Turn[]; knowledge: unknown; disclose: boolean; task?: 'dm' | 'thanks' }): Promise<Draft> {
+export async function draftReply(deps: BrainDeps, o: { history: Turn[]; knowledge: unknown; disclose: boolean; task?: 'dm' | 'thanks'; person?: { username?: string | null; name?: string | null }; language?: string | null; languageOffered?: boolean }): Promise<Draft> {
   const messages = toMessages(o.history);
   if (!messages.length) return HANDOFF;
   const note = [
     o.disclose ? 'This conversation has not been told yet that you are an AI assistant: introduce yourself as Thamires, Drop’s virtual assistant, in your reply.' : 'You have already introduced yourself in this conversation.',
     o.task === 'thanks' ? 'This person tagged or mentioned Drop. Write a short, warm thank-you.' : '',
+    o.person?.username || o.person?.name ? `The person: ${[o.person.name, o.person.username ? '@' + o.person.username : ''].filter(Boolean).join(' ')}.` : '',
+    o.language ? `Their preferred language in this conversation: ${o.language}.` : 'No preferred language is known yet for this conversation.',
+    o.languageOffered ? 'You have already offered to switch language; do not offer again.' : 'You have not offered to switch language yet.',
   ].filter(Boolean).join(' ');
   try {
     const res = await deps.client.beta.messages.create({

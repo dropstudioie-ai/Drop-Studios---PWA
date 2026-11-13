@@ -57,13 +57,14 @@ function DraftCard({ m, onDone }: { m: ThMessage & { assistant_threads: ThThread
   return (
     <li className={`card p-4 ${m.needs_human ? 'border-2 border-accent-500' : ''}`}>
       <div className="flex items-center justify-between gap-2">
-        <p className="font-bold">@{m.assistant_threads.username ?? 'someone'}</p>
+        <p className="font-bold">@{m.assistant_threads.username ?? 'someone'}{m.assistant_threads.language && m.assistant_threads.language !== 'English' && <span className="chip ml-2 bg-brand-50 text-brand-700">🌍 {m.assistant_threads.language}</span>}</p>
         <span className="text-xs text-muted">{fmt.dateTime(m.created_at)}</span>
       </div>
       {inbound.map((x) => <p key={x.id} className="mt-2 rounded-xl bg-canvas p-2 text-sm">{x.text}</p>)}
       {m.needs_human && <p className="mt-2 text-sm font-semibold text-accent-600">👋 Needs a person: {m.reason}</p>}
       <label className="mt-3 block text-xs font-semibold text-muted">Thamires’ reply (edit if you like)</label>
       <textarea className="input mt-1 min-h-24" value={text} onChange={(e) => setText(e.target.value)} maxLength={1000} />
+      {m.translation && <p className="mt-1 rounded-lg bg-brand-50 p-2 text-xs text-brand-700"><strong>In English:</strong> {m.translation}</p>}
       <div className="mt-2 flex flex-wrap gap-2">
         <button className="btn-primary btn-sm" disabled={busy || !text.trim()} onClick={() => void act(() => thamires.send(m.id, text.trim()), 'Sent on Instagram')}>{busy ? <Spinner className="h-4 w-4" /> : 'Send'}</button>
         <button className="btn-ghost btn-sm" disabled={busy} onClick={() => void act(() => thamires.reject(m.id), 'Discarded')}>Discard</button>
@@ -187,15 +188,23 @@ function TryHer() {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [meta, setMeta] = useState<string | null>(null);
+  const [name, setName] = useState('');
+  const [lang, setLang] = useState<{ language: string | null; offered: boolean }>({ language: null, offered: false });
   async function ask() {
     const next = [...history, { from: 'member' as const, text: text.trim() }];
     setHistory(next); setText(''); setBusy(true);
-    try { const d = await thamires.test(next); setHistory([...next, { from: 'thamires', text: d.reply }]); setMeta(`${d.topic}${d.needs_human ? ' · would wait for a person' : ''} · ${d.reason}`); }
+    try {
+      const d = await thamires.test(next, { display_name: name || undefined, language: lang.language, language_offered: lang.offered });
+      setHistory([...next, { from: 'thamires', text: d.reply }]);
+      setLang({ language: d.offered_language ? lang.language : d.language, offered: lang.offered || d.offered_language });
+      setMeta(`${d.language} · ${d.topic}${d.needs_human ? ' · would wait for a person' : ''} · ${d.reason}${d.translation_en ? ` · In English: ${d.translation_en}` : ''}`);
+    }
     catch (e) { toast((e as Error).message, 'error'); } finally { setBusy(false); }
   }
   return (
     <div className="card p-4">
-      <p className="text-sm text-muted">Ask her anything a member might, to check her answers. Nothing is sent to Instagram.</p>
+      <p className="text-sm text-muted">Ask her anything a member might, in any language, to check her answers. Nothing is sent to Instagram.</p>
+      <input className="input mt-2" value={name} onChange={(e) => setName(e.target.value)} placeholder="Pretend name (optional), e.g. João Silva" />
       <ul className="mt-3 max-h-80 space-y-2 overflow-y-auto">
         {history.map((t, i) => <li key={i} className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm ${t.from === 'member' ? 'bg-canvas' : 'ml-auto bg-brand-600 text-white'}`}>{t.text}</li>)}
         {busy && <li className="ml-auto w-fit rounded-2xl bg-brand-50 px-3 py-2 text-sm">Thamires is typing…</li>}
@@ -204,7 +213,7 @@ function TryHer() {
       <form className="mt-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); if (text.trim()) void ask(); }}>
         <input className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. Is there a beginners heels class this week?" />
         <button className="btn-primary btn-sm" disabled={busy || !text.trim()}>Ask</button>
-        {history.length > 0 && <button type="button" className="btn-ghost btn-sm" onClick={() => { setHistory([]); setMeta(null); }}>Reset</button>}
+        {history.length > 0 && <button type="button" className="btn-ghost btn-sm" onClick={() => { setHistory([]); setMeta(null); setLang({ language: null, offered: false }); }}>Reset</button>}
       </form>
     </div>
   );
