@@ -148,3 +148,11 @@ Deno.test('members get the instructor birthday a week before and on the day', ()
   const today = render({ kind: 'instructor_birthday_member', full_name: 'Aoife', payload: { ...base, phase: 'on_day', birthday: '2026-11-20' } })!;
   assertStringIncludes(today.subject, "birthday today");
 });
+
+Deno.test('instructors are asked to write their bio and class details', () => {
+  const m = render({ kind: 'instructor_profile_request', full_name: 'Talita Lima', payload: { styles: 'Heels' } })!;
+  assertEquals(m.url, '/teach/profile');
+  assertStringIncludes(m.text, 'Hi Talita,');
+  assertStringIncludes(m.text, 'your Heels class');
+  assertStringIncludes(m.text, 'what to wear');
+});

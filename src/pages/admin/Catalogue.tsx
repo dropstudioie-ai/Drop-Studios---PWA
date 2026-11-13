@@ -27,7 +27,7 @@ export function AdminStyles() {
     if (!edit?.name?.trim()) return;
     const dropIn = dropInText.trim() ? parseEurosToCents(dropInText) : null;
     if (dropInText.trim() && dropIn === null) return setError('Enter a valid Drop In price, e.g. 15 or 15.50, or leave it empty.');
-    const row = { name: edit.name.trim(), slug: edit.slug || slugify(edit.name), color: edit.color ?? '#2F5BFF', description: edit.description || null, is_active: edit.is_active ?? true, sort_order: edit.sort_order ?? 100, drop_in_price_cents: dropIn };
+    const row = { name: edit.name.trim(), slug: edit.slug || slugify(edit.name), color: edit.color ?? '#2F5BFF', description: edit.description || null, level: edit.level || null, what_to_wear: edit.what_to_wear || null, what_to_bring: edit.what_to_bring || null, first_class: edit.first_class || null, is_active: edit.is_active ?? true, sort_order: edit.sort_order ?? 100, drop_in_price_cents: dropIn };
     const res = edit.id ? await supabase.from('dance_styles').update(row).eq('id', edit.id) : await supabase.from('dance_styles').insert(row);
     if (res.error) return setError(res.error.message);
     toast('Style saved.');
@@ -57,7 +57,11 @@ export function AdminStyles() {
             <Field label="Colour"><input className="input h-12 p-1" type="color" value={edit.color ?? '#2F5BFF'} onChange={(e) => setEdit({ ...edit, color: e.target.value })} /></Field>
             <Field label="Drop In price (€)" hint="Price of a single class in this style. Leave empty to not sell Drop Ins."><input className="input" inputMode="decimal" value={dropInText} onChange={(e) => setDropInText(e.target.value)} placeholder="e.g. 15" /></Field>
             <Field label="Display order"><input className="input" type="number" value={edit.sort_order ?? 100} onChange={(e) => setEdit({ ...edit, sort_order: Number(e.target.value) })} /></Field>
-            <Field label="Description"><textarea className="input min-h-20 py-2" value={edit.description ?? ''} onChange={(e) => setEdit({ ...edit, description: e.target.value })} /></Field>
+            <Field label="Description" hint="Shown on the public class page. The instructors are asked to check it."><textarea className="input min-h-28 py-2" value={edit.description ?? ''} onChange={(e) => setEdit({ ...edit, description: e.target.value })} /></Field>
+            <Field label="Level"><input className="input" value={edit.level ?? ''} onChange={(e) => setEdit({ ...edit, level: e.target.value })} /></Field>
+            <Field label="What to wear"><textarea className="input py-2" rows={2} value={edit.what_to_wear ?? ''} onChange={(e) => setEdit({ ...edit, what_to_wear: e.target.value })} /></Field>
+            <Field label="What to bring"><textarea className="input py-2" rows={2} value={edit.what_to_bring ?? ''} onChange={(e) => setEdit({ ...edit, what_to_bring: e.target.value })} /></Field>
+            <Field label="First class tips"><textarea className="input py-2" rows={3} value={edit.first_class ?? ''} onChange={(e) => setEdit({ ...edit, first_class: e.target.value })} /></Field>
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-5 w-5" checked={edit.is_active ?? true} onChange={(e) => setEdit({ ...edit, is_active: e.target.checked })} />Active</label>
             {error && <ErrorNotice error={error} />}
             <button className="btn-primary w-full" onClick={save}>Save</button>

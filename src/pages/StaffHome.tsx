@@ -203,6 +203,12 @@ function InstructorToday({ upcoming, today, onOpen }: { upcoming: StaffSession[]
 
       <InstructorFeedback />
 
+      <section className="card p-5" aria-labelledby="page-h">
+        <h2 id="page-h" className="font-extrabold">Your bio and class page</h2>
+        <p className="mt-1 text-sm text-ink-soft">What new members read about you and your class on the website and Google.</p>
+        <Link to="/teach/profile" className="btn-outline btn-sm mt-3">Edit my bio and class</Link>
+      </section>
+
       <section className="card p-5" aria-labelledby="free-h">
         <h2 id="free-h" className="font-extrabold">Want to take a class?</h2>
         <p className="mt-1 text-sm text-ink-soft">As an instructor you can book any class for free from the timetable.</p>

@@ -27,6 +27,11 @@ export interface DanceStyle {
   is_active: boolean;
   sort_order: number;
   drop_in_price_cents: number | null;
+  level?: string | null;
+  what_to_wear?: string | null;
+  what_to_bring?: string | null;
+  first_class?: string | null;
+  details_confirmed?: boolean;
 }
 
 export interface Instructor {

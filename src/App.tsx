@@ -17,6 +17,9 @@ const CheckoutCancelled = lazy(() => import('./pages/CheckoutResult').then((m) =
 const Account = lazy(() => import('./pages/Account'));
 const GetApp = lazy(() => import('./pages/GetApp'));
 const Teach = lazy(() => import('./pages/Teach'));
+const TeachProfile = lazy(() => import('./pages/TeachProfile'));
+const ClassPage = lazy(() => import('./pages/ClassPage'));
+const ClassesIndex = lazy(() => import('./pages/ClassPage').then((m) => ({ default: m.ClassesIndex })));
 const Events = lazy(() => import('./pages/Events'));
 const OrganiseEvent = lazy(() => import('./pages/Events').then((m) => ({ default: m.OrganiseEvent })));
 const AdminEvents = lazy(() => import('./pages/admin/Events'));
@@ -62,6 +65,8 @@ export default function App() {
               <Route element={<Layout />}>
                 <Route index element={<Home />} />
                 <Route path="timetable" element={<Timetable />} />
+                <Route path="classes" element={<ClassesIndex />} />
+                <Route path="classes/:slug" element={<ClassPage />} />
                 <Route path="memberships" element={<Memberships />} />
                 <Route path="login" element={<Login />} />
                 <Route path="register" element={<Register />} />
@@ -76,6 +81,7 @@ export default function App() {
                 <Route path="account" element={<RequireAuth><Account /></RequireAuth>} />
                 <Route path="feedback/:id" element={<RequireAuth><FeedbackPage /></RequireAuth>} />
                 <Route path="teach" element={<RequireStaff><Teach /></RequireStaff>} />
+                <Route path="teach/profile" element={<RequireStaff><TeachProfile /></RequireStaff>} />
                 <Route path="teach/events" element={<RequireStaff><Events /></RequireStaff>} />
                 <Route path="teach/events/new" element={<RequireStaff><OrganiseEvent /></RequireStaff>} />
                 <Route path="admin" element={<RequireAdmin><AdminLayout /></RequireAdmin>}>

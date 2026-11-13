@@ -1006,6 +1006,38 @@ run('database: plans, booking, allowances, pauses, security', () => {
       expect(r.r.length).toBeGreaterThanOrEqual(1);
     });
 
+    it('instructors write their bio and describe only the classes they teach; class pages are public', async () => {
+      const t = await teacher('Pagewriter');
+      const { rows: [heels] } = await db.query(`select id from dance_styles where slug = 'heels'`);
+      const { rows: [hiphop] } = await db.query(`select id from dance_styles where slug = 'hip-hop'`);
+      await db.query(`insert into class_templates (title, style_id, instructor_id, weekday, start_time) values ('Heels', $1, $2, 1, '20:00')`, [heels.id, t.instructorId]);
+
+      const [p0] = await as<{ r: { todo: boolean; styles: { slug: string }[] } }>(db, user(t.uid), `select my_teaching_profile() r`);
+      expect(p0.r.todo).toBe(true);
+      expect(p0.r.styles.map((x) => x.slug)).toEqual(['heels']);
+
+      await expectError(as(db, user(t.uid), `select save_my_bio('Hi!')`), 'bio_too_short');
+      await as(db, user(t.uid), `select save_my_bio($1, '@pagewriter')`, ['I have danced heels for ten years and love helping people feel confident.']);
+      const long = 'A confident, sensual class in heels with walks, floor work and a routine. Everyone welcome.';
+      await expectError(as(db, user(t.uid), `select save_style_details($1, $2, 'All', null, null, null)`, [hiphop.id, long]), 'not_your_class');
+      await expectError(as(db, user(t.uid), `select save_style_details($1, 'Short', 'All', null, null, null)`, [heels.id]), 'description_too_short');
+      await as(db, user(t.uid), `select save_style_details($1, $2, 'All levels', 'Leggings', 'Heels', 'Go at your pace')`, [heels.id, long]);
+      const [p1] = await as<{ r: { todo: boolean } }>(db, user(t.uid), `select my_teaching_profile() r`);
+      expect(p1.r.todo).toBe(false);
+
+      // Members can't write; admins can edit any class without confirming it for the instructor.
+      const m = await createUser(db, 'Nosy');
+      await expectError(as(db, user(m), `select save_style_details($1, $2, null, null, null, null)`, [heels.id, long]), 'not_your_class');
+      await as(db, user(admin), `select save_style_details($1, $2, null, null, null, null)`, [hiphop.id, long + ' Admin edit.']);
+      expect((await db.query(`select details_confirmed from dance_styles where id = $1`, [hiphop.id])).rows[0].details_confirmed).toBe(false);
+
+      const [page] = await as<{ r: { style: { level: string }; instructors: { full_name: string; instagram: string }[]; weekly: { start_time: string }[] } }>(db, anon, `select class_page('heels') r`);
+      expect(page.r.style.level).toBe('All levels');
+      expect(page.r.instructors.find((i) => i.full_name === 'Pagewriter')?.instagram).toBe('pagewriter');
+      expect(page.r.weekly.some((w) => w.start_time === '20:00')).toBe(true);
+      await expect(as(db, anon, `select my_teaching_profile()`)).rejects.toThrow(/permission denied/);
+    });
+
     it('admins are told about instructor birthdays a week before and on the day', async () => {
       const t = await teacher('Birthdayteacher');
       const { rows: [{ tz }] } = await db.query(`select timezone tz from app_settings`);

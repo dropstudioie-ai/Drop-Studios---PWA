@@ -5,6 +5,7 @@ import { CalendarIcon, HomeIcon, ShieldIcon, SparkleIcon, TicketIcon, UserIcon, 
 import { InstallPrompt, OfflineBanner, UpdatePrompt, isStandalone } from './pwa';
 import { OutOfClassesPrompt } from './OutOfClasses';
 import { NotificationsPrompt } from './NotificationsPrompt';
+import { ProfileRequestPrompt } from './ProfileRequestPrompt';
 import { STUDIO } from '../config/studio';
 
 const navCls = ({ isActive }: { isActive: boolean }) =>
@@ -18,6 +19,7 @@ export function Layout() {
       <UpdatePrompt />
       {!isStaff && <OutOfClassesPrompt />}
       <NotificationsPrompt />
+      <ProfileRequestPrompt />
       <OfflineBanner />
       <header className="sticky top-0 z-30 border-b border-line bg-white/90 pt-[env(safe-area-inset-top)] backdrop-blur">
         <div className="container-page flex h-14 items-center justify-between md:h-16">
@@ -27,6 +29,7 @@ export function Layout() {
             {isStaff && <NavLink to="/teach" end className={navCls}>{isAdmin ? 'Classes' : 'My classes'}</NavLink>}
             {isStaff && !isAdmin && <NavLink to="/teach/events" className={navCls}>Events</NavLink>}
             <NavLink to="/timetable" className={navCls}>Timetable</NavLink>
+            {!isStaff && <NavLink to="/classes" className={navCls}>Classes</NavLink>}
             {!isStaff && <NavLink to="/memberships" className={navCls}>Memberships</NavLink>}
             {isAdmin && <NavLink to="/admin/customers" className={navCls}>Members</NavLink>}
             {isAdmin && <NavLink to="/admin" end className={navCls}>Admin</NavLink>}

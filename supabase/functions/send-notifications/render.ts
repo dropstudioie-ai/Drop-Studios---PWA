@@ -290,6 +290,12 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
           text: `${hi}\n\nA little secret: ${p.instructor_name}'s birthday is on ${longDate(p.birthday)}. You're booked into their class ${p.title} on ${when(p.starts_at)}, so come ready to celebrate with them! 🎉\n\nDrop Studios`,
           url: '/account',
         };
+    case 'instructor_profile_request':
+      return {
+        subject: '✍️ Quick favour: your bio and class description for the new Drop website',
+        text: `${hi}\n\nEach class now has its own page on the Drop website and app, so new people can find us on Google and know what to expect before they come.\n\nWe wrote a first draft for ${p.styles ? `your ${p.styles} class` : 'your classes'}, but nobody describes it better than you. It takes about 5 minutes:\n\n1. Your bio: who you are, your dance background and what people love about your classes.\n2. Your class: what it's like, the level, what to wear, anything to bring, and tips for someone's first time.\n\nOpen this link, check the draft and change anything you like:\n${site()}/teach/profile\n\nThank you!\nDrop Studios`,
+        url: '/teach/profile',
+      };
     case 'membership_cancelled': {
       const n = Number(p.bookings_cancelled) || 0;
       return {

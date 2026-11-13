@@ -1,0 +1,7 @@
+User-agent: *
+Disallow: /admin
+Disallow: /account
+Disallow: /checkout
+Disallow: /teach
+Disallow: /feedback
+Sitemap: https://www.dropstudios.ie/sitemap.xml

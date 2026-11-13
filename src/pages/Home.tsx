@@ -83,14 +83,14 @@ function MemberHome() {
           <div className="container-page">
             <div className="flex items-end justify-between gap-3">
               <h2 id="styles-h" className="text-2xl font-black sm:text-3xl">Our classes</h2>
-              <Link to="/timetable" className="text-sm font-semibold text-accent-400">Full timetable →</Link>
+              <Link to="/classes" className="text-sm font-semibold text-accent-400">About each class →</Link>
             </div>
             <ul className="-mx-4 mt-5 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0 lg:grid-cols-4">
               {styles.data.map((s) => {
                 const art = classImage(s.slug);
                 return (
                   <li key={s.id} className="w-[64%] shrink-0 snap-start sm:w-auto">
-                    <Link to={`/timetable?style=${s.slug}`} className="group block overflow-hidden rounded-2xl ring-1 ring-white/10 transition hover:-translate-y-1 hover:ring-white/40">
+                    <Link to={`/classes/${s.slug}`} className="group block overflow-hidden rounded-2xl ring-1 ring-white/10 transition hover:-translate-y-1 hover:ring-white/40">
                       {art ? (
                         <img src={art.card} alt={`${s.name} class`} loading="lazy" width={720} height={900} className="aspect-[4/5] w-full object-cover" />
                       ) : (
