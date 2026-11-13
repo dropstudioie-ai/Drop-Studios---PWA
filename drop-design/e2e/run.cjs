@@ -30,6 +30,8 @@ const EVENT = { id: '11111111-2222-3333-4444-555555555555', kind: 'special_class
   dress_code: 'Neon colours', decorations: null, extras: null, instructor: 'João Zublin', theme: { name: 'Neon night', emoji: '🌈' }, starts_at: null, ends_at: null,
   price_cents: null, member_price_cents: null, artwork_path: null, session: { id: 's1', title: 'FitDance', starts_at: new Date(Date.now() + 5 * 864e5).toISOString(), ends_at: new Date(Date.now() + 5 * 864e5 + 36e5).toISOString() } };
 
+const ONLY = (process.env.ONLY || 'access,editor,templates,drop,invoices,tablet').split(',');
+const want = (k) => ONLY.includes(k);
 const results = [];
 const problems = [];
 const check = (name, ok, detail = '') => { results.push([ok ? 'PASS' : 'FAIL', name, detail]); if (!ok) console.log('FAIL', name, detail); };
@@ -92,7 +94,7 @@ async function mockDrop(ctx, role, log) {
   const els = (page) => ed(page, () => { const s = window.__dropEditor.getState(); return s.design.pages[s.pageIndex].elements; });
 
   // ── Access control ──
-  {
+  if (want('access')) {
     const { page, ctx } = await session('member');
     await login(page, 'member', 'wrong');
     await page.waitForSelector('text=Wrong email or password');
@@ -102,7 +104,7 @@ async function mockDrop(ctx, role, log) {
     check('members are blocked', true);
     await ctx.close();
   }
-  for (const role of ['manager', 'instructor']) {
+  for (const role of want('access') ? ['manager', 'instructor'] : []) {
     const { page, ctx } = await session(role);
     await login(page, role);
     await page.waitForSelector('text=what are we designing');
@@ -120,6 +122,8 @@ async function mockDrop(ctx, role, log) {
   await page.waitForSelector('text=what are we designing');
   check('owner sees Invoices link', (await page.locator('nav >> text=Invoices').count()) === 1);
   await page.screenshot({ path: path.join(OUT, 'desktop-dashboard.png') });
+  let e;
+  if (want('editor')) {
 
   await page.click('[data-testid=create-design]');
   await page.click('[data-testid=format-ig-square]');
@@ -130,7 +134,7 @@ async function mockDrop(ctx, role, log) {
   // Text
   await page.click('button[aria-pressed]:has-text("Text")');
   await page.click('button:has-text("Add a heading")');
-  let e = await els(page);
+  e = await els(page);
   check('heading added', e.length === 1 && e[0].type === 'text');
   await page.keyboard.press('Enter');
   await page.waitForSelector('[data-testid=text-editor]');
@@ -243,7 +247,7 @@ async function mockDrop(ctx, role, log) {
   await page.screenshot({ path: path.join(OUT, 'desktop-editor.png') });
 
   // Save and reopen
-  await page.waitForSelector('[data-testid=save-status]:has-text("Saved")', { timeout: 8000 });
+  await page.waitForFunction(() => window.__dropEditor.getState().saveStatus === 'saved', null, { timeout: 8000 });
   const id = await ed(page, () => window.__dropEditor.getState().design.id);
   const before = await ed(page, () => JSON.stringify(window.__dropEditor.getState().design.pages));
   await page.waitForTimeout(3000); // thumbnail
@@ -256,7 +260,7 @@ async function mockDrop(ctx, role, log) {
   await page.screenshot({ path: path.join(OUT, 'desktop-editor-reopened.png') });
   // edit after reopening
   await ed(page, () => { const s = window.__dropEditor.getState(); const t = s.design.pages[0].elements.find((x) => x.type === 'text'); s.updateElement(t.id, { text: 'Edited later' }); });
-  await page.waitForSelector('[data-testid=save-status]:has-text("Saved")');
+  await page.waitForFunction(() => window.__dropEditor.getState().saveStatus === 'saved', null, { timeout: 8000 });
   await page.reload(); await page.waitForSelector('[data-testid=canvas] canvas');
   check('saved project can be edited again', await ed(page, () => window.__dropEditor.getState().design.pages[0].elements.some((x) => x.text === 'Edited later')));
 
@@ -289,7 +293,9 @@ async function mockDrop(ctx, role, log) {
   const pdf = fs.readFileSync(files[0]).toString('latin1');
   check('PDF export with 2 pages', pdf.startsWith('%PDF') && (pdf.match(/\/Type \/Page\b/g) || []).length === 2);
 
+  }
   // Templates
+  if (want('templates')) {
   await page.goto(base);
   await page.waitForSelector('[data-testid=template-hiit-core] img', { timeout: 30000 });
   await page.waitForTimeout(2500);
@@ -302,14 +308,18 @@ async function mockDrop(ctx, role, log) {
   await page.screenshot({ path: path.join(OUT, 'desktop-template-editor.png') });
   check('dashboard lists saved designs', true);
 
+  }
   // Brand kit
+  if (want('templates')) {
   await page.goto(`${base}/brand`);
   await page.waitForSelector('text=Brand Kit');
   await page.setInputFiles('input[type=file]', [path.join(tmp, 'logo.svg')]);
   await page.waitForSelector('text=Logo added');
   check('brand logo uploaded', true);
 
+  }
   // Drop event artwork
+  if (want('drop')) {
   await page.goto(`${base}/drop`);
   await page.waitForSelector('[data-testid=drop-event]');
   await page.click('button:has-text("Create artwork")');
@@ -329,7 +339,9 @@ async function mockDrop(ctx, role, log) {
   check('artwork uploaded and attached to the Drop event', log.some((l) => l.startsWith('POST /storage/v1/object/event-art/11111111')) && log.includes('POST /rest/v1/rpc/set_event_artwork'));
   await page.click('button:has-text("Done")');
 
+  }
   // Invoices
+  if (want('invoices')) {
   await page.goto(`${base}/invoices`);
   await page.click('[data-testid=new-invoice]');
   await page.fill('[data-testid=client-name]', 'Acme Wellness Ltd');
@@ -354,14 +366,16 @@ async function mockDrop(ctx, role, log) {
   const ip = path.join(OUT, dl.suggestedFilename()); await dl.saveAs(ip);
   check('invoice PDF', fs.readFileSync(ip).toString('latin1').startsWith('%PDF'));
   await page.click('[data-testid=mark-paid]');
+  await page.waitForSelector('h1 >> text=Paid');
   await page.goto(`${base}/invoices`);
   await page.waitForSelector('[data-testid=invoice-row]');
   check('invoice list and analysis', (await page.textContent('main')).includes('Paid') && (await page.textContent('main')).includes('€123.00'));
   await page.screenshot({ path: path.join(OUT, 'desktop-invoices.png') });
+  }
   await ctx.close();
 
   // Tablet sizes
-  for (const [name, vp] of [['tablet-landscape', { width: 1024, height: 768 }], ['tablet-portrait', { width: 820, height: 1180 }]]) {
+  for (const [name, vp] of !want('tablet') ? [] : [['tablet-landscape', { width: 1024, height: 768 }], ['tablet-portrait', { width: 820, height: 1180 }]]) {
     const s = await session('owner', vp);
     await login(s.page, 'owner');
     await s.page.waitForSelector('text=what are we designing');

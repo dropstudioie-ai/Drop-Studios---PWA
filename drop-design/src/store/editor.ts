@@ -145,8 +145,11 @@ export const useEditor = create<EditorState>((set, get) => {
     deleteSelected: () => {
       const ids = sel();
       if (!ids.length) return;
+      const d0 = get().design!;
+      const kept = page(d0).elements.filter((e) => ids.includes(e.id) && e.locked).map((e) => e.id);
+      if (kept.length === ids.length) return; // only locked elements: nothing to delete
       commit((d) => { const p = page(d); p.elements = p.elements.filter((e) => !ids.includes(e.id) || e.locked); });
-      set({ selectedIds: [] });
+      set({ selectedIds: kept });
     },
     duplicateSelected: () => {
       const d = get().design; if (!d) return;

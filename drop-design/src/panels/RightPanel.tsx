@@ -33,7 +33,7 @@ function Num({ label, value, onChange, step = 1, min }: { label: string; value: 
 export function RightPanel() {
   const [tab, setTab] = useState<'props' | 'layers'>('props');
   return (
-    <aside className="hidden w-72 shrink-0 flex-col border-l border-line bg-white md:flex" aria-label="Properties">
+    <aside className="hidden w-60 shrink-0 flex-col border-l border-line bg-white md:flex lg:w-72" aria-label="Properties">
       <div className="flex border-b border-line">
         {(['props', 'layers'] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)} className={`flex-1 py-2.5 text-sm font-semibold ${tab === t ? 'border-b-2 border-ink text-ink' : 'text-muted'}`}>{t === 'props' ? 'Properties' : 'Layers'}</button>

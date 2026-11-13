@@ -23,10 +23,10 @@ const TABS: { id: string; label: string; icon: ReactNode; panel: () => ReactNode
 ];
 
 export function LeftSidebar() {
-  const [tab, setTab] = useState<string | null>('templates');
+  const [tab, setTab] = useState<string | null>(() => (window.innerWidth >= 1280 ? 'templates' : null));
   const active = TABS.find((t) => t.id === tab);
   return (
-    <div className="flex shrink-0 border-r border-line bg-white">
+    <div className="relative z-20 flex shrink-0 border-r border-line bg-white">
       <nav className="flex w-[72px] flex-col items-stretch gap-0.5 overflow-y-auto border-r border-line py-2" aria-label="Editor panels">
         {TABS.map((t) => (
           <button key={t.id} onClick={() => setTab(tab === t.id ? null : t.id)} aria-pressed={tab === t.id}
@@ -36,7 +36,7 @@ export function LeftSidebar() {
         ))}
       </nav>
       {active && (
-        <section className="flex w-[300px] flex-col xl:w-[330px]" aria-label={active.label}>
+        <section className="absolute left-[72px] top-0 flex h-full w-[300px] flex-col border-r border-line bg-white shadow-xl xl:static xl:w-[330px] xl:shadow-none" aria-label={active.label}>
           <div className="flex items-center justify-between px-4 pt-3">
             <h2 className="font-bold">{active.label}</h2>
             <button className="icon-btn" aria-label="Close panel" onClick={() => setTab(null)}><X size={16} /></button>

@@ -42,8 +42,8 @@ function Analysis({ list }: { list: Invoice[] }) {
   return (
     <section className="grid gap-4 lg:grid-cols-3">
       <div className="grid grid-cols-2 gap-3 lg:col-span-2">
-        {[['Invoiced in ' + year, eur(sum(thisYear)), `${thisYear.length} invoices`], ['Waiting to be paid', eur(sum(outstanding)), `${outstanding.length} invoices`],
-          ['Overdue', eur(sum(overdue)), overdue.length ? `${overdue.length} need chasing` : 'nothing overdue'], ['Average time to get paid', avgDays == null ? '—' : `${avgDays} days`, `${paidDays.length} paid invoices`]].map(([k, v, s]) => (
+        {[['Invoiced in ' + year, eur(sum(thisYear)), `${thisYear.length} invoice${thisYear.length === 1 ? '' : 's'}`], ['Waiting to be paid', eur(sum(outstanding)), `${outstanding.length} invoice${outstanding.length === 1 ? '' : 's'}`],
+          ['Overdue', eur(sum(overdue)), overdue.length ? `${overdue.length} need chasing` : 'nothing overdue'], ['Average time to get paid', avgDays == null ? '—' : `${avgDays} days`, `${paidDays.length} paid invoice${paidDays.length === 1 ? '' : 's'}`]].map(([k, v, s]) => (
           <div key={k} className="card p-4"><p className="text-xs font-semibold uppercase text-muted">{k}</p><p className="mt-1 text-2xl font-black tabular-nums">{v}</p><p className="text-xs text-muted">{s}</p></div>
         ))}
         <div className="card col-span-2 p-4">
