@@ -1,6 +1,6 @@
 import { assert, assertEquals, assertStringIncludes } from 'jsr:@std/assert@1';
 import { canAutoSend, draftReply, HANDOFF, PERSONA } from './brain.ts';
-import { parseWebhook, verifySignature } from './instagram.ts';
+import { DEFAULT_GRAPH_BASE, igConfig, messagesPath, parseWebhook, verifySignature } from './instagram.ts';
 
 Deno.test('persona: discloses AI, never invents, hands over sensitive topics', () => {
   assertStringIncludes(PERSONA, 'You are an AI assistant, not a person');
@@ -76,4 +76,13 @@ Deno.test('easy-going and funny, remembers people and follows up', async () => {
   assertStringIncludes(sys, 'coming back after 5 days');
   assertEquals(d.memory, 'Aoife. Took her first heels class.');
   assertStringIncludes(JSON.stringify(lastReq.output_config), 'Never store health');
+});
+
+Deno.test('Facebook Login setup: graph.facebook.com, DMs sent through the Page', () => {
+  Deno.env.set('IG_USER_ID', '178'); Deno.env.set('IG_ACCESS_TOKEN', 't'); Deno.env.set('IG_PAGE_ID', '555'); Deno.env.delete('IG_GRAPH_BASE');
+  const cfg = igConfig()!;
+  assertEquals(cfg.base, DEFAULT_GRAPH_BASE);
+  assertEquals(messagesPath(cfg), '555/messages');
+  Deno.env.delete('IG_PAGE_ID');
+  assertEquals(messagesPath(igConfig()!), '178/messages');
 });

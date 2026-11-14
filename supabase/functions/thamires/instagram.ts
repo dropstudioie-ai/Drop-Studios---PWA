@@ -2,13 +2,24 @@
 // commenting on posts that mention Drop, and publishing Stories.
 // Endpoint details are kept in this one file so they can be adjusted to the account's Meta setup.
 
-export interface IgConfig { base: string; userId: string; token: string }
+// Drop uses the "Instagram API with Facebook Login" setup: calls go to graph.facebook.com with a
+// long-lived Page access token for the Facebook Page linked to Drop's Instagram account.
+//   IG_USER_ID      Drop's Instagram professional account ID
+//   IG_PAGE_ID      the linked Facebook Page ID (DMs are sent through the Page)
+//   IG_ACCESS_TOKEN the Page access token
+// IG_GRAPH_BASE can point at graph.instagram.com instead for the Instagram Login setup (then IG_PAGE_ID is not needed).
+export interface IgConfig { base: string; userId: string; pageId: string | null; token: string }
+
+export const DEFAULT_GRAPH_BASE = 'https://graph.facebook.com/v27.0';
 
 export function igConfig(): IgConfig | null {
   const userId = Deno.env.get('IG_USER_ID'), token = Deno.env.get('IG_ACCESS_TOKEN');
   if (!userId || !token) return null;
-  return { base: Deno.env.get('IG_GRAPH_BASE') ?? 'https://graph.instagram.com/v23.0', userId, token };
+  return { base: Deno.env.get('IG_GRAPH_BASE') || DEFAULT_GRAPH_BASE, userId, pageId: Deno.env.get('IG_PAGE_ID') || null, token };
 }
+
+/** Where DMs are sent: the Page with Facebook Login, the Instagram account with Instagram Login. */
+export const messagesPath = (cfg: IgConfig) => `${cfg.pageId ?? cfg.userId}/messages`;
 
 /** Meta signs every webhook with the app secret (X-Hub-Signature-256: sha256=<hex>). */
 export async function verifySignature(raw: string, header: string | null, secret: string): Promise<boolean> {
@@ -68,7 +79,7 @@ async function graph<T>(cfg: IgConfig, path: string, init: { method?: string; pa
 export const ig = {
   /** Reply in a DM (allowed within 24 hours of the person's last message). */
   sendDm: (cfg: IgConfig, to: string, text: string) =>
-    graph<{ message_id?: string }>(cfg, `${cfg.userId}/messages`, { method: 'POST', body: { recipient: { id: to }, message: { text } } }),
+    graph<{ message_id?: string }>(cfg, messagesPath(cfg), { method: 'POST', body: { recipient: { id: to }, message: { text } } }),
   profile: (cfg: IgConfig, igsid: string) =>
     graph<{ username?: string; name?: string }>(cfg, igsid, { params: { fields: 'username,name' } }).catch(() => ({} as { username?: string; name?: string })),
   /** Details of a post that mentions Drop. */
