@@ -30,3 +30,6 @@ verify_jwt = true
 
 [functions.send-notifications]
 verify_jwt = false
+
+[functions.thamires]
+verify_jwt = false
