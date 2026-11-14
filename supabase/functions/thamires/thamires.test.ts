@@ -1,5 +1,5 @@
 import { assert, assertEquals, assertStringIncludes } from 'jsr:@std/assert@1';
-import { canAutoSend, draftReply, HANDOFF, PERSONA } from './brain.ts';
+import { canAutoSend, canAutoSendHolding, draftReply, HANDOFF, PERSONA, summariseDay } from './brain.ts';
 import { DEFAULT_GRAPH_BASE, igConfig, messagesPath, parseWebhook, verifySignature } from './instagram.ts';
 
 Deno.test('persona: discloses AI, never invents, hands over sensitive topics', () => {
@@ -85,4 +85,27 @@ Deno.test('Facebook Login setup: graph.facebook.com, DMs sent through the Page',
   assertEquals(messagesPath(cfg), '555/messages');
   Deno.env.delete('IG_PAGE_ID');
   assertEquals(messagesPath(igConfig()!), '178/messages');
+});
+
+Deno.test('out-of-the-ordinary questions always wait for the owner', async () => {
+  assertStringIncludes(PERSONA, 'never guess');
+  assertStringIncludes(PERSONA, 'owner_guidance');
+  const d = await draftReply({ client: fakeClient({ reply: 'Great question! Let me check with the team 😊', needs_human: false, reason: 'unusual', topic: 'other', language: 'English', offered_language: false, translation_en: '', memory: '', out_of_ordinary: true, question_en: 'Can I bring my dog to class?' }) },
+    { history: [{ from: 'member', text: 'Can I bring my dog?' }], knowledge: {}, disclose: false });
+  assertEquals(d.needs_human, true); // forced, even if the model forgot
+  assertEquals(d.question_en, 'Can I bring my dog to class?');
+  assertEquals(canAutoSend(d), false);
+  assertEquals(canAutoSendHolding(d), true);
+  assertEquals(canAutoSendHolding({ ...d, topic: 'complaint' }), false);
+  // Once the owner has answered, she follows up with the answer.
+  await draftReply({ client: fakeClient({ ...HANDOFF, reply: 'Good news!' }) }, { history: [{ from: 'member', text: 'Can I bring my dog?' }], knowledge: {}, disclose: false, followUp: true });
+  assertStringIncludes(JSON.stringify(lastReq.system), 'The owner has now answered');
+});
+
+Deno.test('daily summary: English, no names, null when there were no messages', async () => {
+  assertEquals(await summariseDay({ client: fakeClient({}) }, []), null);
+  const s = await summariseDay({ client: fakeClient({ summary: 'Busy day for heels.', themes: [{ theme: 'Heels', count: 3 }], suggestions: [] }) }, ['Is there heels today?', 'Tem aula de heels?']);
+  assertEquals(s?.themes[0].theme, 'Heels');
+  assertStringIncludes(JSON.stringify(lastReq.system), 'Never include names');
+  assertEquals(await summariseDay({ client: fakeClient('not json') }, ['x']), null);
 });

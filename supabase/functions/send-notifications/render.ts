@@ -314,6 +314,40 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
         text: `${hi}\n\nThamires prepared today's Story with the class times. Check it and publish it in one tap:\n\n${site()}/admin/thamires\n\nDrop Studios`,
         url: '/admin/thamires',
       };
+    case 'assistant_guidance':
+      return {
+        subject: `🤔 Thamires needs your guidance: “${String(p.question ?? '').slice(0, 70)}”`,
+        text: `${hi}\n\n@${p.username} asked Thamires something new on Instagram:\n“${p.asked}”\n\nIn short: ${p.question}\n\n${p.holding_sent ? 'She told them she’s checking with the team.' : 'Her “I’m checking with the team” reply is waiting for your approval.'} Tell her the answer and she’ll reply to them with it, and remember it for everyone who asks next time:\n\n${site()}/admin/thamires\n\nDrop Studios`,
+        url: '/admin/thamires',
+      };
+    case 'assistant_report': {
+      const n = (v: unknown) => Number(v) || 0;
+      const themes = (Array.isArray(p.themes) ? p.themes : []) as { theme: string; count: number }[];
+      const qs = (Array.isArray(p.new_questions) ? p.new_questions : []) as { question: string; answered: boolean }[];
+      const tips = (Array.isArray(p.suggestions) ? p.suggestions : []) as string[];
+      const lines = [
+        `${hi}`,
+        '',
+        `Here’s Thamires’ report for ${longDate(String(p.date))}.`,
+        '',
+        n(p.messages_in) ? `💬 ${n(p.messages_in)} message${n(p.messages_in) === 1 ? '' : 's'} from ${n(p.people)} ${n(p.people) === 1 ? 'person' : 'people'}${n(p.new_people) ? ` (${n(p.new_people)} new)` : ''}. ${n(p.replies_sent)} repl${n(p.replies_sent) === 1 ? 'y' : 'ies'} sent${n(p.auto_sent) ? `, ${n(p.auto_sent)} automatically` : ''}.` : '💬 A quiet day: no new messages.',
+        p.summary ? `\n${p.summary}` : '',
+        themes.length ? `\nWhat people talked about:\n${themes.map((t) => `• ${t.theme} (${t.count})`).join('\n')}` : '',
+        qs.length ? `\nNew questions:\n${qs.map((q) => `• ${q.question}${q.answered ? ' ✓ answered' : ' (waiting for your guidance)'}`).join('\n')}` : '',
+        n(p.open_questions) || n(p.waiting) ? `\nWaiting for you: ${[n(p.open_questions) ? `${n(p.open_questions)} question${n(p.open_questions) === 1 ? '' : 's'} to answer` : '', n(p.waiting) ? `${n(p.waiting)} repl${n(p.waiting) === 1 ? 'y' : 'ies'} to approve` : ''].filter(Boolean).join(', ')}.` : '\nNothing waiting for you. 🎉',
+        n(p.tags) ? `📸 ${n(p.tags)} tag${n(p.tags) === 1 ? '' : 's'} of Drop.` : '',
+        tips.length ? `\nIdeas from Thamires:\n${tips.map((t) => `• ${t}`).join('\n')}` : '',
+        '',
+        `${site()}/admin/thamires`,
+        '',
+        'Drop Studios',
+      ];
+      return {
+        subject: `📊 Thamires’ daily report: ${n(p.messages_in) ? `${n(p.people)} conversation${n(p.people) === 1 ? '' : 's'}` : 'quiet day'}${qs.length ? `, ${qs.length} new question${qs.length === 1 ? '' : 's'}` : ''}`,
+        text: lines.filter((l, i, a) => !(l === '' && a[i - 1] === '')).join('\n'),
+        url: '/admin/thamires',
+      };
+    }
     case 'membership_cancelled': {
       const n = Number(p.bookings_cancelled) || 0;
       return {

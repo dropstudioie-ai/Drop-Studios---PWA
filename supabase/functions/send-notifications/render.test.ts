@@ -164,3 +164,18 @@ Deno.test('Thamires alerts point admins to her page', () => {
   assertStringIncludes(render({ kind: 'assistant_tag', full_name: null, payload: { username: 'x', kind: 'story' } })!.text, 'reshare');
   assertStringIncludes(render({ kind: 'assistant_story', full_name: null, payload: { classes: 3 } })!.subject, '3 classes');
 });
+
+Deno.test('Thamires asks the owner about new questions and sends a daily report', () => {
+  const g = render({ kind: 'assistant_guidance', full_name: 'Jorge', payload: { username: 'joao', question: 'Can I bring my dog to class?', asked: 'posso levar meu cachorro?', holding_sent: true } })!;
+  assertStringIncludes(g.subject, 'needs your guidance');
+  assertStringIncludes(g.text, 'checking with the team');
+  assertStringIncludes(g.text, 'remember it');
+  assertEquals(g.url, '/admin/thamires');
+  const r = render({ kind: 'assistant_report', full_name: 'Jorge', payload: { date: '2026-11-14', messages_in: 12, people: 5, new_people: 2, replies_sent: 9, auto_sent: 6, waiting: 1, open_questions: 1, tags: 2,
+    summary: 'Mostly heels questions.', themes: [{ theme: 'Heels beginners', count: 4 }], new_questions: [{ question: 'Can I bring my dog?', answered: false }], suggestions: ['Add parking info'] } })!;
+  assertStringIncludes(r.subject, '5 conversations, 1 new question');
+  assertStringIncludes(r.text, 'Heels beginners (4)');
+  assertStringIncludes(r.text, 'Can I bring my dog? (waiting for your guidance)');
+  assertStringIncludes(r.text, 'Add parking info');
+  assertStringIncludes(render({ kind: 'assistant_report', full_name: null, payload: { date: '2026-11-14' } })!.text, 'quiet day');
+});

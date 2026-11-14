@@ -5,7 +5,7 @@
 import Anthropic from 'npm:@anthropic-ai/sdk@1.8.0';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.118.0';
 import { adminClient, corsHeaders, json, userClient } from '../_shared/http.ts';
-import { canAutoSend, draftReply, type Draft, type Turn } from './brain.ts';
+import { canAutoSend, canAutoSendHolding, draftReply, summariseDay, type Draft, type Turn } from './brain.ts';
 import { ig, igConfig, parseWebhook, verifySignature, type IgEvent } from './instagram.ts';
 
 type Db = SupabaseClient;
@@ -17,16 +17,23 @@ const background = (p: Promise<unknown>) => {
 
 async function settings(db: Db) {
   const { data } = await db.from('assistant_settings').select('*').single();
-  return data as { enabled: boolean; auto_reply: boolean; auto_tag_thanks: boolean; daily_story: boolean; story_hour: number } | null;
+  return data as { enabled: boolean; auto_reply: boolean; auto_tag_thanks: boolean; daily_story: boolean; story_hour: number; daily_report: boolean; report_hour: number } | null;
+}
+
+/** Today's date and the current hour in Dublin. */
+function dublinNow() {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Dublin', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23' }).formatToParts(new Date());
+  const part = (t: string) => parts.find((p) => p.type === t)!.value;
+  return { today: `${part('year')}-${part('month')}-${part('day')}`, hour: Number(part('hour')) };
 }
 
 interface Person { username?: string | null; display_name?: string | null; language?: string | null; language_offered?: boolean; memory?: string | null; last_inbound_at?: string | null }
-async function draft(history: Turn[], disclose: boolean, task: 'dm' | 'thanks', db: Db, who: Person = {}): Promise<Draft | null> {
+async function draft(history: Turn[], disclose: boolean, task: 'dm' | 'thanks', db: Db, who: Person = {}, followUp = false): Promise<Draft | null> {
   const client = anthropic();
   if (!client) return null;
   const { data: knowledge } = await db.rpc('assistant_knowledge');
   return draftReply({ client }, { history, knowledge, disclose, task, person: { username: who.username, name: who.display_name }, language: who.language, languageOffered: who.language_offered,
-    memory: who.memory, daysSinceLastChat: who.last_inbound_at ? Math.floor((Date.now() - new Date(who.last_inbound_at).getTime()) / 864e5) : null });
+    memory: who.memory, followUp, daysSinceLastChat: who.last_inbound_at ? Math.floor((Date.now() - new Date(who.last_inbound_at).getTime()) / 864e5) : null });
 }
 
 /** Remember the language the conversation settled on, and that she offered to switch. */
@@ -117,23 +124,99 @@ async function handleEvent(db: Db, ev: IgEvent) {
   const d = await draft(hist, !t.disclosed, 'dm', db, t);
   if (!d) return;
   await rememberLanguage(db, t.id, d, hist);
-  const { data: out } = await db.from('assistant_messages').insert({ thread_id: t.id, direction: 'out', kind: 'dm', text: d.reply, status: 'draft', needs_human: d.needs_human, reason: d.reason, translation: d.translation_en || null }).select().single();
+  const { data: out } = await db.from('assistant_messages').insert({ thread_id: t.id, direction: 'out', kind: 'dm', text: d.reply, status: 'draft', needs_human: d.needs_human, reason: d.reason, translation: d.translation_en || null, topic: d.topic, out_of_ordinary: d.out_of_ordinary }).select().single();
   if (d.needs_human) await db.from('assistant_threads').update({ status: 'needs_human' }).eq('id', t.id);
+
+  // Something new or unusual: ask the owner, and (with auto-replies on) tell the person she's checking.
+  if (d.out_of_ordinary && out) {
+    const { data: g } = await db.from('assistant_guidance').insert({ question: d.question_en || text.slice(0, 300), asked_text: text.slice(0, 1000), thread_id: t.id, message_id: out.id }).select().single();
+    let holdingSent = false;
+    if (s.auto_reply && canAutoSendHolding(d)) {
+      try { await sendDraft(db, out.id, d.reply, null); holdingSent = true; } catch (e) { console.error('holding reply failed', (e as Error).message); }
+    }
+    await db.rpc('_assistant_notify_owner', { p_kind: 'assistant_guidance', p_payload: { username: t.username ?? 'someone', question: d.question_en || text.slice(0, 200), asked: text.slice(0, 200), holding_sent: holdingSent }, p_key: `guidance:${g?.id ?? out.id}` });
+    return;
+  }
+
   if (s.auto_reply && canAutoSend(d) && out) {
     try { await sendDraft(db, out.id, d.reply, null); return; } catch (e) { console.error('auto-send failed', (e as Error).message); }
   }
   await db.rpc('_assistant_notify', { p_kind: 'assistant_draft', p_payload: { username: t.username ?? 'someone', preview: text.slice(0, 120), needs_human: d.needs_human }, p_key: `draft:${out?.id}` });
 }
 
+/** After the owner answers a question, Thamires rewrites her reply with the answer (waiting for approval). */
+async function redraftWithGuidance(db: Db, threadId: string, messageId: string | null) {
+  const { data: t } = await db.from('assistant_threads').select('*').eq('id', threadId).maybeSingle();
+  if (!t) return null;
+  const hist = await history(db, threadId);
+  const d = await draft(hist, !t.disclosed, 'dm', db, t as ThreadRow, true);
+  if (!d) return null;
+  const row = { text: d.reply, needs_human: d.needs_human, reason: d.reason, translation: d.translation_en || null, topic: d.topic, out_of_ordinary: false };
+  const { data: src } = messageId ? await db.from('assistant_messages').select('id, status').eq('id', messageId).maybeSingle() : { data: null };
+  if (src?.status === 'draft') await db.from('assistant_messages').update(row).eq('id', src.id);
+  else await db.from('assistant_messages').insert({ thread_id: threadId, direction: 'out', kind: 'dm', status: 'draft', ...row });
+  if (!d.needs_human) await db.from('assistant_threads').update({ status: 'open' }).eq('id', threadId);
+  return d;
+}
+
+/** The owner's daily report: what people talked about, new questions, and what's waiting. */
+async function dailyReport(db: Db, force = false) {
+  const s = await settings(db);
+  if (!force && (!s?.enabled || !s.daily_report)) return { skipped: 'off' };
+  const { today, hour } = dublinNow();
+  if (!force && hour < (s?.report_hour ?? 21)) return { skipped: 'too_early' };
+  if (!force) {
+    const { data: existing } = await db.from('assistant_reports').select('id').eq('report_date', today).maybeSingle();
+    if (existing) return { skipped: 'exists' };
+  }
+  const since = new Date(Date.now() - 24 * 3600e3).toISOString();
+  const [msgs, threads, questions, openQ, waiting, tags, story] = await Promise.all([
+    db.from('assistant_messages').select('direction, status, text, topic, needs_human, decided_by, thread_id').gte('created_at', since).limit(2000),
+    db.from('assistant_threads').select('id', { count: 'exact', head: true }).gte('created_at', since),
+    db.from('assistant_guidance').select('question, status').gte('created_at', since).order('created_at'),
+    db.from('assistant_guidance').select('id', { count: 'exact', head: true }).eq('status', 'open'),
+    db.from('assistant_messages').select('id', { count: 'exact', head: true }).eq('status', 'draft'),
+    db.from('assistant_mentions').select('id', { count: 'exact', head: true }).gte('received_at', since),
+    db.from('assistant_stories').select('status').eq('story_date', today).maybeSingle(),
+  ]);
+  type M = { direction: string; status: string; text: string; topic: string | null; needs_human: boolean; decided_by: string | null; thread_id: string };
+  const all = (msgs.data ?? []) as M[];
+  const inbound = all.filter((m) => m.direction === 'in' && m.text && !m.text.startsWith('['));
+  const out = all.filter((m) => m.direction === 'out');
+  const topics: Record<string, number> = {};
+  for (const m of out) if (m.topic) topics[m.topic] = (topics[m.topic] ?? 0) + 1;
+  const stats = {
+    messages_in: inbound.length,
+    people: new Set(inbound.map((m) => m.thread_id)).size,
+    new_people: threads.count ?? 0,
+    replies_sent: out.filter((m) => m.status === 'sent').length,
+    auto_sent: out.filter((m) => m.status === 'sent' && !m.decided_by).length,
+    handed_to_you: out.filter((m) => m.needs_human).length,
+    waiting: waiting.count ?? 0,
+    tags: tags.count ?? 0,
+    story: (story.data as { status?: string } | null)?.status ?? 'none',
+    topics,
+    new_questions: ((questions.data ?? []) as { question: string; status: string }[]).map((q) => ({ question: q.question, answered: q.status === 'answered' })),
+    open_questions: openQ.count ?? 0,
+  };
+  const client = anthropic();
+  const sum = client ? await summariseDay({ client }, inbound.map((m) => m.text).slice(-150)) : null;
+  const report = { report_date: today, stats, summary: sum?.summary ?? null, themes: sum?.themes ?? [], suggestions: sum?.suggestions ?? [] };
+  const { data: row } = await db.from('assistant_reports').upsert(report, { onConflict: 'report_date' }).select().single();
+  await db.rpc('_assistant_notify_owner', {
+    p_kind: 'assistant_report',
+    p_payload: { date: today, ...stats, summary: report.summary, themes: report.themes, suggestions: report.suggestions },
+    p_key: force ? `report:${today}:${Date.now()}` : `report:${today}`,
+  });
+  return { created: row?.id ?? null, ...stats };
+}
+
 /** Prepare today's Story from the timetable (rendered and published from the admin page). */
 async function dailyStory(db: Db, force = false) {
   const s = await settings(db);
   if (!force && (!s?.enabled || !s.daily_story)) return { skipped: 'off' };
-  const now = new Date();
-  const dublin = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Dublin', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23' }).formatToParts(now);
-  const part = (t: string) => dublin.find((p) => p.type === t)!.value;
-  const today = `${part('year')}-${part('month')}-${part('day')}`;
-  if (!force && Number(part('hour')) < (s?.story_hour ?? 10)) return { skipped: 'too_early' };
+  const { today, hour } = dublinNow();
+  if (!force && hour < (s?.story_hour ?? 10)) return { skipped: 'too_early' };
   const { data: existing } = await db.from('assistant_stories').select('id').eq('story_date', today).maybeSingle();
   if (existing) return { skipped: 'exists' };
   const start = new Date(`${today}T00:00:00Z`); const end = new Date(start.getTime() + 36 * 3600e3);
@@ -177,7 +260,9 @@ Deno.serve(async (req) => {
   // Scheduled daily Story.
   if (req.headers.get('x-cron-secret')) {
     if (req.headers.get('x-cron-secret') !== Deno.env.get('CRON_SECRET')) return new Response('forbidden', { status: 403 });
-    return Response.json(await dailyStory(db));
+    const story = await dailyStory(db).catch((e) => ({ error: (e as Error).message }));
+    const report = await dailyReport(db).catch((e) => ({ error: (e as Error).message }));
+    return Response.json({ story, report });
   }
 
   // Admin actions from the Drop app.
@@ -253,6 +338,21 @@ Deno.serve(async (req) => {
         }
         return json(req, { ok: true });
       }
+      case 'guide': { // the owner answers an out-of-the-ordinary question
+        const answer = String(body.answer ?? '').trim();
+        if (!answer || answer.length > 2000) return json(req, { error: 'invalid_text' }, 400);
+        const { data: before } = await db.from('assistant_guidance').select('*').eq('id', String(body.guidance_id)).single();
+        if (!before) return json(req, { error: 'not_found' }, 404);
+        await db.from('assistant_guidance').update({ answer, status: 'answered', answered_at: new Date().toISOString(), answered_by: actor }).eq('id', before.id);
+        // First answer to a waiting question: Thamires rewrites her reply with it, for you to approve.
+        const d = before.status === 'open' && before.thread_id ? await redraftWithGuidance(db, before.thread_id, before.message_id) : null;
+        return json(req, { ok: true, redrafted: Boolean(d) });
+      }
+      case 'guidance_dismiss': // not worth an answer, or no longer true: Thamires stops using it
+        await db.from('assistant_guidance').update({ status: 'dismissed', answered_by: actor }).eq('id', String(body.guidance_id));
+        return json(req, { ok: true });
+      case 'report_now':
+        return json(req, await dailyReport(db, true));
       case 'story_skip':
         await db.from('assistant_stories').update({ status: 'skipped', decided_by: actor }).eq('id', String(body.story_id));
         return json(req, { ok: true });

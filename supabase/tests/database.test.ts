@@ -1847,5 +1847,26 @@ run('database: plans, booking, allowances, pauses, security', () => {
       const { rows } = await db.query(`select count(*)::int n from notification_outbox where kind = 'assistant_draft'`);
       expect(rows[0].n).toBe((await db.query(`select count(*)::int n from profiles where role = 'admin'`)).rows[0].n);
     });
+    it('your answers to new questions become her knowledge; guidance and reports go only to the owner', async () => {
+      const m = await createUser(db, 'Curious');
+      const { rows: [th] } = await db.query(`insert into assistant_threads (ig_user_id, username) values ('ig-q', 'curious') returning id`);
+      await db.query(`insert into assistant_guidance (question, asked_text, thread_id, status) values ('Can I bring my dog?', 'posso levar meu cachorro?', $1, 'open')`, [th.id]);
+      await db.query(`insert into assistant_guidance (question, answer, status, answered_at) values ('Can I film the class?', 'Yes, for personal use, ask the teacher first.', 'answered', now())`);
+      await db.query(`insert into assistant_guidance (question, answer, status) values ('Old rule', 'No longer true', 'dismissed')`);
+      const [k] = await as<{ k: { owner_guidance: { question: string; answer: string }[] } }>(db, service, `select assistant_knowledge() k`);
+      expect(k.k.owner_guidance).toEqual([{ question: 'Can I film the class?', answer: 'Yes, for personal use, ask the teacher first.' }]);
+      expect(await as(db, user(m), `select * from assistant_guidance`)).toHaveLength(0);
+      expect(await as(db, user(admin), `select * from assistant_guidance`)).toHaveLength(3);
+      expect(await as(db, user(m), `select * from assistant_reports`)).toHaveLength(0);
+      // A manager without finance access (like Ana) doesn't get the owner's guidance requests or reports.
+      const mgr = await createUser(db, 'Manager');
+      await db.query(`update profiles set role = 'admin', finance_access = false where id = $1`, [mgr]);
+      await expect(as(db, user(m), `select _assistant_notify_owner('assistant_report', '{}', 'r1')`)).rejects.toThrow(/permission denied/);
+      await as(db, service, `select _assistant_notify_owner('assistant_report', '{"date":"2026-11-14"}', 'r1')`);
+      const { rows } = await db.query(`select user_id from notification_outbox where kind = 'assistant_report'`);
+      expect(rows.map((r) => r.user_id)).not.toContain(mgr);
+      expect(rows.length).toBe((await db.query(`select count(*)::int n from profiles where role = 'admin' and finance_access`)).rows[0].n);
+      expect(rows.length).toBeGreaterThan(0);
+    });
   });
 });

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAsync } from '../../lib/useAsync';
-import { renderStory, thamires, type ThMessage, type ThMention, type ThSettings, type ThThread, type ThStory, type Turn } from '../../lib/thamires';
+import { renderStory, thamires, type ThGuidance, type ThMessage, type ThMention, type ThReport, type ThSettings, type ThThread, type ThStory, type Turn } from '../../lib/thamires';
 import { ErrorNotice, PageSpinner, Spinner, useToast } from '../../components/ui';
 import { fmt, localDateKey } from '../../domain/time';
 
@@ -35,6 +35,16 @@ function Setup({ s, onSaved, status }: { s: ThSettings; onSaved: () => void; sta
         <label className="mt-2 flex items-center gap-2 text-sm">Ready by
           <select className="input w-28" value={s.story_hour} onChange={(e) => void save({ story_hour: Number(e.target.value) })}>
             {Array.from({ length: 15 }, (_, i) => i + 6).map((h) => <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>)}
+          </select>
+        </label>
+      )}
+      <div className="divide-y divide-line">
+        <Switch label="Send me a daily report" hint="An evening email with what people talked about, new questions and anything waiting for you." checked={s.daily_report} disabled={!s.enabled} onChange={(v) => void save({ daily_report: v })} />
+      </div>
+      {s.daily_report && (
+        <label className="mt-2 flex items-center gap-2 text-sm">Report at
+          <select className="input w-28" value={s.report_hour} onChange={(e) => void save({ report_hour: Number(e.target.value) })}>
+            {Array.from({ length: 12 }, (_, i) => i + 12).map((h) => <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>)}
           </select>
         </label>
       )}
@@ -188,6 +198,108 @@ function TodayStory({ reload }: { reload: () => void }) {
   );
 }
 
+function GuidanceCard({ g, onDone }: { g: ThGuidance; onDone: () => void }) {
+  const toast = useToast();
+  const [answer, setAnswer] = useState(g.answer ?? '');
+  const [editing, setEditing] = useState(g.status === 'open');
+  const [busy, setBusy] = useState(false);
+  async function save() {
+    setBusy(true);
+    try {
+      const r = await thamires.guide(g.id, answer.trim());
+      toast(r.redrafted ? 'Thanks! Thamires rewrote her reply with your answer: check “To approve”.' : 'Saved. Thamires will use this from now on.');
+      setEditing(false); onDone();
+    } catch (e) { toast((e as Error).message, 'error'); } finally { setBusy(false); }
+  }
+  return (
+    <li className={`card p-4 ${g.status === 'open' ? 'border-2 border-accent-500' : ''}`}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="font-bold">{g.question}</p>
+        <span className="shrink-0 text-xs text-muted">{fmt.dateTime(g.created_at)}</span>
+      </div>
+      {g.asked_text && <p className="mt-1 text-sm text-muted">@{g.assistant_threads?.username ?? 'someone'} wrote: “{g.asked_text}”</p>}
+      {editing ? (
+        <>
+          <label className="mt-3 block text-xs font-semibold text-muted">Your answer for Thamires (she’ll put it in her own words, in their language)</label>
+          <textarea className="input mt-1 min-h-20" value={answer} onChange={(e) => setAnswer(e.target.value)} maxLength={2000} placeholder="e.g. Sorry, no pets in the studio, but well-behaved dogs are welcome in the reception area." />
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button className="btn-primary btn-sm" disabled={busy || !answer.trim()} onClick={() => void save()}>{busy ? <Spinner className="h-4 w-4" /> : g.status === 'open' ? 'Teach Thamires & draft the reply' : 'Save'}</button>
+            {g.status === 'open'
+              ? <button className="btn-ghost btn-sm" disabled={busy} onClick={async () => { await thamires.dismissGuidance(g.id); onDone(); }}>Not needed</button>
+              : <button className="btn-ghost btn-sm" onClick={() => { setAnswer(g.answer ?? ''); setEditing(false); }}>Cancel</button>}
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="mt-2 rounded-xl bg-success/10 p-3 text-sm"><strong>Your answer:</strong> {g.answer}</p>
+          <div className="mt-2 flex gap-3 text-sm">
+            <button className="font-semibold text-brand-700" onClick={() => setEditing(true)}>Change</button>
+            <button className="font-semibold text-muted" onClick={async () => { await thamires.dismissGuidance(g.id); toast('Thamires won’t use this any more'); onDone(); }}>Remove</button>
+          </div>
+        </>
+      )}
+    </li>
+  );
+}
+
+function Guidance({ list, onDone }: { list: ThGuidance[]; onDone: () => void }) {
+  const open = list.filter((g) => g.status === 'open');
+  const answered = list.filter((g) => g.status === 'answered');
+  return (
+    <div className="space-y-6">
+      <section>
+        <h3 className="font-bold">Questions waiting for you</h3>
+        <p className="text-sm text-muted">When someone asks Thamires something new or unusual, she doesn’t guess: she tells them she’s checking and asks you here (you also get an email).</p>
+        {open.length ? <ul className="mt-3 space-y-3">{open.map((g) => <GuidanceCard key={g.id} g={g} onDone={onDone} />)}</ul> : <p className="mt-3 text-sm text-muted">No questions waiting. 🎉</p>}
+      </section>
+      {answered.length > 0 && (
+        <section>
+          <h3 className="font-bold">What you’ve taught her ({answered.length})</h3>
+          <p className="text-sm text-muted">Thamires uses these answers for everyone who asks the same thing.</p>
+          <ul className="mt-3 space-y-3">{answered.map((g) => <GuidanceCard key={g.id} g={g} onDone={onDone} />)}</ul>
+        </section>
+      )}
+    </div>
+  );
+}
+
+const TOPIC_LABEL: Record<string, string> = { timetable: 'Timetable', prices: 'Prices', booking: 'Booking', class_info: 'Class info', location: 'Location', events: 'Events', thanks: 'Thank-yous', complaint: 'Complaints', refund_or_payment: 'Refunds & payments', other: 'Other' };
+
+function Reports({ reload }: { reload: number }) {
+  const toast = useToast();
+  const reports = useAsync(() => thamires.reports(), [reload]);
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-muted">Thamires emails you this every evening. The last two weeks are kept here.</p>
+        <button className="btn-outline btn-sm" disabled={busy} onClick={async () => { setBusy(true); try { await thamires.reportNow(); reports.reload(); toast('Report made and emailed to you'); } catch (e) { toast((e as Error).message, 'error'); } finally { setBusy(false); } }}>{busy ? <Spinner className="h-4 w-4" /> : 'Make today’s report now'}</button>
+      </div>
+      {reports.loading && !reports.data ? <Spinner /> : !reports.data?.length ? <p className="text-sm text-muted">No reports yet. The first one arrives this evening once Thamires is on.</p> : (
+        <ul className="space-y-3">
+          {reports.data.map((r: ThReport) => (
+            <li key={r.id} className="card p-4">
+              <p className="font-bold">{new Intl.DateTimeFormat('en-IE', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(`${r.report_date}T12:00:00`))}</p>
+              <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                <span className="chip bg-brand-50 text-brand-700">💬 {r.stats.messages_in} messages</span>
+                <span className="chip bg-brand-50 text-brand-700">🙋 {r.stats.people} people{r.stats.new_people ? ` (${r.stats.new_people} new)` : ''}</span>
+                <span className="chip bg-brand-50 text-brand-700">✉️ {r.stats.replies_sent} replies sent</span>
+                {r.stats.tags > 0 && <span className="chip bg-brand-50 text-brand-700">📸 {r.stats.tags} tags</span>}
+                {(r.stats.open_questions > 0 || r.stats.waiting > 0) && <span className="chip bg-accent-50 text-accent-600">⏳ {r.stats.open_questions} questions · {r.stats.waiting} to approve</span>}
+              </div>
+              {r.summary && <p className="mt-3 text-sm">{r.summary}</p>}
+              {r.themes.length > 0 && <><p className="mt-3 text-xs font-semibold uppercase text-muted">What people talked about</p><ul className="mt-1 text-sm">{r.themes.map((t, i) => <li key={i}>• {t.theme} <span className="text-muted">({t.count})</span></li>)}</ul></>}
+              {!r.themes.length && Object.keys(r.stats.topics ?? {}).length > 0 && <p className="mt-3 text-sm">{Object.entries(r.stats.topics).map(([k, v]) => `${TOPIC_LABEL[k] ?? k} (${v})`).join(' · ')}</p>}
+              {r.stats.new_questions?.length > 0 && <><p className="mt-3 text-xs font-semibold uppercase text-muted">New questions</p><ul className="mt-1 text-sm">{r.stats.new_questions.map((q, i) => <li key={i}>• {q.question} {q.answered ? <span className="text-success">✓</span> : <span className="text-accent-600">(waiting for you)</span>}</li>)}</ul></>}
+              {r.suggestions.length > 0 && <><p className="mt-3 text-xs font-semibold uppercase text-muted">Ideas from Thamires</p><ul className="mt-1 text-sm">{r.suggestions.map((t, i) => <li key={i}>💡 {t}</li>)}</ul></>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function TryHer() {
   const toast = useToast();
   const [history, setHistory] = useState<Turn[]>([]);
@@ -205,7 +317,7 @@ function TryHer() {
       if (d.memory) setMemory(d.memory);
       setHistory([...next, { from: 'thamires', text: d.reply }]);
       setLang({ language: d.offered_language ? lang.language : d.language, offered: lang.offered || d.offered_language });
-      setMeta(`${d.language} · ${d.topic}${d.needs_human ? ' · would wait for a person' : ''} · ${d.reason}${d.translation_en ? ` · In English: ${d.translation_en}` : ''}`);
+      setMeta(`${d.language} · ${d.topic}${d.out_of_ordinary ? ` · 🤔 new question, she’d ask you: “${d.question_en}”` : d.needs_human ? ' · would wait for a person' : ''} · ${d.reason}${d.translation_en ? ` · In English: ${d.translation_en}` : ''}`);
     }
     catch (e) { toast((e as Error).message, 'error'); } finally { setBusy(false); }
   }
@@ -234,13 +346,15 @@ export default function AdminThamires() {
   const status = useAsync(() => thamires.status().catch(() => null), []);
   const drafts = useAsync(() => thamires.drafts(), [tick]);
   const mentions = useAsync(() => thamires.mentions(), [tick]);
+  const guidance = useAsync(() => thamires.guidance(), [tick]);
   const pendingTags = useMemo(() => (mentions.data ?? []).filter((m) => m.reply_status === 'draft').length, [mentions.data]);
-  const [tab, setTab] = useState<'inbox' | 'chats' | 'tags' | 'story' | 'try'>('inbox');
+  const openQuestions = useMemo(() => (guidance.data ?? []).filter((g) => g.status === 'open').length, [guidance.data]);
+  const [tab, setTab] = useState<'inbox' | 'questions' | 'chats' | 'tags' | 'story' | 'reports' | 'try'>('inbox');
   useEffect(() => { const h = setInterval(() => setTick((n) => n + 1), 30000); return () => clearInterval(h); }, []);
   if (settings.loading && !settings.data) return <PageSpinner />;
   if (settings.error || !settings.data) return <ErrorNotice error={settings.error ?? 'Thamires isn’t set up yet.'} onRetry={settings.reload} />;
   const refresh = () => setTick((n) => n + 1);
-  const tabs: [typeof tab, string][] = [['inbox', `To approve${drafts.data?.length ? ` (${drafts.data.length})` : ''}`], ['chats', 'Conversations'], ['tags', `Tags${pendingTags ? ` (${pendingTags})` : ''}`], ['story', 'Today’s Story'], ['try', 'Try her']];
+  const tabs: [typeof tab, string][] = [['inbox', `To approve${drafts.data?.length ? ` (${drafts.data.length})` : ''}`], ['questions', `Questions for you${openQuestions ? ` (${openQuestions})` : ''}`], ['chats', 'Conversations'], ['tags', `Tags${pendingTags ? ` (${pendingTags})` : ''}`], ['story', 'Today’s Story'], ['reports', 'Daily reports'], ['try', 'Try her']];
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
@@ -252,9 +366,11 @@ export default function AdminThamires() {
         {tabs.map(([id, label]) => <button key={id} onClick={() => setTab(id)} className={`shrink-0 border-b-2 px-3 py-2 text-sm font-semibold ${tab === id ? 'border-brand-600 text-brand-700' : 'border-transparent text-muted'}`}>{label}</button>)}
       </div>
       {tab === 'inbox' && (drafts.data?.length ? <ul className="space-y-3">{drafts.data.map((m) => <DraftCard key={m.id} m={m} onDone={refresh} />)}</ul> : <p className="text-sm text-muted">Nothing waiting. New replies Thamires drafts appear here, and you get an email.</p>)}
+      {tab === 'questions' && <Guidance list={guidance.data ?? []} onDone={refresh} />}
       {tab === 'chats' && <Conversations reload={tick} />}
       {tab === 'tags' && <Tags list={mentions.data ?? []} onDone={refresh} />}
       {tab === 'story' && <TodayStory reload={refresh} />}
+      {tab === 'reports' && <Reports reload={tick} />}
       {tab === 'try' && <TryHer />}
     </div>
   );
