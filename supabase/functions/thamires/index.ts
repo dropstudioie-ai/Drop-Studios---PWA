@@ -9,7 +9,12 @@ import { canAutoSend, canAutoSendHolding, draftReply, summariseDay, type Draft, 
 import { ig, igConfig, parseWebhook, verifySignature, type IgEvent } from './instagram.ts';
 
 type Db = SupabaseClient;
-const anthropic = () => (Deno.env.get('ANTHROPIC_API_KEY') ? new Anthropic() : null);
+// Keys that aren't tied to one Claude workspace need the workspace ID on every request.
+const anthropic = () => {
+  if (!Deno.env.get('ANTHROPIC_API_KEY')) return null;
+  const ws = Deno.env.get('ANTHROPIC_WORKSPACE_ID');
+  return new Anthropic(ws ? { defaultHeaders: { 'anthropic-workspace-id': ws } } : {});
+};
 const background = (p: Promise<unknown>) => {
   const rt = (globalThis as { EdgeRuntime?: { waitUntil: (p: Promise<unknown>) => void } }).EdgeRuntime;
   if (rt) rt.waitUntil(p); else return p;
