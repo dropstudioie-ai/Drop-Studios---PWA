@@ -27,7 +27,11 @@ Deno.test('drafts a reply with live knowledge and the disclosure note', async ()
 
 Deno.test('refusals, bad JSON and sensitive topics go to a person', async () => {
   assertEquals(await draftReply({ client: fakeClient('', 'refusal') }, { history: [{ from: 'member', text: 'x' }], knowledge: {}, disclose: false }), HANDOFF);
-  assertEquals(await draftReply({ client: fakeClient('not json') }, { history: [{ from: 'member', text: 'x' }], knowledge: {}, disclose: false }), HANDOFF);
+  const bad = await draftReply({ client: fakeClient('not json') }, { history: [{ from: 'member', text: 'x' }], knowledge: {}, disclose: false });
+  assertEquals({ ...bad, reason: '' }, { ...HANDOFF, reason: '' });
+  assertStringIncludes(bad.reason, 'could not reach her AI brain'); // the team sees why
+  const leaky = await draftReply({ client: { beta: { messages: { create: () => { throw new Error('401 invalid x-api-key sk-ant-api03-abc_DEF'); } } } } } as never, { history: [{ from: 'member', text: 'x' }], knowledge: {}, disclose: false });
+  assert(!leaky.reason.includes('sk-ant-api03'));
   assert(!canAutoSend({ ...HANDOFF, needs_human: false, topic: 'refund_or_payment' }));
   assert(!canAutoSend({ ...HANDOFF, needs_human: true, topic: 'prices' }));
 });

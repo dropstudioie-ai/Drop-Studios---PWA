@@ -151,8 +151,10 @@ export async function draftReply(deps: BrainDeps, o: { history: Turn[]; knowledg
     return { ...parsed, reply: parsed.reply.trim().slice(0, 1000), memory: (parsed.memory ?? '').trim().slice(0, 400),
       out_of_ordinary: odd, needs_human: parsed.needs_human || odd, question_en: odd ? (parsed.question_en ?? '').trim().slice(0, 300) : '' };
   } catch (e) {
-    console.error('thamires draft failed', (e as Error).message);
-    return HANDOFF;
+    const msg = (e as Error).message ?? String(e);
+    console.error('thamires draft failed', msg);
+    // The reason is only shown to the team (admin page), so it can say what went wrong.
+    return { ...HANDOFF, reason: `Thamires could not reach her AI brain: ${msg.replace(/sk-ant-[\w-]+/g, '[key]').slice(0, 300)}` };
   }
 }
 
