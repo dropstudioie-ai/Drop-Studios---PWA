@@ -324,8 +324,13 @@ Deno.serve(async (req) => {
   const sig = req.headers.get('x-hub-signature-256');
   if (sig) {
     const raw = await req.text();
-    if (!(await verifySignature(raw, sig, Deno.env.get('META_APP_SECRET') ?? ''))) return new Response('bad signature', { status: 401 });
-    const events = parseWebhook(JSON.parse(raw), igConfig()?.userId);
+    const ok = await verifySignature(raw, sig, Deno.env.get('META_APP_SECRET') ?? '');
+    let body: { object?: string; entry?: { messaging?: unknown[]; changes?: { field?: string }[] }[] } = {};
+    try { body = JSON.parse(raw); } catch { /* logged below */ }
+    const fields = [...new Set((body.entry ?? []).flatMap((e) => [...(e.messaging?.length ? ['messages'] : []), ...(e.changes ?? []).map((c) => c.field ?? '?')]))];
+    const events = ok ? parseWebhook(body as never, igConfig()?.userId) : [];
+    await db.from('assistant_webhook_log').insert({ signature_ok: ok, object: body.object ?? null, fields, events: events.length });
+    if (!ok) return new Response('bad signature', { status: 401 });
     const work = (async () => { for (const ev of events) { try { await handleEvent(db, ev); } catch (e) { console.error('thamires event failed', (e as Error).message); } } })();
     await background(work);
     return new Response('ok');
