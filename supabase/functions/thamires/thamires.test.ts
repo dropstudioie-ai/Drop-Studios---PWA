@@ -109,3 +109,27 @@ Deno.test('daily summary: English, no names, null when there were no messages', 
   assertStringIncludes(JSON.stringify(lastReq.system), 'Never include names');
   assertEquals(await summariseDay({ client: fakeClient('not json') }, ['x']), null);
 });
+
+Deno.test('webhooks: comments, reactions and Story insights (own comments ignored)', () => {
+  const evs = parseWebhook({ object: 'instagram', entry: [{ id: 'DROP', time: 1,
+    messaging: [{ sender: { id: 'u1' }, recipient: { id: 'DROP' }, reaction: { mid: 'm9', action: 'react', reaction: 'love', emoji: '❤️' } },
+                { sender: { id: 'u1' }, recipient: { id: 'DROP' }, reaction: { mid: 'm9', action: 'unreact' } }],
+    changes: [
+      { field: 'comments', value: { id: 'c1', text: 'What time is heels?', from: { id: 'u2', username: 'ana' }, media: { id: 'p1' } } },
+      { field: 'comments', value: { id: 'c2', text: 'Thanks! – Thamires 🤖', from: { id: 'DROP', username: 'atdropstudios' }, media: { id: 'p1' } } },
+      { field: 'story_insights', value: { media_id: 's1', reach: 120, replies: 3, exits: 4 } },
+    ] }] } as never, 'DROP');
+  assertEquals(evs, [
+    { type: 'reaction', from: 'u1', mid: 'm9', emoji: '❤️' },
+    { type: 'reaction', from: 'u1', mid: 'm9', emoji: null },
+    { type: 'comment', commentId: 'c1', mediaId: 'p1', parentId: null, from: 'u2', username: 'ana', text: 'What time is heels?' },
+    { type: 'story_insights', mediaId: 's1', metrics: { reach: 120, replies: 3, exits: 4 } },
+  ]);
+});
+
+Deno.test('comment replies are public, short and signed', async () => {
+  assertStringIncludes(PERSONA, 'Your reply is public');
+  assertStringIncludes(PERSONA, '– Thamires 🤖');
+  await draftReply({ client: fakeClient({ ...HANDOFF, reply: 'Thank you! 💃 – Thamires 🤖', needs_human: false }) }, { history: [{ from: 'member', text: 'Love this!' }], knowledge: {}, disclose: false, task: 'comment' });
+  assertStringIncludes(JSON.stringify(lastReq.system), 'public comment');
+});

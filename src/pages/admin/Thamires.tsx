@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAsync } from '../../lib/useAsync';
-import { renderStory, thamires, type ThGuidance, type ThMessage, type ThMention, type ThReport, type ThSettings, type ThThread, type ThStory, type Turn } from '../../lib/thamires';
+import { renderStory, thamires, type ThComment, type ThGuidance, type ThMessage, type ThMention, type ThReport, type ThSettings, type ThThread, type ThStory, type Turn } from '../../lib/thamires';
 import { ErrorNotice, PageSpinner, Spinner, useToast } from '../../components/ui';
 import { fmt, localDateKey } from '../../domain/time';
 
@@ -29,6 +29,7 @@ function Setup({ s, onSaved, status }: { s: ThSettings; onSaved: () => void; sta
         <Switch label="Thamires is on" hint="She reads new Instagram messages and tags and prepares replies." checked={s.enabled} onChange={(v) => void save({ enabled: v }, v ? 'Thamires is on' : 'Thamires is off')} />
         <Switch label="Send simple replies automatically" hint="Timetable, prices, booking, location and class questions go out straight away. Anything sensitive still waits for you." checked={s.auto_reply} disabled={!s.enabled} onChange={(v) => void save({ auto_reply: v })} />
         <Switch label="Thank people who tag Drop automatically" hint="Otherwise each thank-you waits for your approval." checked={s.auto_tag_thanks} disabled={!s.enabled} onChange={(v) => void save({ auto_tag_thanks: v })} />
+        <Switch label="Reply to simple comments automatically" hint="Thank-yous and quick questions under Drop’s posts get a short public reply. Complaints and new questions still wait for you." checked={s.auto_comment_reply} disabled={!s.enabled} onChange={(v) => void save({ auto_comment_reply: v })} />
         <Switch label="Prepare a daily Story" hint="Today's classes, ready for you to publish in one tap." checked={s.daily_story} disabled={!s.enabled} onChange={(v) => void save({ daily_story: v })} />
       </div>
       {s.daily_story && (
@@ -115,7 +116,7 @@ function Conversations({ reload }: { reload: number }) {
           <ul className="mt-3 max-h-96 space-y-2 overflow-y-auto">
             {(msgs.data ?? []).map((m) => (
               <li key={m.id} className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm ${m.direction === 'in' ? 'bg-canvas' : 'ml-auto bg-brand-600 text-white'} ${m.status === 'draft' ? 'opacity-60' : ''}`}>
-                {m.text}{m.status === 'draft' && <span className="block text-[11px]">draft, waiting for approval</span>}{m.status === 'failed' && <span className="block text-[11px]">not sent: {m.error}</span>}
+                {m.text}{m.status === 'draft' && <span className="block text-[11px]">draft, waiting for approval</span>}{m.status === 'failed' && <span className="block text-[11px]">not sent: {m.error}</span>}{m.reaction && <span className="mt-1 block w-fit rounded-full bg-white px-1 text-sm">{m.reaction}</span>}
               </li>
             ))}
           </ul>
@@ -161,6 +162,72 @@ function Tags({ list, onDone }: { list: ThMention[]; onDone: () => void }) {
   );
 }
 
+function Comments({ list, onDone }: { list: ThComment[]; onDone: () => void }) {
+  const toast = useToast();
+  const [texts, setTexts] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  if (!list.length) return <p className="text-sm text-muted">No comments yet. When someone comments on one of Drop’s posts, Thamires drafts a short public reply here.</p>;
+  const act = async (id: string, fn: () => Promise<unknown>, ok: string) => { setBusy(id); try { await fn(); toast(ok); onDone(); } catch (e) { toast((e as Error).message, 'error'); } finally { setBusy(null); } };
+  return (
+    <ul className="space-y-3">
+      {list.map((c) => (
+        <li key={c.id} className={`card p-4 ${c.reply_status === 'draft' && c.needs_human ? 'border-2 border-accent-500' : ''}`}>
+          <div className="flex items-center justify-between gap-2">
+            <p className="font-bold">@{c.username ?? 'someone'}</p>
+            <span className="text-xs text-muted">{fmt.dateTime(c.received_at)}</span>
+          </div>
+          <p className="mt-1 rounded-xl bg-canvas p-2 text-sm">{c.text}</p>
+          {c.post_caption && <p className="mt-1 truncate text-xs text-muted">On the post: “{c.post_caption}”</p>}
+          {c.reply_status === 'draft' && c.out_of_ordinary && <p className="mt-2 text-sm font-semibold text-accent-600">🤔 New question: answer it on “Questions for you” and she’ll rewrite this reply.</p>}
+          {c.reply_status === 'draft' && c.needs_human && !c.out_of_ordinary && <p className="mt-2 text-sm font-semibold text-accent-600">👋 Needs a person: {c.reason}</p>}
+          {c.reply_status === 'draft' && c.reply_text ? (
+            <>
+              <label className="mt-3 block text-xs font-semibold text-muted">Public reply (edit if you like)</label>
+              <textarea className="input mt-1 min-h-16" value={texts[c.id] ?? c.reply_text} onChange={(e) => setTexts({ ...texts, [c.id]: e.target.value })} maxLength={1000} />
+              {c.translation && <p className="mt-1 rounded-lg bg-brand-50 p-2 text-xs text-brand-700"><strong>In English:</strong> {c.translation}</p>}
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button className="btn-primary btn-sm" disabled={busy === c.id} onClick={() => void act(c.id, () => thamires.commentSend(c.id, (texts[c.id] ?? c.reply_text!).trim()), 'Reply posted')}>{busy === c.id ? <Spinner className="h-4 w-4" /> : 'Post reply'}</button>
+                <button className="btn-ghost btn-sm" disabled={busy === c.id} onClick={() => void act(c.id, () => thamires.commentSkip(c.id), 'Skipped')}>Skip</button>
+              </div>
+            </>
+          ) : <p className="mt-2 text-sm">{c.reply_status === 'sent' ? <>✓ Replied: <span className="text-muted">{c.reply_text}</span></> : c.reply_status === 'failed' ? `Not sent: ${c.error}` : c.reply_status === 'skipped' ? 'Skipped' : 'Preparing a reply…'}</p>}
+          {c.permalink && <a className="mt-2 inline-block text-sm font-semibold text-brand-700" href={c.permalink} target="_blank" rel="noreferrer">Open the post ↗</a>}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+const Insights = ({ i }: { i: Record<string, number> }) => (
+  <span className="flex flex-wrap gap-2 text-xs">
+    {i.reach != null && <span className="chip bg-brand-50 text-brand-700">👀 {i.reach} reached</span>}
+    {i.impressions != null && <span className="chip bg-brand-50 text-brand-700">{i.impressions} views</span>}
+    {i.replies != null && <span className="chip bg-brand-50 text-brand-700">💬 {i.replies} replies</span>}
+    {i.taps_forward != null && <span className="chip bg-canvas">⏩ {i.taps_forward}</span>}
+    {i.taps_back != null && <span className="chip bg-canvas">⏪ {i.taps_back}</span>}
+    {i.exits != null && <span className="chip bg-canvas">🚪 {i.exits} exits</span>}
+  </span>
+);
+
+function RecentStories({ reload }: { reload: number }) {
+  const list = useAsync(() => thamires.recentStories(), [reload]);
+  if (!list.data?.length) return null;
+  return (
+    <div className="mt-6">
+      <h3 className="font-bold">How recent Stories did</h3>
+      <p className="text-sm text-muted">Instagram sends the numbers within a day of each Story.</p>
+      <ul className="mt-2 space-y-2">
+        {list.data.map((st) => (
+          <li key={st.id} className="flex flex-wrap items-center gap-3 text-sm">
+            <span className="w-32 font-semibold">{new Intl.DateTimeFormat('en-IE', { weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(`${st.story_date}T12:00:00`))}</span>
+            {st.insights ? <Insights i={st.insights} /> : <span className="text-muted">Numbers not in yet</span>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function TodayStory({ reload }: { reload: () => void }) {
   const toast = useToast();
   const today = localDateKey(new Date());
@@ -191,7 +258,7 @@ function TodayStory({ reload }: { reload: () => void }) {
             </div>
           </>
         )}
-        {s?.status === 'published' && <p className="font-semibold text-success">✓ Published on Instagram</p>}
+        {s?.status === 'published' && <><p className="font-semibold text-success">✓ Published on Instagram</p>{s.insights && <Insights i={s.insights} />}</>}
         {s?.status === 'failed' && <p className="text-danger">Not published: {s.error}</p>}
       </div>
     </div>
@@ -285,6 +352,9 @@ function Reports({ reload }: { reload: number }) {
                 <span className="chip bg-brand-50 text-brand-700">🙋 {r.stats.people} people{r.stats.new_people ? ` (${r.stats.new_people} new)` : ''}</span>
                 <span className="chip bg-brand-50 text-brand-700">✉️ {r.stats.replies_sent} replies sent</span>
                 {r.stats.tags > 0 && <span className="chip bg-brand-50 text-brand-700">📸 {r.stats.tags} tags</span>}
+                {(r.stats.comments ?? 0) > 0 && <span className="chip bg-brand-50 text-brand-700">💭 {r.stats.comments} comments ({r.stats.comments_replied ?? 0} replied)</span>}
+                {(r.stats.reactions_week ?? 0) > 0 && <span className="chip bg-brand-50 text-brand-700">❤️ {r.stats.reactions_week} reactions this week</span>}
+                {r.stats.last_story && <span className="chip bg-brand-50 text-brand-700">🗓️ Last Story: {r.stats.last_story.reach ?? 0} reached</span>}
                 {(r.stats.open_questions > 0 || r.stats.waiting > 0) && <span className="chip bg-accent-50 text-accent-600">⏳ {r.stats.open_questions} questions · {r.stats.waiting} to approve</span>}
               </div>
               {r.summary && <p className="mt-3 text-sm">{r.summary}</p>}
@@ -347,14 +417,16 @@ export default function AdminThamires() {
   const drafts = useAsync(() => thamires.drafts(), [tick]);
   const mentions = useAsync(() => thamires.mentions(), [tick]);
   const guidance = useAsync(() => thamires.guidance(), [tick]);
+  const comments = useAsync(() => thamires.comments(), [tick]);
+  const pendingComments = useMemo(() => (comments.data ?? []).filter((c) => c.reply_status === 'draft').length, [comments.data]);
   const pendingTags = useMemo(() => (mentions.data ?? []).filter((m) => m.reply_status === 'draft').length, [mentions.data]);
   const openQuestions = useMemo(() => (guidance.data ?? []).filter((g) => g.status === 'open').length, [guidance.data]);
-  const [tab, setTab] = useState<'inbox' | 'questions' | 'chats' | 'tags' | 'story' | 'reports' | 'try'>('inbox');
+  const [tab, setTab] = useState<'inbox' | 'questions' | 'chats' | 'comments' | 'tags' | 'story' | 'reports' | 'try'>('inbox');
   useEffect(() => { const h = setInterval(() => setTick((n) => n + 1), 30000); return () => clearInterval(h); }, []);
   if (settings.loading && !settings.data) return <PageSpinner />;
   if (settings.error || !settings.data) return <ErrorNotice error={settings.error ?? 'Thamires isn’t set up yet.'} onRetry={settings.reload} />;
   const refresh = () => setTick((n) => n + 1);
-  const tabs: [typeof tab, string][] = [['inbox', `To approve${drafts.data?.length ? ` (${drafts.data.length})` : ''}`], ['questions', `Questions for you${openQuestions ? ` (${openQuestions})` : ''}`], ['chats', 'Conversations'], ['tags', `Tags${pendingTags ? ` (${pendingTags})` : ''}`], ['story', 'Today’s Story'], ['reports', 'Daily reports'], ['try', 'Try her']];
+  const tabs: [typeof tab, string][] = [['inbox', `To approve${drafts.data?.length ? ` (${drafts.data.length})` : ''}`], ['questions', `Questions for you${openQuestions ? ` (${openQuestions})` : ''}`], ['chats', 'Conversations'], ['comments', `Comments${pendingComments ? ` (${pendingComments})` : ''}`], ['tags', `Tags${pendingTags ? ` (${pendingTags})` : ''}`], ['story', 'Today’s Story'], ['reports', 'Daily reports'], ['try', 'Try her']];
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
@@ -368,8 +440,9 @@ export default function AdminThamires() {
       {tab === 'inbox' && (drafts.data?.length ? <ul className="space-y-3">{drafts.data.map((m) => <DraftCard key={m.id} m={m} onDone={refresh} />)}</ul> : <p className="text-sm text-muted">Nothing waiting. New replies Thamires drafts appear here, and you get an email.</p>)}
       {tab === 'questions' && <Guidance list={guidance.data ?? []} onDone={refresh} />}
       {tab === 'chats' && <Conversations reload={tick} />}
+      {tab === 'comments' && <Comments list={comments.data ?? []} onDone={refresh} />}
       {tab === 'tags' && <Tags list={mentions.data ?? []} onDone={refresh} />}
-      {tab === 'story' && <TodayStory reload={refresh} />}
+      {tab === 'story' && <><TodayStory reload={refresh} /><RecentStories reload={tick} /></>}
       {tab === 'reports' && <Reports reload={tick} />}
       {tab === 'try' && <TryHer />}
     </div>

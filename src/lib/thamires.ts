@@ -1,13 +1,14 @@
 import { supabase } from './supabase';
 
-export interface ThSettings { enabled: boolean; auto_reply: boolean; auto_tag_thanks: boolean; daily_story: boolean; story_hour: number; daily_report: boolean; report_hour: number; notes: string | null }
-export interface ThGuidance { id: string; question: string; asked_text: string | null; answer: string | null; status: 'open' | 'answered' | 'dismissed'; thread_id: string | null; created_at: string; answered_at: string | null; assistant_threads: { username: string | null } | null }
-export interface ThReportStats { messages_in: number; people: number; new_people: number; replies_sent: number; auto_sent: number; handed_to_you: number; waiting: number; tags: number; story: string; topics: Record<string, number>; new_questions: { question: string; answered: boolean }[]; open_questions: number }
+export interface ThSettings { enabled: boolean; auto_reply: boolean; auto_tag_thanks: boolean; daily_story: boolean; story_hour: number; daily_report: boolean; report_hour: number; auto_comment_reply: boolean; notes: string | null }
+export interface ThComment { id: string; username: string | null; text: string; post_caption: string | null; permalink: string | null; reply_text: string | null; reply_status: 'draft' | 'sent' | 'rejected' | 'failed' | 'skipped'; needs_human: boolean; out_of_ordinary: boolean; reason: string | null; translation: string | null; error: string | null; received_at: string }
+export interface ThGuidance { id: string; comment_id: string | null; question: string; asked_text: string | null; answer: string | null; status: 'open' | 'answered' | 'dismissed'; thread_id: string | null; created_at: string; answered_at: string | null; assistant_threads: { username: string | null } | null }
+export interface ThReportStats { messages_in: number; people: number; new_people: number; replies_sent: number; auto_sent: number; handed_to_you: number; waiting: number; tags: number; story: string; topics: Record<string, number>; new_questions: { question: string; answered: boolean }[]; open_questions: number; comments?: number; comments_replied?: number; comments_waiting?: number; reactions_week?: number; last_story?: ({ date: string } & Record<string, number | string>) | null }
 export interface ThReport { id: string; report_date: string; stats: ThReportStats; summary: string | null; themes: { theme: string; count: number }[]; suggestions: string[]; created_at: string }
 export interface ThThread { id: string; ig_user_id: string; username: string | null; display_name: string | null; status: 'open' | 'needs_human' | 'closed'; last_inbound_at: string | null; last_message_at: string; language: string | null; memory: string | null }
-export interface ThMessage { id: string; thread_id: string; direction: 'in' | 'out'; kind: string; text: string; status: 'received' | 'draft' | 'sent' | 'rejected' | 'failed'; needs_human: boolean; reason: string | null; translation: string | null; error: string | null; created_at: string }
+export interface ThMessage { id: string; thread_id: string; direction: 'in' | 'out'; kind: string; text: string; status: 'received' | 'draft' | 'sent' | 'rejected' | 'failed'; needs_human: boolean; reason: string | null; translation: string | null; error: string | null; reaction?: string | null; created_at: string }
 export interface ThMention { id: string; kind: 'post' | 'story'; username: string | null; permalink: string | null; caption: string | null; media_url: string | null; reply_text: string | null; reply_status: 'draft' | 'sent' | 'rejected' | 'failed' | 'skipped'; error: string | null; reshared: boolean; received_at: string }
-export interface ThStory { id: string; story_date: string; title: string; lines: { time: string; title: string; instructor: string | null; style_slug: string | null }[]; art_slug: string | null; status: string; error: string | null }
+export interface ThStory { id: string; story_date: string; insights: Record<string, number> | null; title: string; lines: { time: string; title: string; instructor: string | null; style_slug: string | null }[]; art_slug: string | null; status: string; error: string | null }
 export interface ThDraft { reply: string; needs_human: boolean; reason: string; topic: string; language: string; offered_language: boolean; translation_en: string; memory: string; out_of_ordinary: boolean; question_en: string }
 export interface Turn { from: 'member' | 'thamires'; text: string }
 
@@ -53,6 +54,10 @@ export const thamires = {
   dismissGuidance: (id: string) => call({ action: 'guidance_dismiss', guidance_id: id }),
   reports: () => rows<ThReport[]>(supabase.from('assistant_reports').select('*').order('report_date', { ascending: false }).limit(14)),
   reportNow: () => call({ action: 'report_now' }),
+  comments: () => rows<ThComment[]>(supabase.from('assistant_comments').select('*').order('received_at', { ascending: false }).limit(50)),
+  commentSend: (id: string, text: string) => call({ action: 'comment_send', comment_id: id, text }),
+  commentSkip: (id: string) => call({ action: 'comment_skip', comment_id: id }),
+  recentStories: () => rows<ThStory[]>(supabase.from('assistant_stories').select('*').eq('status', 'published').order('story_date', { ascending: false }).limit(7)),
 };
 
 /** Draw the daily Story (1080×1920) in the browser: class artwork, "TODAY AT DROP" and the class list. */

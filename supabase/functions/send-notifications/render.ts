@@ -317,7 +317,13 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
     case 'assistant_guidance':
       return {
         subject: `🤔 Thamires needs your guidance: “${String(p.question ?? '').slice(0, 70)}”`,
-        text: `${hi}\n\n@${p.username} asked Thamires something new on Instagram:\n“${p.asked}”\n\nIn short: ${p.question}\n\n${p.holding_sent ? 'She told them she’s checking with the team.' : 'Her “I’m checking with the team” reply is waiting for your approval.'} Tell her the answer and she’ll reply to them with it, and remember it for everyone who asks next time:\n\n${site()}/admin/thamires\n\nDrop Studios`,
+        text: `${hi}\n\n@${p.username} asked Thamires something new ${p.where === 'comment' ? 'in a comment on one of Drop’s posts' : 'on Instagram'}:\n“${p.asked}”\n\nIn short: ${p.question}\n\n${p.where === 'comment' ? 'She hasn’t replied yet.' : p.holding_sent ? 'She told them she’s checking with the team.' : 'Her “I’m checking with the team” reply is waiting for your approval.'} Tell her the answer and she’ll reply to them with it, and remember it for everyone who asks next time:\n\n${site()}/admin/thamires\n\nDrop Studios`,
+        url: '/admin/thamires',
+      };
+    case 'assistant_comment':
+      return {
+        subject: `💬 Thamires needs you: comment from @${p.username}`,
+        text: `${hi}\n\n@${p.username} commented on one of Drop’s posts:\n“${p.preview}”\n\nThamires thinks a person should reply to this one. Her draft is on the Comments tab:\n\n${site()}/admin/thamires\n\nDrop Studios`,
         url: '/admin/thamires',
       };
     case 'assistant_report': {
@@ -336,6 +342,9 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
         qs.length ? `\nNew questions:\n${qs.map((q) => `• ${q.question}${q.answered ? ' ✓ answered' : ' (waiting for your guidance)'}`).join('\n')}` : '',
         n(p.open_questions) || n(p.waiting) ? `\nWaiting for you: ${[n(p.open_questions) ? `${n(p.open_questions)} question${n(p.open_questions) === 1 ? '' : 's'} to answer` : '', n(p.waiting) ? `${n(p.waiting)} repl${n(p.waiting) === 1 ? 'y' : 'ies'} to approve` : ''].filter(Boolean).join(', ')}.` : '\nNothing waiting for you. 🎉',
         n(p.tags) ? `📸 ${n(p.tags)} tag${n(p.tags) === 1 ? '' : 's'} of Drop.` : '',
+        n(p.comments) ? `💭 ${n(p.comments)} comment${n(p.comments) === 1 ? '' : 's'} on Drop’s posts, ${n(p.comments_replied)} replied${n(p.comments_waiting) ? `, ${n(p.comments_waiting)} waiting for you` : ''}.` : '',
+        n(p.reactions_week) ? `❤️ People reacted to ${n(p.reactions_week)} of Thamires’ messages this week.` : '',
+        p.last_story && typeof p.last_story === 'object' ? (() => { const st = p.last_story as Record<string, unknown>; return `🗓️ Last Story (${longDate(String(st.date))}): ${n(st.reach)} people reached${n(st.replies) ? `, ${n(st.replies)} replies` : ''}${n(st.taps_forward) ? `, ${n(st.taps_forward)} taps forward` : ''}.`; })() : '',
         tips.length ? `\nIdeas from Thamires:\n${tips.map((t) => `• ${t}`).join('\n')}` : '',
         '',
         `${site()}/admin/thamires`,

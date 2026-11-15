@@ -17,7 +17,7 @@ const background = (p: Promise<unknown>) => {
 
 async function settings(db: Db) {
   const { data } = await db.from('assistant_settings').select('*').single();
-  return data as { enabled: boolean; auto_reply: boolean; auto_tag_thanks: boolean; daily_story: boolean; story_hour: number; daily_report: boolean; report_hour: number } | null;
+  return data as { enabled: boolean; auto_reply: boolean; auto_tag_thanks: boolean; daily_story: boolean; story_hour: number; daily_report: boolean; report_hour: number; auto_comment_reply: boolean } | null;
 }
 
 /** Today's date and the current hour in Dublin. */
@@ -28,7 +28,7 @@ function dublinNow() {
 }
 
 interface Person { username?: string | null; display_name?: string | null; language?: string | null; language_offered?: boolean; memory?: string | null; last_inbound_at?: string | null }
-async function draft(history: Turn[], disclose: boolean, task: 'dm' | 'thanks', db: Db, who: Person = {}, followUp = false): Promise<Draft | null> {
+async function draft(history: Turn[], disclose: boolean, task: 'dm' | 'thanks' | 'comment', db: Db, who: Person = {}, followUp = false): Promise<Draft | null> {
   const client = anthropic();
   if (!client) return null;
   const { data: knowledge } = await db.rpc('assistant_knowledge');
@@ -80,6 +80,34 @@ async function sendDraft(db: Db, messageId: string, text: string, actor: string 
   }
 }
 
+interface CommentRow { id: string; ig_comment_id: string; username: string | null; text: string; post_caption: string | null }
+
+/** Thamires drafts a public reply to a comment under one of Drop's posts. */
+async function draftComment(db: Db, row: CommentRow, followUp = false) {
+  const caption = row.post_caption ? ` (post caption: "${row.post_caption.replace(/\s+/g, ' ').slice(0, 300)}")` : '';
+  const d = await draft([{ from: 'member', text: `@${row.username ?? 'someone'} commented on Drop's post${caption}: ${row.text}` }], false, 'comment', db, { username: row.username }, followUp);
+  if (!d) return null;
+  await db.from('assistant_comments').update({
+    reply_text: d.reply, reply_status: 'draft', needs_human: d.needs_human, out_of_ordinary: followUp ? false : d.out_of_ordinary,
+    reason: d.reason, topic: d.topic, translation: d.translation_en || null,
+  }).eq('id', row.id);
+  return d;
+}
+
+async function sendComment(db: Db, id: string, text: string, actor: string | null) {
+  const cfg = igConfig();
+  if (!cfg) throw new Error('Instagram is not connected yet.');
+  const { data: c } = await db.from('assistant_comments').select('id, ig_comment_id').eq('id', id).single();
+  if (!c) throw new Error('not_found');
+  try {
+    const r = await ig.replyToComment(cfg, c.ig_comment_id, text);
+    await db.from('assistant_comments').update({ reply_text: text, reply_status: 'sent', reply_id: r.id ?? null, decided_by: actor, error: null }).eq('id', id);
+  } catch (e) {
+    await db.from('assistant_comments').update({ reply_status: 'failed', error: (e as Error).message, decided_by: actor }).eq('id', id);
+    throw e;
+  }
+}
+
 async function handleEvent(db: Db, ev: IgEvent) {
   const s = await settings(db);
   const cfg = igConfig();
@@ -95,6 +123,36 @@ async function handleEvent(db: Db, ev: IgEvent) {
       catch (e) { await db.from('assistant_mentions').update({ reply_status: 'failed', error: (e as Error).message }).eq('id', row.id); }
     }
     await db.rpc('_assistant_notify', { p_kind: 'assistant_tag', p_payload: { username: media.username ?? 'someone', kind: 'post' }, p_key: `tag:${row.id}` });
+    return;
+  }
+
+  if (ev.type === 'reaction') { // someone reacted to one of Drop's messages
+    await db.from('assistant_messages').update({ reaction: ev.emoji }).eq('ig_message_id', ev.mid);
+    return;
+  }
+  if (ev.type === 'story_insights') {
+    await db.from('assistant_stories').update({ insights: ev.metrics, insights_at: new Date().toISOString() }).eq('ig_media_id', ev.mediaId);
+    return;
+  }
+  if (ev.type === 'comment') {
+    const media = cfg && ev.mediaId ? await ig.media(cfg, ev.mediaId) : {};
+    const { data: row, error } = await db.from('assistant_comments').insert({
+      ig_comment_id: ev.commentId, media_id: ev.mediaId, parent_id: ev.parentId, ig_user_id: ev.from, username: ev.username,
+      text: ev.text.slice(0, 2000), post_caption: media.caption?.slice(0, 1000) ?? null, permalink: media.permalink ?? null,
+    }).select().single();
+    if (error || !row || !s?.enabled) return; // duplicate delivery or Thamires off
+    const d = await draftComment(db, row as CommentRow);
+    if (!d) return;
+    if (d.out_of_ordinary) {
+      const { data: g } = await db.from('assistant_guidance').insert({ question: d.question_en || ev.text.slice(0, 300), asked_text: ev.text.slice(0, 1000), comment_id: row.id }).select().single();
+      await db.rpc('_assistant_notify_owner', { p_kind: 'assistant_guidance', p_payload: { username: ev.username ?? 'someone', question: d.question_en || ev.text.slice(0, 200), asked: ev.text.slice(0, 200), where: 'comment' }, p_key: `guidance:${g?.id ?? row.id}` });
+      return;
+    }
+    if (s.auto_comment_reply && canAutoSend(d)) {
+      try { await sendComment(db, row.id, d.reply, null); return; } catch (e) { console.error('comment auto-reply failed', (e as Error).message); }
+    }
+    // Only bother you by email when a person is needed; the rest waits quietly on the Comments tab.
+    if (d.needs_human) await db.rpc('_assistant_notify', { p_kind: 'assistant_comment', p_payload: { username: ev.username ?? 'someone', preview: ev.text.slice(0, 120) }, p_key: `comment:${row.id}` });
     return;
   }
 
@@ -170,6 +228,11 @@ async function dailyReport(db: Db, force = false) {
     if (existing) return { skipped: 'exists' };
   }
   const since = new Date(Date.now() - 24 * 3600e3).toISOString();
+  const [comments, reactions, lastStory] = await Promise.all([
+    db.from('assistant_comments').select('text, reply_status').gte('received_at', since).limit(1000),
+    db.from('assistant_messages').select('reaction').not('reaction', 'is', null).gte('created_at', new Date(Date.now() - 7 * 864e5).toISOString()),
+    db.from('assistant_stories').select('story_date, insights').eq('status', 'published').not('insights', 'is', null).order('story_date', { ascending: false }).limit(1).maybeSingle(),
+  ]);
   const [msgs, threads, questions, openQ, waiting, tags, story] = await Promise.all([
     db.from('assistant_messages').select('direction, status, text, topic, needs_human, decided_by, thread_id').gte('created_at', since).limit(2000),
     db.from('assistant_threads').select('id', { count: 'exact', head: true }).gte('created_at', since),
@@ -198,9 +261,15 @@ async function dailyReport(db: Db, force = false) {
     topics,
     new_questions: ((questions.data ?? []) as { question: string; status: string }[]).map((q) => ({ question: q.question, answered: q.status === 'answered' })),
     open_questions: openQ.count ?? 0,
+    comments: (comments.data ?? []).length,
+    comments_replied: ((comments.data ?? []) as { reply_status: string }[]).filter((c) => c.reply_status === 'sent').length,
+    comments_waiting: ((comments.data ?? []) as { reply_status: string }[]).filter((c) => c.reply_status === 'draft').length,
+    reactions_week: (reactions.data ?? []).length,
+    last_story: lastStory.data ? { date: (lastStory.data as { story_date: string }).story_date, ...((lastStory.data as { insights: Record<string, number> }).insights ?? {}) } : null,
   };
   const client = anthropic();
-  const sum = client ? await summariseDay({ client }, inbound.map((m) => m.text).slice(-150)) : null;
+  const said = [...inbound.map((m) => m.text), ...((comments.data ?? []) as { text: string }[]).map((c) => `(comment on a post) ${c.text}`)];
+  const sum = client ? await summariseDay({ client }, said.slice(-200)) : null;
   const report = { report_date: today, stats, summary: sum?.summary ?? null, themes: sum?.themes ?? [], suggestions: sum?.suggestions ?? [] };
   const { data: row } = await db.from('assistant_reports').upsert(report, { onConflict: 'report_date' }).select().single();
   await db.rpc('_assistant_notify_owner', {
@@ -345,11 +414,24 @@ Deno.serve(async (req) => {
         if (!before) return json(req, { error: 'not_found' }, 404);
         await db.from('assistant_guidance').update({ answer, status: 'answered', answered_at: new Date().toISOString(), answered_by: actor }).eq('id', before.id);
         // First answer to a waiting question: Thamires rewrites her reply with it, for you to approve.
-        const d = before.status === 'open' && before.thread_id ? await redraftWithGuidance(db, before.thread_id, before.message_id) : null;
+        let d: Draft | null = null;
+        if (before.status === 'open' && before.comment_id) {
+          const { data: c } = await db.from('assistant_comments').select('*').eq('id', before.comment_id).maybeSingle();
+          if (c && c.reply_status !== 'sent') d = await draftComment(db, c as CommentRow, true);
+        } else if (before.status === 'open' && before.thread_id) d = await redraftWithGuidance(db, before.thread_id, before.message_id);
         return json(req, { ok: true, redrafted: Boolean(d) });
       }
       case 'guidance_dismiss': // not worth an answer, or no longer true: Thamires stops using it
         await db.from('assistant_guidance').update({ status: 'dismissed', answered_by: actor }).eq('id', String(body.guidance_id));
+        return json(req, { ok: true });
+      case 'comment_send': {
+        const text = String(body.text ?? '').trim();
+        if (!text || text.length > 1000) return json(req, { error: 'invalid_text' }, 400);
+        await sendComment(db, String(body.comment_id), text, actor);
+        return json(req, { ok: true });
+      }
+      case 'comment_skip':
+        await db.from('assistant_comments').update({ reply_status: 'skipped', decided_by: actor }).eq('id', String(body.comment_id));
         return json(req, { ok: true });
       case 'report_now':
         return json(req, await dailyReport(db, true));

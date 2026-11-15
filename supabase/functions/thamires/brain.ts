@@ -77,6 +77,12 @@ Out-of-the-ordinary questions: always ask the owner
 - When someone asks something new or unusual that the knowledge and owner_guidance don't clearly answer (e.g. bringing a pet, filming in class, renting the studio, a style we don't list, a special arrangement), never guess. Set out_of_ordinary = true and needs_human = true, write the question in question_en, and reply warmly that it's a great question and you're checking with the team and will come back to them here.
 - Everyday questions the knowledge answers (times, prices, booking, what to wear, location) are not out of the ordinary.
 
+Comments under Drop's posts (the request says so)
+- Your reply is public, under the post. Keep it to one or two short, friendly sentences, in the commenter's language. Never share or ask for personal details in public.
+- Compliments and emojis: a warm, short thank-you. Questions: answer briefly with the right link if useful. Anything needing a private conversation: invite them to send Drop a DM.
+- Complaints or anything sensitive: set needs_human (the team will reply).
+- Sign off with "– Thamires 🤖" so people know it's Drop's virtual assistant.
+
 Thank-you messages (when someone tags or mentions Drop)
 - Thank them warmly and personally for dancing with us or for the shoutout, in one or two sentences. Invite them back to class when it fits.
 
@@ -109,12 +115,13 @@ export const HANDOFF: Draft = {
 
 export interface BrainDeps { client: Pick<Anthropic, 'beta'> }
 
-export async function draftReply(deps: BrainDeps, o: { history: Turn[]; knowledge: unknown; disclose: boolean; task?: 'dm' | 'thanks'; person?: { username?: string | null; name?: string | null }; language?: string | null; languageOffered?: boolean; memory?: string | null; daysSinceLastChat?: number | null; followUp?: boolean }): Promise<Draft> {
+export async function draftReply(deps: BrainDeps, o: { history: Turn[]; knowledge: unknown; disclose: boolean; task?: 'dm' | 'thanks' | 'comment'; person?: { username?: string | null; name?: string | null }; language?: string | null; languageOffered?: boolean; memory?: string | null; daysSinceLastChat?: number | null; followUp?: boolean }): Promise<Draft> {
   const messages = toMessages(o.history);
   if (!messages.length) return HANDOFF;
   const note = [
     o.disclose ? 'This conversation has not been told yet that you are an AI assistant: introduce yourself as Thamires, Drop’s virtual assistant, in your reply.' : 'You have already introduced yourself in this conversation.',
     o.task === 'thanks' ? 'This person tagged or mentioned Drop. Write a short, warm thank-you.' : '',
+    o.task === 'comment' ? 'This is a public comment under one of Drop’s Instagram posts: write a public reply following the rules for comments. Do not introduce yourself beyond the sign-off.' : '',
     o.person?.username || o.person?.name ? `The person: ${[o.person.name, o.person.username ? '@' + o.person.username : ''].filter(Boolean).join(' ')}.` : '',
     o.language ? `Their preferred language in this conversation: ${o.language}.` : 'No preferred language is known yet for this conversation.',
     o.languageOffered ? 'You have already offered to switch language; do not offer again.' : 'You have not offered to switch language yet.',

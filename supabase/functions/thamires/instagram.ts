@@ -38,10 +38,14 @@ export type IgEvent =
   | { type: 'message'; from: string; mid: string; text: string }
   | { type: 'story_mention'; from: string; mid: string; url: string | null }
   | { type: 'story_reply'; from: string; mid: string; text: string }
-  | { type: 'post_mention'; mediaId: string; commentId: string | null };
+  | { type: 'post_mention'; mediaId: string; commentId: string | null }
+  | { type: 'comment'; commentId: string; mediaId: string | null; parentId: string | null; from: string | null; username: string | null; text: string }
+  | { type: 'reaction'; from: string; mid: string; emoji: string | null }
+  | { type: 'story_insights'; mediaId: string; metrics: Record<string, number> };
 
-interface Messaging { sender?: { id?: string }; recipient?: { id?: string }; message?: { mid?: string; text?: string; is_echo?: boolean; is_deleted?: boolean; reply_to?: { story?: unknown }; attachments?: { type?: string; payload?: { url?: string } }[] } }
-interface WebhookBody { object?: string; entry?: { id?: string; messaging?: Messaging[]; changes?: { field?: string; value?: { media_id?: string; comment_id?: string } }[] }[] }
+interface Messaging { sender?: { id?: string }; recipient?: { id?: string }; reaction?: { mid?: string; action?: string; emoji?: string; reaction?: string }; message?: { mid?: string; text?: string; is_echo?: boolean; is_deleted?: boolean; reply_to?: { story?: unknown }; attachments?: { type?: string; payload?: { url?: string } }[] } }
+interface WebhookBody { object?: string; entry?: { id?: string; messaging?: Messaging[]; changes?: { field?: string; value?: ChangeValue }[] }[] }
+interface ChangeValue { media_id?: string; comment_id?: string; id?: string; text?: string; parent_id?: string; from?: { id?: string; username?: string }; media?: { id?: string }; [metric: string]: unknown }
 
 /** Turn a webhook payload into the events Thamires handles. Echoes of our own messages are ignored. */
 export function parseWebhook(body: WebhookBody, ownId?: string): IgEvent[] {
@@ -50,6 +54,10 @@ export function parseWebhook(body: WebhookBody, ownId?: string): IgEvent[] {
   for (const entry of body.entry ?? []) {
     for (const m of entry.messaging ?? []) {
       const msg = m.message, from = m.sender?.id;
+      if (m.reaction?.mid && from && from !== ownId && from !== entry.id) {
+        out.push({ type: 'reaction', from, mid: m.reaction.mid, emoji: m.reaction.action === 'unreact' ? null : (m.reaction.emoji ?? m.reaction.reaction ?? '❤️') });
+        continue;
+      }
       if (!msg?.mid || !from || msg.is_echo || msg.is_deleted || from === ownId || from === entry.id) continue;
       const mention = msg.attachments?.find((a) => a.type === 'story_mention');
       if (mention) out.push({ type: 'story_mention', from, mid: msg.mid, url: mention.payload?.url ?? null });
@@ -57,7 +65,17 @@ export function parseWebhook(body: WebhookBody, ownId?: string): IgEvent[] {
       else if (msg.text) out.push({ type: 'message', from, mid: msg.mid, text: msg.text });
     }
     for (const c of entry.changes ?? []) {
-      if (c.field === 'mentions' && c.value?.media_id) out.push({ type: 'post_mention', mediaId: c.value.media_id, commentId: c.value.comment_id ?? null });
+      const v = c.value;
+      if (c.field === 'mentions' && v?.media_id) out.push({ type: 'post_mention', mediaId: v.media_id, commentId: v.comment_id ?? null });
+      // Comments on Drop's posts (ignore Drop's own comments, including Thamires' replies).
+      if (c.field === 'comments' && v?.id && v.from?.id !== ownId && v.from?.id !== entry.id) {
+        out.push({ type: 'comment', commentId: v.id, mediaId: v.media?.id ?? null, parentId: v.parent_id ?? null, from: v.from?.id ?? null, username: v.from?.username ?? null, text: String(v.text ?? '') });
+      }
+      if (c.field === 'story_insights' && v?.media_id) {
+        const metrics: Record<string, number> = {};
+        for (const [k, n] of Object.entries(v)) if (k !== 'media_id' && typeof n === 'number') metrics[k] = n;
+        out.push({ type: 'story_insights', mediaId: v.media_id, metrics });
+      }
     }
   }
   return out;
@@ -90,6 +108,12 @@ export const ig = {
   /** Comment on a post that mentions Drop. */
   commentOnMention: (cfg: IgConfig, mediaId: string, text: string) =>
     graph<{ id?: string }>(cfg, `${cfg.userId}/mentions`, { method: 'POST', params: { media_id: mediaId, message: text } }),
+  /** Caption and link of one of Drop's posts. */
+  media: (cfg: IgConfig, mediaId: string) =>
+    graph<{ caption?: string; permalink?: string }>(cfg, mediaId, { params: { fields: 'caption,permalink' } }).catch(() => ({} as { caption?: string; permalink?: string })),
+  /** Reply publicly to a comment on Drop's post. */
+  replyToComment: (cfg: IgConfig, commentId: string, text: string) =>
+    graph<{ id?: string }>(cfg, `${commentId}/replies`, { method: 'POST', params: { message: text } }),
   /** Publish an image Story (two steps: create the container, then publish it). */
   publishStory: async (cfg: IgConfig, imageUrl: string) => {
     const c = await graph<{ id: string }>(cfg, `${cfg.userId}/media`, { method: 'POST', params: { image_url: imageUrl, media_type: 'STORIES' } });

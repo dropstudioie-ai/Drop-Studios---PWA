@@ -179,3 +179,12 @@ Deno.test('Thamires asks the owner about new questions and sends a daily report'
   assertStringIncludes(r.text, 'Add parking info');
   assertStringIncludes(render({ kind: 'assistant_report', full_name: null, payload: { date: '2026-11-14' } })!.text, 'quiet day');
 });
+
+Deno.test('Thamires: comment alerts and comments/reactions/Story numbers in the report', () => {
+  assertStringIncludes(render({ kind: 'assistant_comment', full_name: null, payload: { username: 'ana', preview: 'Bad experience' } })!.subject, 'comment from @ana');
+  assertStringIncludes(render({ kind: 'assistant_guidance', full_name: null, payload: { username: 'ana', question: 'Q', asked: 'q', where: 'comment' } })!.text, 'in a comment');
+  const r = render({ kind: 'assistant_report', full_name: null, payload: { date: '2026-11-15', comments: 4, comments_replied: 3, comments_waiting: 1, reactions_week: 7, last_story: { date: '2026-11-14', reach: 210, replies: 2 } } })!;
+  assertStringIncludes(r.text, '4 comments on Drop’s posts, 3 replied, 1 waiting for you');
+  assertStringIncludes(r.text, 'reacted to 7');
+  assertStringIncludes(r.text, '210 people reached, 2 replies');
+});

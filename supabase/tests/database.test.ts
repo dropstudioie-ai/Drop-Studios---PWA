@@ -1868,5 +1868,15 @@ run('database: plans, booking, allowances, pauses, security', () => {
       expect(rows.length).toBe((await db.query(`select count(*)::int n from profiles where role = 'admin' and finance_access`)).rows[0].n);
       expect(rows.length).toBeGreaterThan(0);
     });
+    it('comments on Drop’s posts are admin-only; reactions and Story insights are stored', async () => {
+      const m = await createUser(db, 'Nosy');
+      await db.query(`insert into assistant_comments (ig_comment_id, username, text) values ('c1', 'ana', 'Love it!')`);
+      await expect(db.query(`insert into assistant_comments (ig_comment_id, text) values ('c1', 'again')`)).rejects.toThrow(/duplicate/);
+      expect(await as(db, user(m), `select * from assistant_comments`)).toHaveLength(0);
+      expect(await as(db, user(admin), `select * from assistant_comments`)).toHaveLength(1);
+      const { rows: [st] } = await db.query(`insert into assistant_stories (story_date, title, status, ig_media_id, insights) values ('2026-11-14', 'TODAY AT DROP', 'published', 's1', '{"reach":120}') returning insights`);
+      expect(st.insights.reach).toBe(120);
+      expect((await db.query(`select auto_comment_reply from assistant_settings`)).rows[0].auto_comment_reply).toBe(false);
+    });
   });
 });
