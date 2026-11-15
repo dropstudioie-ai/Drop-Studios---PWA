@@ -329,6 +329,12 @@ Deno.serve(async (req) => {
   // Scheduled daily Story.
   if (req.headers.get('x-cron-secret')) {
     if (req.headers.get('x-cron-secret') !== Deno.env.get('CRON_SECRET')) return new Response('forbidden', { status: 403 });
+    const job = await req.json().catch(() => ({})) as { check?: boolean };
+    if (job.check) { // connection check, run by the developer with the cron secret
+      const cfg = igConfig();
+      return Response.json({ configured: Boolean(cfg), claude: Boolean(Deno.env.get('ANTHROPIC_API_KEY')), app_secret: Boolean(Deno.env.get('META_APP_SECRET')),
+        instagram: cfg ? await ig.check(cfg).catch((e) => ({ error: (e as Error).message })) : null });
+    }
     const story = await dailyStory(db).catch((e) => ({ error: (e as Error).message }));
     const report = await dailyReport(db).catch((e) => ({ error: (e as Error).message }));
     return Response.json({ story, report });
@@ -345,7 +351,7 @@ Deno.serve(async (req) => {
   try {
     switch (body.action) {
       case 'status':
-        return json(req, { instagram: Boolean(igConfig()), claude: Boolean(Deno.env.get('ANTHROPIC_API_KEY')), webhook: Boolean(Deno.env.get('META_APP_SECRET') && Deno.env.get('IG_VERIFY_TOKEN')) });
+        return json(req, { instagram: Boolean(igConfig()), account: igConfig() ? await ig.check(igConfig()!).then((r) => r.account.username ?? null).catch(() => null) : null, claude: Boolean(Deno.env.get('ANTHROPIC_API_KEY')), webhook: Boolean(Deno.env.get('META_APP_SECRET') && Deno.env.get('IG_VERIFY_TOKEN')) });
       case 'test': {
         const turns = (Array.isArray(body.history) ? body.history : []) as Turn[];
         const who = (body.person ?? {}) as Person;

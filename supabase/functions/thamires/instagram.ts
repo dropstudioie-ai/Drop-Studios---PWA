@@ -108,6 +108,12 @@ export const ig = {
   /** Comment on a post that mentions Drop. */
   commentOnMention: (cfg: IgConfig, mediaId: string, text: string) =>
     graph<{ id?: string }>(cfg, `${cfg.userId}/mentions`, { method: 'POST', params: { media_id: mediaId, message: text } }),
+  /** Connection check: who the token belongs to and whether the account sends webhooks to this app (read-only). */
+  check: async (cfg: IgConfig) => {
+    const me = await graph<{ id?: string; username?: string; name?: string }>(cfg, cfg.userId, { params: { fields: 'id,username,name' } });
+    const subs = await graph<{ data?: { subscribed_fields?: string[] }[] }>(cfg, `${cfg.userId}/subscribed_apps`).catch((e) => ({ error: (e as Error).message }));
+    return { account: me, subscriptions: subs };
+  },
   /** Caption and link of one of Drop's posts. */
   media: (cfg: IgConfig, mediaId: string) =>
     graph<{ caption?: string; permalink?: string }>(cfg, mediaId, { params: { fields: 'caption,permalink' } }).catch(() => ({} as { caption?: string; permalink?: string })),
