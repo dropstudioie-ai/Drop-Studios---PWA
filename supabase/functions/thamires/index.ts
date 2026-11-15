@@ -329,7 +329,11 @@ Deno.serve(async (req) => {
   // Scheduled daily Story.
   if (req.headers.get('x-cron-secret')) {
     if (req.headers.get('x-cron-secret') !== Deno.env.get('CRON_SECRET')) return new Response('forbidden', { status: 403 });
-    const job = await req.json().catch(() => ({})) as { check?: boolean };
+    const job = await req.json().catch(() => ({})) as { check?: boolean; test?: string; name?: string };
+    if (typeof job.test === 'string') { // private test reply (nothing is sent to Instagram)
+      const d = await draft([{ from: 'member', text: job.test.slice(0, 500) }], true, 'dm', db, { display_name: job.name ?? null });
+      return Response.json(d ?? { error: 'claude_not_configured' });
+    }
     if (job.check) { // connection check, run by the developer with the cron secret
       const cfg = igConfig();
       return Response.json({ configured: Boolean(cfg), claude: Boolean(Deno.env.get('ANTHROPIC_API_KEY')), app_secret: Boolean(Deno.env.get('META_APP_SECRET')),
