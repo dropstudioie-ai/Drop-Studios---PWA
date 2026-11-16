@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import type { DanceStyle, Membership } from '../api/types';
 import { formatPrice } from '../domain/money';
 import { isExpiringSoon, lastValidDay, progressLabel, STATE_LABEL } from '../domain/membership';
-import { styleAccessLabel } from '../domain/plans';
+import { isUnlimited, styleAccessLabel } from '../domain/plans';
 import { fmt, formatKey, localDateKey } from '../domain/time';
 import { Notice, ProgressBar, TestBadge } from './ui';
 
@@ -44,7 +44,7 @@ export function MembershipCard({ m, styles, reminderDays, onPause, onResume, bus
       </div>
 
       <div className="mt-4">
-        <ProgressBar value={m.classes_remaining} max={m.classes_total} label={progressLabel(m.classes_remaining, m.classes_total)} />
+        <ProgressBar value={isUnlimited(m.classes_total) ? 1 : m.classes_remaining} max={isUnlimited(m.classes_total) ? 1 : m.classes_total} label={progressLabel(m.classes_remaining, m.classes_total)} />
       </div>
 
       <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
@@ -72,7 +72,7 @@ export function MembershipCard({ m, styles, reminderDays, onPause, onResume, bus
       )}
 
       {usable && m.state !== 'paused' && isExpiringSoon(m.expires_at, reminderDays) && m.classes_remaining > 0 && (
-        <div className="mt-4"><Notice tone="warn">Expires soon. You have {m.classes_remaining} {m.classes_remaining === 1 ? 'class' : 'classes'} left to use.</Notice></div>
+        <div className="mt-4"><Notice tone="warn">Expires soon. {isUnlimited(m.classes_total) ? 'Make the most of your unlimited classes!' : <>You have {m.classes_remaining} {m.classes_remaining === 1 ? 'class' : 'classes'} left to use.</>}</Notice></div>
       )}
 
       {finished && (

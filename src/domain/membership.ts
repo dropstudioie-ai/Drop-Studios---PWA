@@ -1,3 +1,4 @@
+import { isUnlimited } from './plans';
 import { addDaysToKey, daysInclusive, localDateKey, STUDIO_TZ, zonedTime } from './time';
 
 export type MembershipState = 'pending_activation' | 'active' | 'paused' | 'expired' | 'used_up' | 'cancelled';
@@ -56,7 +57,7 @@ export const STATE_LABEL: Record<MembershipState, string> = {
 };
 
 export const progressLabel = (remaining: number, total: number) =>
-  `${remaining} of ${total} ${total === 1 ? 'class' : 'classes'} remaining`;
+  isUnlimited(total) ? 'Unlimited classes this month' : `${remaining} of ${total} ${total === 1 ? 'class' : 'classes'} remaining`;
 
 export function isExpiringSoon(expiresAt: string | null, withinDays: number, now = new Date()): boolean {
   if (!expiresAt) return false;

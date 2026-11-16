@@ -1,3 +1,4 @@
+import { UNLIMITED_CLASSES, isUnlimited } from '../../domain/plans';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { endsOn } from '../../domain/subscription';
@@ -84,7 +85,7 @@ export default function AdminCustomers() {
 
 function availableClasses(ms: Pick<Membership, 'classes_remaining' | 'expires_at' | 'admin_status'>[]) {
   const now = new Date();
-  return ms.filter((m) => m.admin_status === 'valid' && (!m.expires_at || new Date(m.expires_at) > now)).reduce((n, m) => n + m.classes_remaining, 0);
+  return ms.filter((m) => m.admin_status === 'valid' && (!m.expires_at || new Date(m.expires_at) > now)).reduce((n, m) => n + Math.min(m.classes_remaining, UNLIMITED_CLASSES), 0);
 }
 
 interface LedgerRow { id: number; membership_id: string; delta: number; balance_after: number; kind: string; reason: string | null; created_at: string }
@@ -432,7 +433,7 @@ function AdjustSheet({ m, onClose, onDone }: { m: Membership; onClose: () => voi
   const [error, setError] = useState<string | null>(null);
   return (
     <Sheet open onClose={onClose} title="Grant or revoke classes">
-      <p className="text-sm">{m.plan_name} — currently {m.classes_remaining} of {m.classes_total} remaining.</p>
+      <p className="text-sm">{m.plan_name} — {isUnlimited(m.classes_total) ? 'unlimited classes' : <>currently {m.classes_remaining} of {m.classes_total} remaining</>}.</p>
       <div className="mt-4 space-y-3">
         <Field label="Change" hint="Positive to grant, negative to revoke."><input className="input" type="number" value={delta} onChange={(e) => setDelta(Number(e.target.value))} /></Field>
         <Field label="Reason (required, recorded in audit log)"><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} /></Field>

@@ -1,3 +1,4 @@
+import { UNLIMITED_CLASSES } from '../domain/plans';
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
@@ -55,7 +56,7 @@ export default function Account() {
     .filter((b) => b.status === 'booked' && b.session && new Date(b.session.starts_at) > now)
     .sort((a, b) => a.session!.starts_at.localeCompare(b.session!.starts_at));
   const history = bookings.filter((b) => !upcoming.includes(b));
-  const totalRemaining = current.filter((m) => m.state !== 'paused').reduce((s, m) => s + m.classes_remaining, 0);
+  const totalRemaining = current.filter((m) => m.state !== 'paused').reduce((s, m) => s + Math.min(m.classes_remaining, UNLIMITED_CLASSES), 0);
 
   async function resume(m: Membership) {
     setBusy(true);

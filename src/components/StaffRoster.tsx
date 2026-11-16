@@ -1,3 +1,4 @@
+import { isUnlimited } from '../domain/plans';
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { MemberMatch, RosterEntry } from '../api/types';
@@ -161,7 +162,7 @@ function AddMember({ sessionId, onAdded }: { sessionId: string; onAdded: () => v
     setError(null);
     try {
       const res = await api.staffBook(sessionId, m.id);
-      toast(`${m.full_name} booked in · ${res.classes_remaining} ${res.classes_remaining === 1 ? 'class' : 'classes'} left.`);
+      toast(`${m.full_name} booked in · ${isUnlimited(res.classes_remaining) ? 'unlimited plan' : `${res.classes_remaining} ${res.classes_remaining === 1 ? 'class' : 'classes'} left`}.`);
       setQ('');
       onAdded();
     } catch (e) {

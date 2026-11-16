@@ -1,3 +1,4 @@
+import { isUnlimited, leftLabel, classesLabel } from '../domain/plans';
 import { artworkUrl } from '../lib/events';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -117,7 +118,7 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
 
   const book = () => run(async () => {
     const res = await api.book(session.id, membershipId);
-    toast(`Booked! ${res.classes_remaining} ${res.classes_remaining === 1 ? 'class' : 'classes'} left.`);
+    toast(isUnlimited(res.classes_remaining) ? 'Booked! Enjoy the class 💃' : `Booked! ${res.classes_remaining} ${res.classes_remaining === 1 ? 'class' : 'classes'} left.`);
     onChanged();
     onClose();
   });
@@ -290,11 +291,11 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
               <label className="block">
                 <span className="label">Use membership</span>
                 <select className="input" value={membershipId ?? ''} onChange={(e) => setMembershipId(e.target.value)}>
-                  {eligible.map((m) => <option key={m.membership_id} value={m.membership_id}>{m.plan_name} — {m.classes_remaining} left</option>)}
+                  {eligible.map((m) => <option key={m.membership_id} value={m.membership_id}>{m.plan_name} — {leftLabel(m.classes_remaining)}</option>)}
                 </select>
               </label>
             ) : (
-              <p className="text-sm text-ink-soft">Uses 1 class from <strong>{eligible[0].plan_name}</strong> ({eligible[0].classes_remaining} left).</p>
+              <p className="text-sm text-ink-soft">Uses 1 class from <strong>{eligible[0].plan_name}</strong> ({leftLabel(eligible[0].classes_remaining)}).</p>
             )}
             <button className="btn-primary w-full text-lg" disabled={busy} onClick={book}>{busy && <Spinner />}Book this class</button>
             <p className="text-center text-xs text-muted">Cancel at least {cutoffLabel(policy.cancellation_cutoff_minutes)} before to get the class back.</p>
@@ -313,7 +314,7 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
                   <Link to={renewalLink(renewal)} className="btn-primary w-full text-lg">
                     {renewal.plan ? `Renew early · ${formatPrice(renewal.plan.price_cents, renewal.plan.currency)}` : 'Choose a new membership'}
                   </Link>
-                  {renewal.plan && <p className="text-center text-xs text-muted">{renewal.plan.name}: {renewal.plan.class_count} classes.</p>}
+                  {renewal.plan && <p className="text-center text-xs text-muted">{renewal.plan.name}: {classesLabel(renewal.plan.class_count)}.</p>}
                   <p className="pt-1 text-center text-xs font-semibold uppercase tracking-wide text-muted">or</p>
                 </>
               ) : blocking && <Notice tone="info">{messageFor(blocking.issue)} You can still come as a Drop In.</Notice>}

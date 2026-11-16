@@ -1,3 +1,4 @@
+import { isUnlimited } from '../domain/plans';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { STUDIO } from '../config/studio';
@@ -44,7 +45,7 @@ export function SubscriptionCard({ sub, onChanged }: { sub: Subscription; onChan
         <div>
           <p className="text-xs font-bold uppercase tracking-wide text-white/60">Monthly membership</p>
           <h2 id={`sub-${sub.id}`} className="font-display text-2xl font-black uppercase tracking-tight">{p.plan_name}</h2>
-          <p className="text-white/75">{price} / month · {p.class_count} classes a month{p.credit_rollover ? ' · classes roll over' : ''}</p>
+          <p className="text-white/75">{price} / month · {isUnlimited(p.class_count) ? 'Unlimited classes' : `${p.class_count} classes`} a month{p.credit_rollover ? ' · classes roll over' : ''}</p>
         </div>
         <span className={`chip ${sub.status === 'active' ? 'bg-success text-white' : sub.status === 'past_due' ? 'bg-danger text-white' : sub.status === 'cancel_scheduled' ? 'bg-accent-500 text-ink' : 'bg-white/20 text-white'}`}>
           {sub.status === 'active' ? 'Active' : sub.status === 'past_due' ? 'Payment due' : sub.status === 'cancel_scheduled' ? 'Ending' : 'Ended'}

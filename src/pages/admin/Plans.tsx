@@ -50,7 +50,7 @@ export default function AdminPlans() {
                 <Td>{classesLabel(p.class_count)}</Td>
                 <Td>{p.billing_interval === 'monthly' ? `Monthly · ${p.commitment_months}-month min.` : durationLabel(p.validity_days)}</Td>
                 <Td>{styleAccessLabel(p.style_access)}{!p.all_styles && <span className="block text-xs text-muted">{d.planStyles.filter((x) => x.plan_id === p.id).length} styles</span>}</Td>
-                <Td className="text-xs">{p.first_time_only && 'First-time only. '}{p.credit_rollover && 'Classes roll over. '}{p.highlight === 'recommended' && 'Recommended. '}{p.highlight === 'best_value' && 'Best value. '}{d.exclusions.filter((e) => e.plan_id === p.id).length > 0 && `${d.exclusions.filter((e) => e.plan_id === p.id).length} excluded classes`}</Td>
+                <Td className="text-xs">{p.visibility === 'private' && <span className="chip mr-1 bg-accent-50 text-accent-600">🔒 Private</span>}{p.first_time_only && 'First-time only. '}{p.credit_rollover && 'Classes roll over. '}{p.highlight === 'recommended' && 'Recommended. '}{p.highlight === 'best_value' && 'Best value. '}{d.exclusions.filter((e) => e.plan_id === p.id).length > 0 && `${d.exclusions.filter((e) => e.plan_id === p.id).length} excluded classes`}</Td>
                 <Td>{p.is_active ? 'On sale' : 'Disabled'}</Td>
                 <Td><button className="btn-sm btn-ghost" onClick={() => setEditing(p)}>Edit</button></Td>
               </tr>
@@ -58,6 +58,7 @@ export default function AdminPlans() {
           </Table>
         </Section>
       </div>
+      {d.plans.filter((p) => p.visibility === 'private').map((p) => <PlanAccess key={p.id} plan={p} />)}
       {editing && (
         <PlanSheet value={editing} styles={d.styles} templates={d.templates}
           selectedStyles={d.planStyles.filter((x) => x.plan_id === editing.id).map((x) => x.style_id)}
@@ -65,6 +66,46 @@ export default function AdminPlans() {
           onClose={() => setEditing(null)} onSaved={() => { toast('Plan saved.'); void data.reload(); }} />
       )}
     </>
+  );
+}
+
+/** Members who can see and buy a private plan. */
+function PlanAccess({ plan }: { plan: MembershipPlan }) {
+  const toast = useToast();
+  const [q, setQ] = useState('');
+  const access = useAsync(async () => unwrap(await supabase.from('plan_access').select('user_id, granted_at, profiles!plan_access_user_id_fkey(full_name, email)').eq('plan_id', plan.id).order('granted_at')) as unknown as { user_id: string; granted_at: string; profiles: { full_name: string | null; email: string | null } | null }[], [plan.id]);
+  const found = useAsync(async () => {
+    const t = q.trim().replace(/[%,()]/g, '');
+    if (t.length < 2) return [] as { id: string; full_name: string | null; email: string | null }[];
+    return unwrap(await supabase.from('profiles').select('id, full_name, email').or(`full_name.ilike.%${t}%,email.ilike.%${t}%`).limit(8)) as { id: string; full_name: string | null; email: string | null }[];
+  }, [q]);
+  const set = async (userId: string, allow: boolean) => {
+    try { unwrap(await supabase.rpc('admin_set_plan_access', { p_plan_id: plan.id, p_user_id: userId, p_allow: allow })); toast(allow ? 'They can now see this plan' : 'Removed'); setQ(''); void access.reload(); }
+    catch (e) { toast((e as Error).message, 'error'); }
+  };
+  const ids = new Set((access.data ?? []).map((a) => a.user_id));
+  return (
+    <div className="mt-6">
+      <Section title={`🔒 ${plan.name}: who can see it`}>
+        <p className="text-sm text-muted">Only these members see {plan.name} on the pricing page and can buy it. Everyone else never sees it.</p>
+        <ul className="mt-3 divide-y divide-line">
+          {(access.data ?? []).map((a) => (
+            <li key={a.user_id} className="flex items-center justify-between gap-2 py-2 text-sm">
+              <span><strong>{a.profiles?.full_name ?? 'Member'}</strong> <span className="text-muted">{a.profiles?.email}</span></span>
+              <button className="btn-ghost btn-sm" onClick={() => void set(a.user_id, false)}>Remove</button>
+            </li>
+          ))}
+          {!access.loading && !access.data?.length && <li className="py-2 text-sm text-muted">Nobody yet.</li>}
+        </ul>
+        <input className="input mt-3" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Add a member: type a name or email" />
+        {(found.data ?? []).filter((m) => !ids.has(m.id)).map((m) => (
+          <button key={m.id} className="mt-1 flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm hover:bg-canvas" onClick={() => void set(m.id, true)}>
+            <span><strong>{m.full_name ?? 'Member'}</strong> <span className="text-muted">{m.email}</span></span>
+            <span className="font-semibold text-brand-700">+ Allow</span>
+          </button>
+        ))}
+      </Section>
+    </div>
   );
 }
 
@@ -162,6 +203,12 @@ function PlanSheet({ value, styles, templates, selectedStyles, excluded, onClose
           </select>
         </Field>
         <Field label="Button text (optional)"><input className="input" value={f.cta_label ?? ''} onChange={(e) => set('cta_label', e.target.value || null)} placeholder="e.g. Choose Committed" /></Field>
+        <Field label="Who can see it">
+          <select className="input" value={f.visibility ?? 'public'} onChange={(e) => set('visibility', e.target.value as 'public' | 'private')}>
+            <option value="public">Everyone (pricing page)</option>
+            <option value="private">Only members I choose</option>
+          </select>
+        </Field>
         {f.billing_interval !== 'monthly' && <label className="col-span-2 flex items-center gap-2 text-sm"><input type="checkbox" className="h-5 w-5" checked={f.first_time_only} onChange={(e) => set('first_time_only', e.target.checked)} />First-time customers only</label>}
         {f.billing_interval === 'monthly' && <p className="col-span-2 text-xs text-muted">Changing the price of a monthly plan applies to new members only. Existing members keep the price they signed up at.</p>}
         <label className="col-span-2 flex items-center gap-2 text-sm"><input type="checkbox" className="h-5 w-5" checked={f.is_active} onChange={(e) => set('is_active', e.target.checked)} />On sale</label>

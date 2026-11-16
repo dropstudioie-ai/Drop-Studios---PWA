@@ -232,6 +232,26 @@ run('database: plans, booking, allowances, pauses, security', () => {
       await expectError(as(db, user(admin), `select admin_cancel_checkout($1)`, [third.payment_id]), 'payment_not_pending');
     });
 
+    it('UNLIMITED is private: only members the studio authorises can see and buy it, and it never runs out', async () => {
+      const allowed = await createUser(db, 'UnlimitedYes'), other = await createUser(db, 'UnlimitedNo');
+      const pid = await planId('unlimited');
+      expect(await as(db, user(other), `select id from membership_plans where code = 'unlimited'`)).toHaveLength(0);
+      expect(await as(db, anon, `select id from membership_plans where code = 'unlimited'`)).toHaveLength(0);
+      await expectError(as(db, user(other), `select create_checkout($1, null, $2)`, [pid, randomUUID()]), 'plan_unavailable');
+      await expectError(as(db, user(other), `select admin_set_plan_access($1, $2, true)`, [pid, other]), 'forbidden');
+      await as(db, user(admin), `select admin_set_plan_access($1, $2, true)`, [pid, allowed]);
+      expect(await as(db, user(allowed), `select id from membership_plans where code = 'unlimited'`)).toHaveLength(1);
+      expect(await as(db, user(other), `select id from membership_plans where code = 'unlimited'`)).toHaveLength(0);
+      const [checkout] = await as<{ r: { payment_id: string } }>(db, user(allowed), `select create_checkout($1, null, $2) as r`, [pid, randomUUID()]);
+      const [{ r }] = await as<{ r: { membership_id: string } }>(db, service, `select fulfill_payment($1, 'square', 'pi_unl', $2, 15000, 'eur') as r`, [checkout.r.payment_id, `evt_${randomUUID()}`]);
+      const { rows: [m] } = await db.query(`select classes_total, classes_remaining from memberships where id = $1`, [r.membership_id]);
+      expect(m.classes_total).toBe(999);
+      const [k] = await as<{ k: { plans: { name: string }[] } }>(db, service, `select assistant_knowledge() k`);
+      expect(k.k.plans.map((p) => p.name)).not.toContain('UNLIMITED'); // Thamires never mentions it
+      await as(db, user(admin), `select admin_set_plan_access($1, $2, false)`, [pid, allowed]);
+      expect(await as(db, user(allowed), `select id from membership_plans where code = 'unlimited'`)).toHaveLength(0);
+    });
+
     it('intro offer is limited to first-time customers', async () => {
       const c = await createUser(db, 'IntroTwice');
       await buy(c, 'intro-3');

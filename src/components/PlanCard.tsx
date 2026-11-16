@@ -1,5 +1,5 @@
 import type { MembershipPlan } from '../domain/plans';
-import { classesLabel, creditRule, durationLabel, isMonthly, planBadges, pricePerClass, styleAccessLabel, termLabel } from '../domain/plans';
+import { classesLabel, creditRule, durationLabel, isMonthly, isUnlimited, planBadges, pricePerClass, styleAccessLabel, termLabel } from '../domain/plans';
 import { formatPrice } from '../domain/money';
 import { CheckIcon, ClockIcon, LayersIcon, TargetIcon } from './icons';
 
@@ -54,7 +54,7 @@ export function PlanCard({ plan, onSelect, disabledReason }: Props) {
         <p className={`mt-1 font-display text-lg font-extrabold ${dark ? 'text-brand-200' : isIntro ? 'text-accent-600' : 'text-brand-600'}`}>
           {classesLabel(plan.class_count)}{monthly ? ' every month' : ''}
         </p>
-        <p className={`text-sm font-semibold ${faint}`}>{pricePerClass(plan)} per class</p>
+        <p className={`text-sm font-semibold ${faint}`}>{isUnlimited(plan.class_count) ? 'As many classes as you like' : `${pricePerClass(plan)} per class`}</p>
       </div>
 
       {bestValue && plan.credit_rollover && (

@@ -6,7 +6,7 @@ import { checkout, paymentsMode } from '../lib/payments';
 import { messageFor } from '../domain/messages';
 import { formatPrice } from '../domain/money';
 import type { MembershipPlan } from '../domain/plans';
-import { classesLabel, creditRule, isMonthly, ordinalDay, styleAccessLabel, termLabel, validityLabel } from '../domain/plans';
+import { classesLabel, creditRule, isMonthly, isUnlimited, ordinalDay, styleAccessLabel, termLabel, validityLabel } from '../domain/plans';
 import { STUDIO } from '../config/studio';
 import { isLive } from '../domain/subscription';
 import { computeExpiry, lastValidDay } from '../domain/membership';
@@ -229,7 +229,7 @@ function MonthlySummary({ plan, upgradingFrom }: { plan: MembershipPlan; upgradi
       </div>
       {upgradingFrom && (
         <div className="border-b border-line bg-brand-50 px-5 py-3 text-sm text-brand-900">
-          <strong>Upgrading from {upgradingFrom}.</strong> Your {upgradingFrom} membership stops today (no more payments for it), and {plan.name} starts now with your first {plan.class_count} classes.
+          <strong>Upgrading from {upgradingFrom}.</strong> Your {upgradingFrom} membership stops today (no more payments for it), and {plan.name} starts now with your first {isUnlimited(plan.class_count) ? 'month of unlimited' : plan.class_count} classes.
         </div>
       )}
       <dl className="divide-y divide-line">

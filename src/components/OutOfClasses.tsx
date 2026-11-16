@@ -1,3 +1,4 @@
+import { isUnlimited } from '../domain/plans';
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { api } from '../api';
@@ -19,7 +20,7 @@ function Content({ out, onDone }: { out: OutOfClasses; onDone?: () => void }) {
       </h2>
       <p className="mt-3 text-lg text-white/90">
         {!sub && 'Renew your membership or upgrade to a new plan to keep dancing.'}
-        {sub && !sub.pastDue && sub.nextBilling && <>Your next {p!.class_count} classes arrive on <strong>{formatKey(sub.nextBilling, { weekday: 'long', day: 'numeric', month: 'long' })}</strong>. Can’t wait? Upgrade to a bigger plan now, or book a Drop In.</>}
+        {sub && !sub.pastDue && sub.nextBilling && <>Your next {isUnlimited(p!.class_count) ? 'month of unlimited' : p!.class_count} classes arrive on <strong>{formatKey(sub.nextBilling, { weekday: 'long', day: 'numeric', month: 'long' })}</strong>. Can’t wait? Upgrade to a bigger plan now, or book a Drop In.</>}
         {sub && !sub.pastDue && !sub.nextBilling && <>This was your last month. Upgrade to a bigger plan to keep dancing now, or book a Drop In.</>}
         {sub?.pastDue && <>Your last monthly payment didn’t go through. Pay the invoice Square emailed you and your classes are added straight away.</>}
       </p>
