@@ -113,6 +113,26 @@ async function sendComment(db: Db, id: string, text: string, actor: string | nul
   }
 }
 
+/** Publish the day's Stories (one image per class) in order. A retry continues where it stopped, so nothing is posted twice. */
+async function publishStories(db: Db, storyId: string, paths: string[], actor: string | null) {
+  const cfg = igConfig();
+  if (!cfg) throw new Error('Instagram is not connected yet.');
+  const { data: st } = await db.from('assistant_stories').select('*').eq('id', storyId).single();
+  if (!st || !paths.length || paths.length > 10) throw new Error('not_found');
+  const done: string[] = st.status === 'failed' && Array.isArray(st.ig_media_ids) ? [...st.ig_media_ids] : [];
+  for (let i = done.length; i < paths.length; i++) {
+    try {
+      const r = await ig.publishStory(cfg, db.storage.from('assistant-media').getPublicUrl(paths[i]).data.publicUrl);
+      done.push(r.id);
+    } catch (e) {
+      await db.from('assistant_stories').update({ status: 'failed', image_paths: paths, ig_media_ids: done, error: `${done.length} of ${paths.length} posted: ${(e as Error).message}`, decided_by: actor }).eq('id', st.id);
+      throw e;
+    }
+  }
+  await db.from('assistant_stories').update({ status: 'published', image_paths: paths, image_path: paths[0], ig_media_ids: done, ig_media_id: done[0], decided_by: actor, error: null }).eq('id', st.id);
+  return done;
+}
+
 async function handleEvent(db: Db, ev: IgEvent) {
   const s = await settings(db);
   const cfg = igConfig();
@@ -136,7 +156,11 @@ async function handleEvent(db: Db, ev: IgEvent) {
     return;
   }
   if (ev.type === 'story_insights') {
-    await db.from('assistant_stories').update({ insights: ev.metrics, insights_at: new Date().toISOString() }).eq('ig_media_id', ev.mediaId);
+    // A day can have several Stories (one per class): keep the numbers of the one that reached most people.
+    const { data: st } = await db.from('assistant_stories').select('id, insights').contains('ig_media_ids', [ev.mediaId]).maybeSingle();
+    const prev = (st?.insights ?? null) as Record<string, number> | null;
+    if (st && (!prev || (ev.metrics.reach ?? 0) >= (prev.reach ?? 0))) await db.from('assistant_stories').update({ insights: ev.metrics, insights_at: new Date().toISOString() }).eq('id', st.id);
+    else if (!st) await db.from('assistant_stories').update({ insights: ev.metrics, insights_at: new Date().toISOString() }).eq('ig_media_id', ev.mediaId);
     return;
   }
   if (ev.type === 'comment') {
@@ -339,21 +363,11 @@ Deno.serve(async (req) => {
   // Scheduled daily Story.
   if (req.headers.get('x-cron-secret')) {
     if (req.headers.get('x-cron-secret') !== Deno.env.get('CRON_SECRET')) return new Response('forbidden', { status: 403 });
-    const job = await req.json().catch(() => ({})) as { check?: boolean; test?: string; name?: string; publish_story?: { story_id: string; image_path: string } };
-    if (job.publish_story) { // publish an already rendered Story image (developer, cron secret only)
-      const cfg = igConfig(); if (!cfg) return Response.json({ error: 'Instagram is not connected yet.' }, { status: 400 });
-      const { story_id, image_path } = job.publish_story;
-      const { data: st } = await db.from('assistant_stories').select('*').eq('id', story_id).single();
-      if (!st || !image_path) return Response.json({ error: 'not_found' }, { status: 404 });
-      const publicUrl = db.storage.from('assistant-media').getPublicUrl(image_path).data.publicUrl;
-      try {
-        const r = await ig.publishStory(cfg, publicUrl);
-        await db.from('assistant_stories').update({ status: 'published', image_path, ig_media_id: r.id, error: null }).eq('id', st.id);
-        return Response.json({ ok: true, ig_media_id: r.id });
-      } catch (e) {
-        await db.from('assistant_stories').update({ status: 'failed', image_path, error: (e as Error).message }).eq('id', st.id);
-        return Response.json({ error: (e as Error).message }, { status: 400 });
-      }
+    const job = await req.json().catch(() => ({})) as { check?: boolean; test?: string; name?: string; publish_story?: { story_id: string; image_path?: string; image_paths?: string[] } };
+    if (job.publish_story) { // publish already rendered Story images (developer, cron secret only)
+      const { story_id, image_path, image_paths } = job.publish_story;
+      try { return Response.json({ ok: true, ig_media_ids: await publishStories(db, story_id, image_paths ?? [image_path!], null) }); }
+      catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
     }
     if (typeof job.test === 'string') { // private test reply (nothing is sent to Instagram)
       const d = await draft([{ from: 'member', text: job.test.slice(0, 500) }], true, 'dm', db, { display_name: job.name ?? null });
@@ -427,20 +441,10 @@ Deno.serve(async (req) => {
         return json(req, { ok: true });
       case 'story_prepare':
         return json(req, await dailyStory(db, true));
-      case 'story_publish': {
-        const cfg = igConfig(); if (!cfg) return json(req, { error: 'Instagram is not connected yet.' }, 400);
-        const path = String(body.image_path ?? '');
-        const { data: st } = await db.from('assistant_stories').select('*').eq('id', String(body.story_id)).single();
-        if (!st || !path) return json(req, { error: 'not_found' }, 404);
-        const publicUrl = db.storage.from('assistant-media').getPublicUrl(path).data.publicUrl;
-        try {
-          const r = await ig.publishStory(cfg, publicUrl);
-          await db.from('assistant_stories').update({ status: 'published', image_path: path, ig_media_id: r.id, decided_by: actor, error: null }).eq('id', st.id);
-        } catch (e) {
-          await db.from('assistant_stories').update({ status: 'failed', image_path: path, error: (e as Error).message, decided_by: actor }).eq('id', st.id);
-          throw e;
-        }
-        return json(req, { ok: true });
+      case 'story_publish': { // one image per class, in order
+        const paths = (Array.isArray(body.image_paths) ? body.image_paths : [body.image_path]).map(String).filter(Boolean);
+        const ids = await publishStories(db, String(body.story_id), paths, actor);
+        return json(req, { ok: true, published: ids.length });
       }
       case 'guide': { // the owner answers an out-of-the-ordinary question
         const answer = String(body.answer ?? '').trim();

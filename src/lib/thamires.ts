@@ -1,4 +1,4 @@
-import { classImage, sessionImage } from '../config/classImages';
+import { sessionImage } from '../config/classImages';
 import { supabase } from './supabase';
 
 export interface ThSettings { enabled: boolean; auto_reply: boolean; auto_tag_thanks: boolean; daily_story: boolean; story_hour: number; daily_report: boolean; report_hour: number; auto_comment_reply: boolean; notes: string | null }
@@ -9,7 +9,7 @@ export interface ThReport { id: string; report_date: string; stats: ThReportStat
 export interface ThThread { id: string; ig_user_id: string; username: string | null; display_name: string | null; status: 'open' | 'needs_human' | 'closed'; last_inbound_at: string | null; last_message_at: string; language: string | null; memory: string | null }
 export interface ThMessage { id: string; thread_id: string; direction: 'in' | 'out'; kind: string; text: string; status: 'received' | 'draft' | 'sent' | 'rejected' | 'failed'; needs_human: boolean; reason: string | null; translation: string | null; error: string | null; reaction?: string | null; created_at: string }
 export interface ThMention { id: string; kind: 'post' | 'story'; username: string | null; permalink: string | null; caption: string | null; media_url: string | null; reply_text: string | null; reply_status: 'draft' | 'sent' | 'rejected' | 'failed' | 'skipped'; error: string | null; reshared: boolean; received_at: string }
-export interface ThStory { id: string; story_date: string; insights: Record<string, number> | null; photo_url?: string | null; title: string; lines: { time: string; title: string; instructor: string | null; style_slug: string | null; instructor_id?: string | null; starts_at?: string }[]; art_slug: string | null; status: string; error: string | null }
+export interface ThStory { id: string; story_date: string; insights: Record<string, number> | null; photo_url?: string | null; photos?: Record<string, string>; ig_media_ids?: string[] | null; title: string; lines: { time: string; title: string; instructor: string | null; style_slug: string | null; instructor_id?: string | null; starts_at?: string }[]; art_slug: string | null; status: string; error: string | null }
 export interface ThDraft { reply: string; needs_human: boolean; reason: string; topic: string; language: string; offered_language: boolean; translation_en: string; memory: string; out_of_ordinary: boolean; question_en: string }
 export interface Turn { from: 'member' | 'thamires'; text: string }
 
@@ -43,14 +43,19 @@ export const thamires = {
   mentionSkip: (id: string) => call({ action: 'mention_skip', mention_id: id }),
   reshared: async (id: string, done: boolean) => { const r = await supabase.rpc('assistant_mark_reshared', { p_mention_id: id, p_done: done }); if (r.error) throw new Error(r.error.message); },
   prepareStory: () => call({ action: 'story_prepare' }),
-  publishStory: async (storyId: string, png: Blob) => {
-    const path = `stories/${storyId}-${Date.now()}.jpg`;
-    const up = await supabase.storage.from('assistant-media').upload(path, png, { contentType: 'image/jpeg' });
-    if (up.error) throw new Error(up.error.message);
-    return call({ action: 'story_publish', story_id: storyId, image_path: path });
+  /** Upload one image per class and publish them as Stories, in order. */
+  publishStories: async (storyId: string, images: Blob[]) => {
+    const stamp = Date.now(), paths: string[] = [];
+    for (const [i, img] of images.entries()) {
+      const path = `stories/${storyId}-${stamp}-${i + 1}.jpg`;
+      const up = await supabase.storage.from('assistant-media').upload(path, img, { contentType: 'image/jpeg' });
+      if (up.error) throw new Error(up.error.message);
+      paths.push(path);
+    }
+    return call<{ ok: true; published: number }>({ action: 'story_publish', story_id: storyId, image_paths: paths });
   },
   skipStory: (storyId: string) => call({ action: 'story_skip', story_id: storyId }),
-  setStoryPhoto: async (storyId: string, url: string | null) => { const r = await supabase.rpc('assistant_set_story_photo', { p_story_id: storyId, p_photo_url: url }); if (r.error) throw new Error(r.error.message); },
+  setStoryPhoto: async (storyId: string, url: string | null, index: number) => { const r = await supabase.rpc('assistant_set_story_photo', { p_story_id: storyId, p_photo_url: url, p_index: index }); if (r.error) throw new Error(r.error.message); },
   guidance: () => rows<ThGuidance[]>(supabase.from('assistant_guidance').select('*, assistant_threads(username)').neq('status', 'dismissed').order('created_at', { ascending: false }).limit(100)),
   guide: (id: string, answer: string) => call<{ ok: true; redrafted: boolean }>({ action: 'guide', guidance_id: id, answer }),
   dismissGuidance: (id: string) => call({ action: 'guidance_dismiss', guidance_id: id }),
@@ -79,16 +84,16 @@ export const STORY_PHOTOS: { url: string; label: string }[] = [
   ...Array.from({ length: 16 }, (_, i) => ({ url: `/studio/photo-${i + 1}.webp`, label: `Studio photo ${i + 1}` })),
 ];
 
-/** The photo used for a Story: the one chosen by an admin, else the first class's instructor/style artwork. */
-export function storyPhoto(s: ThStory): string {
-  if (s.photo_url) return s.photo_url;
-  // The first class that has its own artwork (a guest class without artwork uses the next one's).
-  for (const l of s.lines) {
-    const art = sessionImage(l.style_slug, l.instructor_id ?? null, l.starts_at)?.card;
-    if (art) return art;
-  }
-  return classImage(s.art_slug)?.card ?? '/studio/photo-1.webp';
+/** The photo for one class's Story: the one chosen by an admin, else that instructor's or style's artwork, else a studio photo. */
+export function storyPhoto(s: ThStory, index = 0): string {
+  const chosen = s.photos?.[String(index)] ?? (index === 0 ? s.photo_url : null);
+  if (chosen) return chosen;
+  const l = s.lines[index];
+  return (l && sessionImage(l.style_slug, l.instructor_id ?? null, l.starts_at)?.card) ?? '/studio/photo-6.webp';
 }
+
+/** How many Stories a day has: one per class. */
+export const storyCount = (s: ThStory) => s.lines.length;
 
 const loadImg = async (src: string) => {
   const img = new Image(); img.crossOrigin = 'anonymous'; img.src = src;
@@ -96,8 +101,9 @@ const loadImg = async (src: string) => {
   return img.naturalWidth ? img : null;
 };
 
-/** Draw the daily Story (1080×1920) in the browser: a full-screen photo or class artwork, today's classes in big type, and a "Book now" sticker. */
-export async function renderStory(s: ThStory): Promise<Blob> {
+/** Draw one class's Story (1080×1920) in the browser: a full-screen photo or the class artwork, the time and class in big type, and a "Book now" sticker. */
+export async function renderStory(day: ThStory, index = 0): Promise<Blob> {
+  const s: ThStory = { ...day, lines: day.lines.slice(index, index + 1) };
   const HEAD = '"Archivo Variable", Archivo, "Inter Variable", sans-serif', BODY = '"Inter Variable", Inter, sans-serif';
   await Promise.all([`900 150px ${HEAD}`, `800 52px ${BODY}`, `500 32px ${BODY}`, `900 36px ${BODY}`, `700 40px ${BODY}`].map((f) => document.fonts.load(f).catch(() => null)));
   await document.fonts.ready;
@@ -105,7 +111,7 @@ export async function renderStory(s: ThStory): Promise<Blob> {
   const c = document.createElement('canvas'); c.width = W; c.height = H;
   const g = c.getContext('2d')!;
   g.fillStyle = INK; g.fillRect(0, 0, W, H);
-  const src = storyPhoto(s);
+  const src = storyPhoto(day, index);
   const img = await loadImg(src);
   const lines = s.lines.slice(0, 5), n = Math.max(1, lines.length);
   const artwork = src.startsWith('/classes/'); // Drop's 4:5 class artwork (logo and style name built in)

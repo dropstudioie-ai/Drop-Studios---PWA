@@ -1878,5 +1878,16 @@ run('database: plans, booking, allowances, pauses, security', () => {
       expect(st.insights.reach).toBe(120);
       expect((await db.query(`select auto_comment_reply from assistant_settings`)).rows[0].auto_comment_reply).toBe(false);
     });
+    it('each class in the daily Stories can have its own photo (admins only, safe URLs only)', async () => {
+      const m = await createUser(db, 'Sneaky');
+      const { rows: [st] } = await db.query(`insert into assistant_stories (story_date, title, status, lines) values ('2026-11-20', 'TODAY AT DROP', 'draft', '[{"time":"18:30"},{"time":"19:30"}]') returning id`);
+      await expectError(as(db, user(m), `select assistant_set_story_photo($1, '/classes/heels.webp', 1)`, [st.id]), 'forbidden');
+      await as(db, user(admin), `select assistant_set_story_photo($1, '/classes/heels.webp', 1)`, [st.id]);
+      await as(db, user(admin), `select assistant_set_story_photo($1, '/studio/photo-6.webp', 0)`, [st.id]);
+      expect((await db.query(`select photos from assistant_stories where id = $1`, [st.id])).rows[0].photos).toEqual({ 0: '/studio/photo-6.webp', 1: '/classes/heels.webp' });
+      await as(db, user(admin), `select assistant_set_story_photo($1, null, 1)`, [st.id]);
+      expect((await db.query(`select photos from assistant_stories where id = $1`, [st.id])).rows[0].photos).toEqual({ 0: '/studio/photo-6.webp' });
+      await expectError(as(db, user(admin), `select assistant_set_story_photo($1, 'https://evil.example/x.jpg', 0)`, [st.id]), 'invalid_photo');
+    });
   });
 });
