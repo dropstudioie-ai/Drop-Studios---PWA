@@ -44,8 +44,8 @@ export const thamires = {
   reshared: async (id: string, done: boolean) => { const r = await supabase.rpc('assistant_mark_reshared', { p_mention_id: id, p_done: done }); if (r.error) throw new Error(r.error.message); },
   prepareStory: () => call({ action: 'story_prepare' }),
   publishStory: async (storyId: string, png: Blob) => {
-    const path = `stories/${storyId}-${Date.now()}.png`;
-    const up = await supabase.storage.from('assistant-media').upload(path, png, { contentType: 'image/png' });
+    const path = `stories/${storyId}-${Date.now()}.jpg`;
+    const up = await supabase.storage.from('assistant-media').upload(path, png, { contentType: 'image/jpeg' });
     if (up.error) throw new Error(up.error.message);
     return call({ action: 'story_publish', story_id: storyId, image_path: path });
   },
@@ -166,7 +166,8 @@ export async function renderStory(s: ThStory): Promise<Blob> {
   g.beginPath(); g.moveTo(134, sy + sh / 2 + 16); g.lineTo(166, sy + sh / 2 - 16); g.moveTo(140, sy + sh / 2 - 16); g.lineTo(166, sy + sh / 2 - 16); g.lineTo(166, sy + sh / 2 + 10); g.stroke();
   g.fillStyle = INK; g.font = `900 46px ${HEAD}`; g.fillText('BOOK NOW', 214, sy + 58);
   g.fillStyle = ORANGE; g.font = `700 34px ${BODY}`; g.fillText('dropstudios.ie/app', 214, sy + 98);
-  return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('Could not create the image'))), 'image/png'));
+  // Instagram only publishes JPEG images.
+  return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('Could not create the image'))), 'image/jpeg', 0.92));
 }
 
 /** Upload a photo for the Story (resized and saved as JPEG, so iPhone photos work too). Returns its public URL. */

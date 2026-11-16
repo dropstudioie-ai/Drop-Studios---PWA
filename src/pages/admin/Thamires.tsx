@@ -294,7 +294,7 @@ function TodayStory({ reload }: { reload: () => void }) {
             <PhotoPicker story={s} onChanged={() => story.reload()} />
             <div className="flex flex-wrap gap-2">
               <button className="btn-primary btn-sm" disabled={busy} onClick={async () => { setBusy(true); try { await thamires.publishStory(s.id, img.blob); toast('Story published on Instagram'); story.reload(); reload(); } catch (e) { toast((e as Error).message, 'error'); } finally { setBusy(false); } }}>{busy ? <Spinner className="h-4 w-4" /> : 'Publish to Instagram'}</button>
-              <a className="btn-outline btn-sm" href={img.url} download={`drop-story-${today}.png`}>Download</a>
+              <a className="btn-outline btn-sm" href={img.url} download={`drop-story-${today}.jpg`}>Download</a>
               <button className="btn-ghost btn-sm" onClick={async () => { await thamires.skipStory(s.id); story.reload(); }}>Skip today</button>
             </div>
           </>

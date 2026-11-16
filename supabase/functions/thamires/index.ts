@@ -339,7 +339,22 @@ Deno.serve(async (req) => {
   // Scheduled daily Story.
   if (req.headers.get('x-cron-secret')) {
     if (req.headers.get('x-cron-secret') !== Deno.env.get('CRON_SECRET')) return new Response('forbidden', { status: 403 });
-    const job = await req.json().catch(() => ({})) as { check?: boolean; test?: string; name?: string };
+    const job = await req.json().catch(() => ({})) as { check?: boolean; test?: string; name?: string; publish_story?: { story_id: string; image_path: string } };
+    if (job.publish_story) { // publish an already rendered Story image (developer, cron secret only)
+      const cfg = igConfig(); if (!cfg) return Response.json({ error: 'Instagram is not connected yet.' }, { status: 400 });
+      const { story_id, image_path } = job.publish_story;
+      const { data: st } = await db.from('assistant_stories').select('*').eq('id', story_id).single();
+      if (!st || !image_path) return Response.json({ error: 'not_found' }, { status: 404 });
+      const publicUrl = db.storage.from('assistant-media').getPublicUrl(image_path).data.publicUrl;
+      try {
+        const r = await ig.publishStory(cfg, publicUrl);
+        await db.from('assistant_stories').update({ status: 'published', image_path, ig_media_id: r.id, error: null }).eq('id', st.id);
+        return Response.json({ ok: true, ig_media_id: r.id });
+      } catch (e) {
+        await db.from('assistant_stories').update({ status: 'failed', image_path, error: (e as Error).message }).eq('id', st.id);
+        return Response.json({ error: (e as Error).message }, { status: 400 });
+      }
+    }
     if (typeof job.test === 'string') { // private test reply (nothing is sent to Instagram)
       const d = await draft([{ from: 'member', text: job.test.slice(0, 500) }], true, 'dm', db, { display_name: job.name ?? null });
       return Response.json(d ?? { error: 'claude_not_configured' });
