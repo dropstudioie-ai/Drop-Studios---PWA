@@ -82,8 +82,12 @@ export const STORY_PHOTOS: { url: string; label: string }[] = [
 /** The photo used for a Story: the one chosen by an admin, else the first class's instructor/style artwork. */
 export function storyPhoto(s: ThStory): string {
   if (s.photo_url) return s.photo_url;
-  const l = s.lines[0];
-  return (l && sessionImage(l.style_slug, l.instructor_id ?? null, l.starts_at)?.card) ?? classImage(s.art_slug)?.card ?? '/studio/photo-1.webp';
+  // The first class that has its own artwork (a guest class without artwork uses the next one's).
+  for (const l of s.lines) {
+    const art = sessionImage(l.style_slug, l.instructor_id ?? null, l.starts_at)?.card;
+    if (art) return art;
+  }
+  return classImage(s.art_slug)?.card ?? '/studio/photo-1.webp';
 }
 
 const loadImg = async (src: string) => {
@@ -109,10 +113,17 @@ export async function renderStory(s: ThStory): Promise<Blob> {
     const sc = Math.max(w / im.naturalWidth, h / im.naturalHeight);
     g.drawImage(im, x + (w - im.naturalWidth * sc) / 2, y + (h - im.naturalHeight * sc) / 2, im.naturalWidth * sc, im.naturalHeight * sc);
   };
+  // Fewer classes, bigger type.
+  const fs = n <= 2 ? 80 : n === 3 ? 72 : 64, step = n <= 2 ? 150 : n === 3 ? 135 : 120, nameX = n <= 2 ? 360 : 330;
   let top: number; // where the text block starts
   if (img && artwork) {
     // Full-screen blurred artwork behind, the sharp artwork on top: no empty space, the class colour everywhere.
-    g.save(); g.filter = 'blur(48px) saturate(1.2)'; cover(img, -80, -80, W + 160, H + 160); g.restore();
+    // Blur by shrinking the artwork to a few pixels and stretching it back (works in every browser, Safari included).
+    const tiny = document.createElement('canvas'); tiny.width = 18; tiny.height = 32;
+    const tg = tiny.getContext('2d')!; tg.imageSmoothingQuality = 'high';
+    const ts = Math.max(18 / img.naturalWidth, 32 / img.naturalHeight);
+    tg.drawImage(img, (18 - img.naturalWidth * ts) / 2, (32 - img.naturalHeight * ts) / 2, img.naturalWidth * ts, img.naturalHeight * ts);
+    g.save(); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high'; g.drawImage(tiny, -60, -60, W + 120, H + 120); g.restore();
     g.fillStyle = 'rgba(11,11,13,0.35)'; g.fillRect(0, 0, W, H);
     const aw = n === 1 ? W : n === 2 ? 960 : n === 3 ? 840 : 720, ah = aw * 1.25, ax = (W - aw) / 2, ay = n === 1 ? 0 : 56;
     g.save();
@@ -121,7 +132,7 @@ export async function renderStory(s: ThStory): Promise<Blob> {
     top = n === 1 ? 1330 : n === 2 ? 1300 : n === 3 ? 1180 : 1030;
   } else {
     if (img) cover(img, 0, 0, W, H);
-    top = n === 1 ? 1330 : 1560 - (n - 1) * 120;
+    top = n === 1 ? 1330 : 1540 - (n - 1) * step; // the last class ends just above the Book now sticker
     const logo = await loadImg('/brand/drop-logo-white.svg');
     if (logo) { const lw = 300; g.drawImage(logo, 64, 72, lw, lw * (logo.naturalHeight / logo.naturalWidth)); }
   }
@@ -149,8 +160,6 @@ export async function renderStory(s: ThStory): Promise<Blob> {
     if (l.instructor) { g.fillStyle = '#d4d4d8'; g.font = `600 44px ${BODY}`; g.fillText(`with ${l.instructor}`, 80, top + 322); }
   } else {
     g.fillStyle = ORANGE; g.font = `800 40px ${BODY}`; g.fillText(`TODAY AT DROP · ${date}`, 80, top);
-    // Fewer classes, bigger type.
-    const fs = n <= 2 ? 80 : n === 3 ? 72 : 64, step = n <= 2 ? 150 : n === 3 ? 135 : 120, nameX = n <= 2 ? 360 : 330;
     lines.forEach((l, i) => {
       const y = top + 100 + i * step;
       g.fillStyle = ORANGE; g.font = `900 ${fs}px ${HEAD}`; g.fillText(l.time, 80, y);
