@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAsync } from '../../lib/useAsync';
-import { renderStory, thamires, type ThComment, type ThGuidance, type ThMessage, type ThMention, type ThReport, type ThSettings, type ThThread, type ThStory, type Turn } from '../../lib/thamires';
+import { renderStory, STORY_PHOTOS, storyPhoto, thamires, uploadStoryPhoto, type ThComment, type ThGuidance, type ThMessage, type ThMention, type ThReport, type ThSettings, type ThThread, type ThStory, type Turn } from '../../lib/thamires';
 import { ErrorNotice, PageSpinner, Spinner, useToast } from '../../components/ui';
 import { fmt, localDateKey } from '../../domain/time';
 
@@ -228,6 +228,46 @@ function RecentStories({ reload }: { reload: number }) {
   );
 }
 
+function PhotoPicker({ story, onChanged }: { story: ThStory; onChanged: () => void }) {
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const current = storyPhoto(story);
+  const choose = async (url: string | null) => {
+    setBusy(true);
+    try { await thamires.setStoryPhoto(story.id, url); onChanged(); setOpen(false); toast('Photo changed'); }
+    catch (e) { toast((e as Error).message, 'error'); } finally { setBusy(false); }
+  };
+  if (!open) return <button className="btn-outline btn-sm" onClick={() => setOpen(true)}>🖼️ Change photo</button>;
+  return (
+    <div className="rounded-2xl border border-line p-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="font-semibold">Choose the Story photo</p>
+        <button className="btn-ghost btn-sm" onClick={() => setOpen(false)}>Close</button>
+      </div>
+      <label className={`btn-primary btn-sm mt-2 inline-flex cursor-pointer ${busy ? 'opacity-50' : ''}`}>
+        {busy ? <Spinner className="h-4 w-4" /> : '📷 Upload a photo'}
+        <input type="file" accept="image/*" className="sr-only" disabled={busy} onChange={async (e) => {
+          const f = e.target.files?.[0]; if (!f) return;
+          setBusy(true);
+          try { const url = await uploadStoryPhoto(f); await thamires.setStoryPhoto(story.id, url); onChanged(); setOpen(false); toast('Photo uploaded'); }
+          catch (err) { toast((err as Error).message, 'error'); } finally { setBusy(false); e.target.value = ''; }
+        }} />
+      </label>
+      <span className="ml-2 text-xs text-muted">Portrait photos look best. Bright, sharp, people dancing.</span>
+      <div className="mt-3 grid max-h-80 grid-cols-4 gap-2 overflow-y-auto sm:grid-cols-6">
+        {STORY_PHOTOS.map((p) => (
+          <button key={p.url} title={p.label} disabled={busy} onClick={() => void choose(p.url)}
+            className={`overflow-hidden rounded-lg border-2 ${current === p.url ? 'border-brand-600' : 'border-transparent'}`}>
+            <img src={p.url} alt={p.label} loading="lazy" className="aspect-[4/5] w-full object-cover" />
+          </button>
+        ))}
+      </div>
+      {story.photo_url && <button className="mt-2 text-xs font-semibold text-muted underline" disabled={busy} onClick={() => void choose(null)}>Back to the automatic photo</button>}
+    </div>
+  );
+}
+
 function TodayStory({ reload }: { reload: () => void }) {
   const toast = useToast();
   const today = localDateKey(new Date());
@@ -251,6 +291,7 @@ function TodayStory({ reload }: { reload: () => void }) {
         {s?.status === 'draft' && img && (
           <>
             <p>Today’s classes, ready to post.</p>
+            <PhotoPicker story={s} onChanged={() => story.reload()} />
             <div className="flex flex-wrap gap-2">
               <button className="btn-primary btn-sm" disabled={busy} onClick={async () => { setBusy(true); try { await thamires.publishStory(s.id, img.blob); toast('Story published on Instagram'); story.reload(); reload(); } catch (e) { toast((e as Error).message, 'error'); } finally { setBusy(false); } }}>{busy ? <Spinner className="h-4 w-4" /> : 'Publish to Instagram'}</button>
               <a className="btn-outline btn-sm" href={img.url} download={`drop-story-${today}.png`}>Download</a>

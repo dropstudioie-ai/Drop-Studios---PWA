@@ -294,13 +294,13 @@ async function dailyStory(db: Db, force = false) {
   const { data: existing } = await db.from('assistant_stories').select('id').eq('story_date', today).maybeSingle();
   if (existing) return { skipped: 'exists' };
   const start = new Date(`${today}T00:00:00Z`); const end = new Date(start.getTime() + 36 * 3600e3);
-  const { data: sessions } = await db.from('class_sessions').select('starts_at, title, status, dance_styles(slug), instructors(full_name)')
+  const { data: sessions } = await db.from('class_sessions').select('starts_at, title, status, instructor_id, dance_styles(slug), instructors(full_name)')
     .gte('starts_at', start.toISOString()).lt('starts_at', end.toISOString()).eq('status', 'scheduled').order('starts_at');
   const fmt = (iso: string) => new Intl.DateTimeFormat('en-IE', { timeZone: 'Europe/Dublin', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(iso));
   const day = (iso: string) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Dublin' }).format(new Date(iso));
-  const lines = ((sessions ?? []) as unknown as { starts_at: string; title: string; dance_styles: { slug: string } | null; instructors: { full_name: string } | null }[])
+  const lines = ((sessions ?? []) as unknown as { starts_at: string; title: string; instructor_id: string | null; dance_styles: { slug: string } | null; instructors: { full_name: string } | null }[])
     .filter((x) => day(x.starts_at) === today)
-    .map((x) => ({ time: fmt(x.starts_at), title: x.title, instructor: x.instructors?.full_name ?? null, style_slug: x.dance_styles?.slug ?? null }));
+    .map((x) => ({ time: fmt(x.starts_at), title: x.title, instructor: x.instructors?.full_name ?? null, style_slug: x.dance_styles?.slug ?? null, instructor_id: x.instructor_id, starts_at: x.starts_at }));
   const { data: row } = await db.from('assistant_stories').insert({
     story_date: today, title: lines.length ? 'TODAY AT DROP' : 'NO CLASSES TODAY', lines, art_slug: lines[0]?.style_slug ?? null, status: lines.length ? 'draft' : 'skipped',
   }).select().single();
