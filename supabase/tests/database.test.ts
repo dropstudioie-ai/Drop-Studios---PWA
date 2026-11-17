@@ -909,6 +909,23 @@ run('database: plans, booking, allowances, pauses, security', () => {
       expect(await as(db, user(b), `select name from storage.objects where bucket_id = 'avatars' and name like $1 || '/%'`, [a])).toHaveLength(0);
     });
 
+    it('admins and instructors can add a member’s photo; members can’t set someone else’s', async () => {
+      const m = await createUser(db, 'PhotoByStaff', 'customer', { photo: false });
+      const teacher = await createUser(db, 'PhotoTeacher', 'instructor');
+      await as(db, user(teacher), `insert into storage.objects (bucket_id, name, owner) values ('avatars', $1 || '/staff.jpg', $2::uuid)`, [m, teacher]);
+      const [{ old }] = await as<{ old: string | null }>(db, user(teacher), `select staff_set_member_photo($1::uuid, $1::text || '/staff.jpg') old`, [m]);
+      expect(old).toBeNull();
+      expect((await db.query(`select avatar_path from profiles where id = $1`, [m])).rows[0].avatar_path).toBe(`${m}/staff.jpg`);
+      await as(db, user(admin), `insert into storage.objects (bucket_id, name, owner) values ('avatars', $1 || '/admin.jpg', $1::uuid)`, [m]);
+      expect((await as<{ old: string }>(db, user(admin), `select staff_set_member_photo($1::uuid, $1::text || '/admin.jpg') old`, [m]))[0].old).toBe(`${m}/staff.jpg`);
+      await as(db, user(admin), `delete from storage.objects where bucket_id = 'avatars' and name = $1 || '/staff.jpg'`, [m]);
+      await expectError(as(db, user(admin), `select staff_set_member_photo($1::uuid, $2::text || '/admin.jpg')`, [m, teacher]), 'invalid_photo');   // another member's folder
+      await expectError(as(db, user(admin), `select staff_set_member_photo($1::uuid, $1::text || '/missing.jpg')`, [m]), 'invalid_photo');
+      const other = await createUser(db, 'PhotoNosy');
+      await expectError(as(db, user(other), `select staff_set_member_photo($1::uuid, $1::text || '/admin.jpg')`, [m]), 'forbidden');
+      await expect(as(db, user(other), `delete from storage.objects where bucket_id = 'avatars' and name = $1 || '/admin.jpg' returning 1`, [m])).resolves.toHaveLength(0);
+    });
+
     it('staff can see customer photos for check-in', async () => {
       const c = await createUser(db, 'PhotoVisible');
       const rows = await as(db, user(admin), `select name from storage.objects where bucket_id = 'avatars' and name like $1 || '/%'`, [c]);

@@ -15,6 +15,7 @@ import { PauseSheet } from '../../components/PauseSheet';
 import { ErrorNotice, Field, Notice, PageSpinner, Sheet, Spinner, TestBadge, useToast } from '../../components/ui';
 import { Section, Table, Td } from './shared';
 import { Avatar } from '../../components/Avatar';
+import { MemberPhotoButton } from '../../components/MemberPhotoButton';
 import { useAuth } from '../../auth/AuthProvider';
 
 export default function AdminCustomers() {
@@ -417,7 +418,7 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
         </Table>
       </Section>}
 
-      {editing && <EditMemberSheet profile={d.profile} onClose={() => setEditing(false)} onDone={() => { setEditing(false); void data.reload(); }} />}
+      {editing && <EditMemberSheet profile={d.profile} onClose={() => setEditing(false)} onDone={() => { setEditing(false); void data.reload(); }} onPhoto={() => void data.reload()} />}
       {cancelling && <CancelMembershipSheet m={cancelling} onClose={() => setCancelling(null)} onDone={(n) => { setCancelling(null); toast(`Membership cancelled${n ? ` and ${n} upcoming booking${n === 1 ? '' : 's'} cancelled` : ''}. The member has been told.`); void data.reload(); }} />}
       {adjusting && <AdjustSheet m={adjusting} onClose={() => setAdjusting(null)} onDone={() => { toast('Classes updated.'); void data.reload(); }} />}
       {pausing && <PauseSheet membership={pausing} allowance={d.allowance} adminOverride onClose={() => setPausing(null)} onDone={() => { const sub = pausing?.subscription_id; if (sub) void manageSubscription('sync_billing', sub).catch(() => {}); toast(sub ? 'Membership paused. The next payment moves back by the paused days.' : 'Membership paused.'); void data.reload(); }} />}
@@ -513,7 +514,8 @@ function ageOn(dob: string) {
 }
 
 /** Admin: edit a member's details. Email changes also update their sign-in. */
-function EditMemberSheet({ profile, onClose, onDone }: { profile: Profile; onClose: () => void; onDone: () => void }) {
+function EditMemberSheet({ profile, onClose, onDone, onPhoto }: { profile: Profile; onClose: () => void; onDone: () => void; onPhoto: () => void }) {
+  const [photo, setPhoto] = useState(profile.avatar_path);
   const toast = useToast();
   const [f, setF] = useState({
     full_name: profile.full_name ?? '', email: profile.email ?? '', phone: profile.phone ?? '', dob: profile.date_of_birth ?? '',
@@ -547,6 +549,14 @@ function EditMemberSheet({ profile, onClose, onDone }: { profile: Profile; onClo
   return (
     <Sheet open onClose={onClose} title="Edit profile">
       <div className="space-y-3">
+        <div className="flex items-center gap-3 rounded-xl bg-canvas p-3">
+          <Avatar path={photo} name={profile.full_name} size={64} />
+          <div className="min-w-0 flex-1 text-sm">
+            <p className="font-semibold">Profile photo</p>
+            <p className="text-xs text-muted">{photo ? 'Shown at check-in. Only the member and staff can see it.' : 'Missing: take it now or upload one (needed from their second booking).'}</p>
+          </div>
+          <MemberPhotoButton memberId={profile.id} name={profile.full_name} hasPhoto={!!photo} onSaved={(p) => { setPhoto(p); setF((x) => ({ ...x, removePhoto: false })); onPhoto(); }} />
+        </div>
         <Field label="Full name"><input className="input" value={f.full_name} onChange={(e) => setF({ ...f, full_name: e.target.value })} autoComplete="off" /></Field>
         <Field label="Email (login)" hint={emailChanged ? 'This changes the email they log in with.' : undefined}>
           <input className="input" type="email" inputMode="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} autoComplete="off" />
@@ -558,7 +568,7 @@ function EditMemberSheet({ profile, onClose, onDone }: { profile: Profile; onClo
           <label className="flex items-center gap-2"><input type="checkbox" className="h-5 w-5" checked={f.notifyEmail} onChange={(e) => setF({ ...f, notifyEmail: e.target.checked })} />Email reminders and receipts</label>
           <label className="flex items-center gap-2"><input type="checkbox" className="h-5 w-5" checked={f.notifyPush} onChange={(e) => setF({ ...f, notifyPush: e.target.checked })} />Phone notifications</label>
           <label className="flex items-center gap-2"><input type="checkbox" className="h-5 w-5" checked={f.marketing} onChange={(e) => setF({ ...f, marketing: e.target.checked })} />Marketing emails</label>
-          {profile.avatar_path && (
+          {photo && (
             <label className="flex items-center gap-2 text-danger"><input type="checkbox" className="h-5 w-5" checked={f.removePhoto} onChange={(e) => setF({ ...f, removePhoto: e.target.checked })} />Remove profile photo (they’ll need to add a new one to book)</label>
           )}
         </fieldset>

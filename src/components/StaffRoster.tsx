@@ -7,6 +7,7 @@ import { supabase, AppError } from '../lib/supabase';
 import { unwrap } from '../api';
 import { fmt, ordinal } from '../domain/time';
 import { Avatar } from './Avatar';
+import { MemberPhotoButton } from './MemberPhotoButton';
 import { CancelSessionSheet, EditSessionSheet } from './SessionAdminSheets';
 import { ErrorNotice, Notice, PageSpinner, Sheet, Spinner, useToast } from './ui';
 
@@ -105,6 +106,9 @@ export function StaffRoster({ sessionId, onClose, onChanged, isAdmin = false }: 
                     {b.is_birthday && <span className="chip bg-accent-500 text-ink">🎂 Birthday{b.turning ? ` · ${b.turning}` : ''}</span>}
                     <span className="text-muted">{b.kind === 'membership' && b.plan_name ? b.plan_name : KIND_LABEL[b.kind]} · {STATUS_LABEL[b.status] ?? b.status}</span>
                   </div>
+                  {!b.avatar_path && b.kind !== 'staff' && (
+                    <div className="mt-1.5"><MemberPhotoButton memberId={b.user_id} name={b.full_name} hasPhoto={false} onSaved={() => void roster.reload()} className="btn-accent btn-sm" /></div>
+                  )}
                 </div>
                 {b.status !== 'pending_payment' && (
                   <div className="flex gap-1">

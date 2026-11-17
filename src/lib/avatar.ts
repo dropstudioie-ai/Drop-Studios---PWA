@@ -34,6 +34,19 @@ export async function uploadProfilePhoto(userId: string, file: File, previousPat
   return path;
 }
 
+/** Staff (admins and instructors): add or change a member's photo, e.g. taken at reception or in class. */
+export async function uploadMemberPhoto(memberId: string, file: File): Promise<string> {
+  if (!ACCEPTED_TYPES.includes(file.type)) throw new Error('Please choose a JPG, PNG or WebP photo.');
+  const blob = await squareJpeg(file);
+  const path = `${memberId}/${Date.now()}.jpg`;
+  const { error } = await supabase.storage.from(BUCKET).upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+  if (error) throw new Error('The photo could not be uploaded. Please try again.');
+  const { data: old, error: saveError } = await supabase.rpc('staff_set_member_photo', { p_user_id: memberId, p_path: path });
+  if (saveError) { await supabase.storage.from(BUCKET).remove([path]); throw new Error('The photo was uploaded but could not be saved to their profile.'); }
+  if (old && old !== path) { await supabase.storage.from(BUCKET).remove([old as string]); urlCache.delete(old as string); }
+  return path;
+}
+
 const urlCache = new Map<string, { url: string; expires: number }>();
 
 /** Short-lived signed URL for showing a private photo. */
