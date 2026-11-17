@@ -315,6 +315,18 @@ run('database: plans, booking, allowances, pauses, security', () => {
       expect((await db.query(`select count(*)::int n from notification_outbox where dedupe_key = $1`, [`gift_received:${g.id}`])).rows[0].n).toBe(1);
     });
 
+    it('members see receipts only for their own paid payments', async () => {
+      const a = await createUser(db, 'ReceiptA'), b = await createUser(db, 'ReceiptB');
+      const [{ r }] = await as<{ r: { payment_id: string } }>(db, user(a), `select create_checkout($1, null, $2) as r`, [await planId('intro-3'), randomUUID()]);
+      expect((await as<{ r: unknown[] }>(db, user(a), `select my_receipts() r`))[0].r).toHaveLength(0); // not paid yet
+      await as(db, service, `select fulfill_payment($1, 'square', 'pi_rc', $2, 3500, 'eur')`, [r.payment_id, `evt_${randomUUID()}`]);
+      const [{ r: mine }] = await as<{ r: { receipt_no: string; description: string; amount_cents: number; method: string; status: string }[] }>(db, user(a), `select my_receipts() r`);
+      expect(mine).toHaveLength(1);
+      expect(mine[0]).toMatchObject({ description: '3-Class Intro Offer', amount_cents: 3500, method: 'Card (Square)', status: 'succeeded' });
+      expect(mine[0].receipt_no).toBe(r.payment_id.replace(/-/g, '').slice(0, 10).toUpperCase());
+      expect((await as<{ r: unknown[] }>(db, user(b), `select my_receipts() r`))[0].r).toHaveLength(0);
+    });
+
     it('intro offer is limited to first-time customers', async () => {
       const c = await createUser(db, 'IntroTwice');
       await buy(c, 'intro-3');

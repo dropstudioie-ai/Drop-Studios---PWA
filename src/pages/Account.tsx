@@ -1,3 +1,4 @@
+import { downloadReceipt, myReceipts } from '../lib/receipts';
 import { gifts } from '../lib/gifts';
 import { UNLIMITED_CLASSES } from '../domain/plans';
 import { useState, type FormEvent } from 'react';
@@ -170,6 +171,7 @@ export default function Account() {
         </section>
       )}
 
+      <Receipts />
       <GiftsBought uid={uid} />
       <NotificationSettings />
       <ProfileSection uid={uid} onSaved={refreshProfile} />
@@ -187,6 +189,42 @@ export default function Account() {
         }} />
       )}
     </div>
+  );
+}
+
+/** Every payment the member made, each with a downloadable PDF receipt. */
+function Receipts() {
+  const { profile, session } = useAuth();
+  const toast = useToast();
+  const list = useAsync(() => myReceipts(), []);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [all, setAll] = useState(false);
+  const rows = list.data ?? [];
+  const shown = all ? rows : rows.slice(0, 5);
+  return (
+    <section className="mt-10" aria-labelledby="receipts-h">
+      <h2 id="receipts-h" className="text-xl font-black">Payments &amp; receipts</h2>
+      {list.loading && !list.data ? <p className="mt-2 text-sm text-muted">Loading…</p> : rows.length ? (
+        <>
+          <ul className="mt-3 divide-y divide-line rounded-2xl border border-line">
+            {shown.map((r) => (
+              <li key={r.id} className="flex items-center justify-between gap-3 p-3">
+                <span className="min-w-0">
+                  <span className="block truncate font-semibold">{r.description}{r.month && r.of ? ` · ${r.month} of ${r.of}` : ''}</span>
+                  <span className="text-xs text-muted">{fmt.date(r.paid_at)} · {formatPrice(r.amount_cents, r.currency)}{r.status === 'refunded' ? ' · refunded' : ''} · no. {r.receipt_no}</span>
+                </span>
+                <button className="btn-outline btn-sm shrink-0" disabled={busy === r.id} onClick={async () => {
+                  setBusy(r.id);
+                  try { await downloadReceipt(r, { full_name: profile?.full_name ?? null, email: profile?.email ?? session?.user.email ?? null }); }
+                  catch (e) { toast((e as Error).message, 'error'); } finally { setBusy(null); }
+                }}>{busy === r.id ? <Spinner className="h-4 w-4" /> : '⬇ Receipt'}</button>
+              </li>
+            ))}
+          </ul>
+          {rows.length > 5 && <button className="mt-2 text-sm font-semibold text-brand-700" onClick={() => setAll(!all)}>{all ? 'Show fewer' : `Show all ${rows.length} payments`}</button>}
+        </>
+      ) : <p className="mt-2 text-sm text-muted">Your payments will appear here, each with a receipt you can download.</p>}
+    </section>
   );
 }
 
