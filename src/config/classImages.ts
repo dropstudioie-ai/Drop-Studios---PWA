@@ -30,3 +30,20 @@ export function sessionImage(slug: string | null | undefined, instructorId: stri
   if (own) return { card: `/classes/${own}.webp`, wide: `/classes/${own}-wide.webp` };
   return classImage(slug);
 }
+
+// Real photos from each style's classes (public/studio/photo-N.webp), shown on the class page.
+const CLASS_PHOTOS: Record<string, number[]> = {
+  fitdance: [26, 47, 39, 36, 28, 40, 27, 30, 45],
+};
+
+const CLASS_GROUP_PHOTO: Record<string, number> = { fitdance: 50 };
+
+/** A wide group photo of the whole class, shown above the class photos. */
+export function classGroupPhoto(slug: string | null | undefined): string | null {
+  const n = slug ? CLASS_GROUP_PHOTO[slug] : undefined;
+  return n ? `/studio/photo-${n}.webp` : null;
+}
+
+export function classPhotos(slug: string | null | undefined): string[] {
+  return (slug ? CLASS_PHOTOS[slug] ?? [] : []).map((n) => `/studio/photo-${n}.webp`);
+}

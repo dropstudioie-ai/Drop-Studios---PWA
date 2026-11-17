@@ -17,7 +17,8 @@ const GROUPS: { photos: number[]; palettes: Palette[]; wide?: boolean }[] = [
   { photos: [17, 20, 18, 12], palettes: [JAZZ_FUNK] },                      // studio in club lights
   { photos: [23, 19, 1], palettes: [FITDANCE, HIP_HOP, HEELS] },            // warm light, bright room
   { photos: [9, 10, 11], palettes: [COMMERCIAL, CHOREOGRAPHY] },            // cool blue / grey rooms
-  { photos: [14, 15, 13, 16, 25], palettes: [COMMERCIAL, CHOREOGRAPHY], wide: true }, // blue-wall studio (pro photos)
+  { photos: [50, 14, 15, 13, 16, 25], palettes: [COMMERCIAL, CHOREOGRAPHY], wide: true }, // blue-wall studio (pro photos)
+  { photos: [26, 47, 39, 36, 28, 40, 27, 30, 45], palettes: [FITDANCE, HIP_HOP] },               // real FitDance classes
   { photos: [24], palettes: [FITDANCE, HEELS, JAZZ_FUNK], wide: true },              // Drop at Dublin Pride (21 and 22 are for Instagram only)
 ];
 export const STUDIO_PHOTOS = GROUPS.flatMap((g) => g.photos).map(photo);

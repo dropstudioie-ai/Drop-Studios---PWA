@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useAsync } from '../lib/useAsync';
 import { api } from '../api';
 import { classPages, setPageMeta, WEEKDAYS } from '../lib/classPages';
-import { classImage } from '../config/classImages';
+import { classGroupPhoto, classImage, classPhotos } from '../config/classImages';
 import { formatPrice } from '../domain/money';
 import { classesLabel } from '../domain/plans';
 import { STUDIO } from '../config/studio';
@@ -67,6 +67,18 @@ export default function ClassPage() {
             <section aria-labelledby="about-h">
               <h2 id="about-h" className="text-2xl font-black">About the class</h2>
               <p className="mt-3 whitespace-pre-line text-lg leading-relaxed text-ink-soft">{s.description}</p>
+            </section>
+          )}
+
+          {classPhotos(s.slug).length > 0 && (
+            <section aria-labelledby="photos-h">
+              <h2 id="photos-h" className="text-2xl font-black">Inside a {s.name} class</h2>
+              {classGroupPhoto(s.slug) && <img src={classGroupPhoto(s.slug)!} alt={`A ${s.name} class at ${STUDIO.name}, all smiles after class`} width={2268} height={1550} loading="lazy" className="mt-4 w-full rounded-2xl" />}
+              <ul className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {classPhotos(s.slug).map((src) => (
+                  <li key={src}><img src={src} alt={`Members dancing in a ${s.name} class at ${STUDIO.name}`} width={1125} height={2000} loading="lazy" className="aspect-[3/4] w-full rounded-2xl object-cover object-top" /></li>
+                ))}
+              </ul>
             </section>
           )}
 
