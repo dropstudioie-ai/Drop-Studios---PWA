@@ -210,3 +210,9 @@ Deno.test('gift card emails: buyer, friend (with message and redeem link) and re
   assertStringIncludes(f.text, '/gift/redeem?code=DROP-AB12-CD34');
   assertStringIncludes(render({ kind: 'gift_card_redeemed', full_name: null, payload: { plan_name: 'Intro', recipient_name: 'Ana' } })!.subject, 'Ana has started using your gift');
 });
+
+Deno.test('promo posted email', () => {
+  const m = render({ kind: 'assistant_promo', full_name: 'Jorge', payload: { title: 'App + gift cards', items: ['App promo', 'Gift card ad'], posts_done: 3, ends_on: '2026-12-31' } })!;
+  assertStringIncludes(m.text, 'App promo, then Gift card ad');
+  assertStringIncludes(m.text, 'post 3');
+});

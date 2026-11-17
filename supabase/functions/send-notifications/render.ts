@@ -329,6 +329,12 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
         text: `${hi}\n\n@${p.username} commented on one of Drop’s posts:\n“${p.preview}”\n\nThamires thinks a person should reply to this one. Her draft is on the Comments tab:\n\n${site()}/admin/thamires\n\nDrop Studios`,
         url: '/admin/thamires',
       };
+    case 'assistant_promo':
+      return {
+        subject: `📣 Thamires posted “${p.title}” on Instagram Stories`,
+        text: `${hi}\n\nThamires just posted ${Array.isArray(p.items) ? (p.items as string[]).join(', then ') : 'the promo'} to Drop's Instagram Stories (post ${p.posts_done}${p.ends_on ? `, the schedule runs until ${longDate(String(p.ends_on))}` : ''}).\n\nTip: open the Stories in Instagram to add a song or a Link sticker.\n\n${site()}/admin/thamires\n\nDrop Studios`,
+        url: '/admin/thamires',
+      };
     case 'assistant_report': {
       const n = (v: unknown) => Number(v) || 0;
       const themes = (Array.isArray(p.themes) ? p.themes : []) as { theme: string; count: number }[];

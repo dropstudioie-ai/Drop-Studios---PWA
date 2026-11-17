@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAsync } from '../../lib/useAsync';
-import { renderStory, STORY_PHOTOS, storyCount, storyPhoto, thamires, uploadStoryPhoto, type ThComment, type ThGuidance, type ThMessage, type ThMention, type ThReport, type ThSettings, type ThThread, type ThStory, type Turn } from '../../lib/thamires';
+import { renderStory, STORY_PHOTOS, storyCount, storyPhoto, thamires, uploadStoryPhoto, type ThComment, type ThPromo, type ThGuidance, type ThMessage, type ThMention, type ThReport, type ThSettings, type ThThread, type ThStory, type Turn } from '../../lib/thamires';
 import { ErrorNotice, PageSpinner, Spinner, useToast } from '../../components/ui';
 import { fmt, localDateKey } from '../../domain/time';
 
@@ -268,6 +268,40 @@ function PhotoPicker({ story, index, onChanged }: { story: ThStory; index: numbe
   );
 }
 
+function Promos({ reload }: { reload: number }) {
+  const toast = useToast();
+  const list = useAsync(() => thamires.promos(), [reload]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const day = (d: string | null) => (d ? new Intl.DateTimeFormat('en-IE', { weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(`${d}T12:00:00`)) : '');
+  const next = (p: ThPromo) => {
+    if (!p.enabled || !p.starts_on) return null;
+    const base = p.last_posted_on ? new Date(new Date(`${p.last_posted_on}T12:00:00`).getTime() + p.every_days * 864e5) : new Date(`${p.starts_on}T12:00:00`);
+    const k = localDateKey(base < new Date() ? new Date() : base);
+    return p.ends_on && k > p.ends_on ? null : k;
+  };
+  if (list.loading && !list.data) return <Spinner />;
+  if (!list.data?.length) return <p className="text-sm text-muted">No promos scheduled.</p>;
+  return (
+    <ul className="space-y-3">
+      {list.data.map((p) => (
+        <li key={p.id} className="card p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="font-bold">{p.title}</p>
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-5 w-5" checked={p.enabled} disabled={!p.starts_on} onChange={async (e) => { try { await thamires.setPromo(p.id, { enabled: e.target.checked }); list.reload(); } catch (err) { toast((err as Error).message, 'error'); } }} />On</label>
+          </div>
+          <p className="mt-1 text-sm">{p.items.map((x, i) => <span key={i}>{i > 0 && ' → '}{x.kind === 'video' ? '🎬' : '🖼️'} {x.label ?? x.path}</span>)}</p>
+          <p className="mt-1 text-sm text-muted">{p.starts_on ? `Every ${p.every_days} days at ${String(p.post_hour).padStart(2, '0')}:00, ${day(p.starts_on)} to ${day(p.ends_on)}` : 'Starts when gift cards go live'} · posted {p.posts_done}×{p.last_posted_on ? `, last on ${day(p.last_posted_on)}` : ''}{next(p) ? ` · next ${day(next(p))}` : ''}</p>
+          {p.last_error && <p className="mt-1 text-sm text-danger">Last try: {p.last_error}</p>}
+          <div className="mt-3 flex flex-wrap gap-2">
+            {p.items.map((x, i) => <a key={i} className="btn-ghost btn-sm" href={thamires.mediaUrl(x.path)} target="_blank" rel="noreferrer">Preview {i + 1}</a>)}
+            <button className="btn-outline btn-sm" disabled={busy === p.id} onClick={async () => { if (!confirm(`Post “${p.title}” to Instagram Stories now?`)) return; setBusy(p.id); try { const r = await thamires.postPromoNow(p.id); const res = r[p.title]; if (res?.error) toast(res.error, 'error'); else toast('Posted to Instagram Stories'); list.reload(); } catch (e) { toast((e as Error).message, 'error'); } finally { setBusy(null); } }}>{busy === p.id ? <Spinner className="h-4 w-4" /> : 'Post now'}</button>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function TodayStory({ reload }: { reload: () => void }) {
   const toast = useToast();
   const today = localDateKey(new Date());
@@ -473,12 +507,12 @@ export default function AdminThamires() {
   const pendingComments = useMemo(() => (comments.data ?? []).filter((c) => c.reply_status === 'draft').length, [comments.data]);
   const pendingTags = useMemo(() => (mentions.data ?? []).filter((m) => m.reply_status === 'draft').length, [mentions.data]);
   const openQuestions = useMemo(() => (guidance.data ?? []).filter((g) => g.status === 'open').length, [guidance.data]);
-  const [tab, setTab] = useState<'inbox' | 'questions' | 'chats' | 'comments' | 'tags' | 'story' | 'reports' | 'try'>('inbox');
+  const [tab, setTab] = useState<'inbox' | 'questions' | 'chats' | 'comments' | 'tags' | 'story' | 'promos' | 'reports' | 'try'>('inbox');
   useEffect(() => { const h = setInterval(() => setTick((n) => n + 1), 30000); return () => clearInterval(h); }, []);
   if (settings.loading && !settings.data) return <PageSpinner />;
   if (settings.error || !settings.data) return <ErrorNotice error={settings.error ?? 'Thamires isn’t set up yet.'} onRetry={settings.reload} />;
   const refresh = () => setTick((n) => n + 1);
-  const tabs: [typeof tab, string][] = [['inbox', `To approve${drafts.data?.length ? ` (${drafts.data.length})` : ''}`], ['questions', `Questions for you${openQuestions ? ` (${openQuestions})` : ''}`], ['chats', 'Conversations'], ['comments', `Comments${pendingComments ? ` (${pendingComments})` : ''}`], ['tags', `Tags${pendingTags ? ` (${pendingTags})` : ''}`], ['story', 'Today’s Story'], ['reports', 'Daily reports'], ['try', 'Try her']];
+  const tabs: [typeof tab, string][] = [['inbox', `To approve${drafts.data?.length ? ` (${drafts.data.length})` : ''}`], ['questions', `Questions for you${openQuestions ? ` (${openQuestions})` : ''}`], ['chats', 'Conversations'], ['comments', `Comments${pendingComments ? ` (${pendingComments})` : ''}`], ['tags', `Tags${pendingTags ? ` (${pendingTags})` : ''}`], ['story', 'Today’s Story'], ['promos', 'Promos'], ['reports', 'Daily reports'], ['try', 'Try her']];
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
@@ -495,6 +529,7 @@ export default function AdminThamires() {
       {tab === 'comments' && <Comments list={comments.data ?? []} onDone={refresh} />}
       {tab === 'tags' && <Tags list={mentions.data ?? []} onDone={refresh} />}
       {tab === 'story' && <><TodayStory reload={refresh} /><RecentStories reload={tick} /></>}
+      {tab === 'promos' && <Promos reload={tick} />}
       {tab === 'reports' && <Reports reload={tick} />}
       {tab === 'try' && <TryHer />}
     </div>

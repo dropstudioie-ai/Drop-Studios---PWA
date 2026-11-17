@@ -3,6 +3,7 @@ import { supabase } from './supabase';
 
 export interface ThSettings { enabled: boolean; auto_reply: boolean; auto_tag_thanks: boolean; daily_story: boolean; story_hour: number; daily_report: boolean; report_hour: number; auto_comment_reply: boolean; notes: string | null }
 export interface ThComment { id: string; username: string | null; text: string; post_caption: string | null; permalink: string | null; reply_text: string | null; reply_status: 'draft' | 'sent' | 'rejected' | 'failed' | 'skipped'; needs_human: boolean; out_of_ordinary: boolean; reason: string | null; translation: string | null; error: string | null; received_at: string }
+export interface ThPromo { id: string; title: string; items: { path: string; kind: 'image' | 'video'; label?: string }[]; every_days: number; post_hour: number; starts_on: string | null; ends_on: string | null; enabled: boolean; last_posted_on: string | null; posts_done: number; last_error: string | null }
 export interface ThGuidance { id: string; comment_id: string | null; question: string; asked_text: string | null; answer: string | null; status: 'open' | 'answered' | 'dismissed'; thread_id: string | null; created_at: string; answered_at: string | null; assistant_threads: { username: string | null } | null }
 export interface ThReportStats { messages_in: number; people: number; new_people: number; replies_sent: number; auto_sent: number; handed_to_you: number; waiting: number; tags: number; story: string; topics: Record<string, number>; new_questions: { question: string; answered: boolean }[]; open_questions: number; comments?: number; comments_replied?: number; comments_waiting?: number; reactions_week?: number; last_story?: ({ date: string } & Record<string, number | string>) | null }
 export interface ThReport { id: string; report_date: string; stats: ThReportStats; summary: string | null; themes: { theme: string; count: number }[]; suggestions: string[]; created_at: string }
@@ -61,6 +62,10 @@ export const thamires = {
   dismissGuidance: (id: string) => call({ action: 'guidance_dismiss', guidance_id: id }),
   reports: () => rows<ThReport[]>(supabase.from('assistant_reports').select('*').order('report_date', { ascending: false }).limit(14)),
   reportNow: () => call({ action: 'report_now' }),
+  promos: () => rows<ThPromo[]>(supabase.from('assistant_promos').select('*').order('created_at')),
+  setPromo: async (id: string, patch: Partial<Pick<ThPromo, 'enabled' | 'every_days' | 'post_hour' | 'starts_on' | 'ends_on'>>) => { const r = await supabase.from('assistant_promos').update(patch).eq('id', id); if (r.error) throw new Error(r.error.message); },
+  postPromoNow: (id: string) => call<Record<string, { posted?: number; error?: string }>>({ action: 'promo_post_now', promo_id: id }),
+  mediaUrl: (path: string) => supabase.storage.from('assistant-media').getPublicUrl(path).data.publicUrl,
   comments: () => rows<ThComment[]>(supabase.from('assistant_comments').select('*').order('received_at', { ascending: false }).limit(50)),
   commentSend: (id: string, text: string) => call({ action: 'comment_send', comment_id: id, text }),
   commentSkip: (id: string) => call({ action: 'comment_skip', comment_id: id }),

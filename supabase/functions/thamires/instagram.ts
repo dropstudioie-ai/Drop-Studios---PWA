@@ -120,15 +120,15 @@ export const ig = {
   /** Reply publicly to a comment on Drop's post. */
   replyToComment: (cfg: IgConfig, commentId: string, text: string) =>
     graph<{ id?: string }>(cfg, `${commentId}/replies`, { method: 'POST', params: { message: text } }),
-  /** Publish an image Story (two steps: create the container, then publish it). */
-  publishStory: async (cfg: IgConfig, imageUrl: string) => {
-    const c = await graph<{ id: string }>(cfg, `${cfg.userId}/media`, { method: 'POST', params: { image_url: imageUrl, media_type: 'STORIES' } });
-    // Give Instagram a moment to fetch the image before publishing.
-    for (let i = 0; i < 10; i++) {
+  /** Publish an image or video Story (two steps: create the container, then publish it). */
+  publishStory: async (cfg: IgConfig, url: string, kind: 'image' | 'video' = 'image') => {
+    const c = await graph<{ id: string }>(cfg, `${cfg.userId}/media`, { method: 'POST', params: { [kind === 'video' ? 'video_url' : 'image_url']: url, media_type: 'STORIES' } });
+    // Give Instagram time to fetch (and, for videos, process) the file before publishing.
+    for (let i = 0; i < (kind === 'video' ? 40 : 10); i++) {
       const st = await graph<{ status_code?: string }>(cfg, c.id, { params: { fields: 'status_code' } }).catch(() => ({ status_code: 'IN_PROGRESS' }));
       if (st.status_code === 'FINISHED') break;
       if (st.status_code === 'ERROR') throw new Error('Instagram could not process the Story image.');
-      await new Promise((r) => setTimeout(r, 2000));
+      await new Promise((r) => setTimeout(r, kind === 'video' ? 3000 : 2000));
     }
     return graph<{ id: string }>(cfg, `${cfg.userId}/media_publish`, { method: 'POST', params: { creation_id: c.id } });
   },

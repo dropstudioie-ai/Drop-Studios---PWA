@@ -133,6 +133,40 @@ async function publishStories(db: Db, storyId: string, paths: string[], actor: s
   return done;
 }
 
+interface PromoRow { id: string; title: string; items: { path: string; kind: 'image' | 'video'; label?: string }[]; every_days: number; post_hour: number; starts_on: string | null; ends_on: string | null; enabled: boolean; last_posted_on: string | null; progress: { date: string; ids: string[] } | null; posts_done: number }
+
+/** Post scheduled promo Stories that are due (in order; a run that stops part-way continues on the next hourly check). */
+async function runPromos(db: Db, force?: string) {
+  const s = await settings(db);
+  const { today, hour } = dublinNow();
+  const cfg = igConfig();
+  if (!cfg) return { skipped: 'instagram_not_connected' };
+  const { data } = await db.from('assistant_promos').select('*');
+  const out: Record<string, unknown> = {};
+  for (const p of (data ?? []) as PromoRow[]) {
+    const midRun = p.progress?.date === today;
+    const due = p.id === force || midRun || (p.enabled && s?.enabled && p.starts_on && today >= p.starts_on && (!p.ends_on || today <= p.ends_on)
+      && hour >= p.post_hour && (!p.last_posted_on || (Date.parse(today) - Date.parse(p.last_posted_on)) / 864e5 >= p.every_days));
+    if (!due || (p.last_posted_on === today && p.id !== force)) continue;
+    const ids = midRun ? [...(p.progress?.ids ?? [])] : [];
+    try {
+      for (let i = ids.length; i < p.items.length; i++) {
+        const it = p.items[i];
+        const r = await ig.publishStory(cfg, db.storage.from('assistant-media').getPublicUrl(it.path).data.publicUrl, it.kind);
+        ids.push(r.id);
+        await db.from('assistant_promos').update({ progress: { date: today, ids } }).eq('id', p.id);
+      }
+      await db.from('assistant_promos').update({ last_posted_on: today, progress: null, last_error: null, posts_done: p.posts_done + 1 }).eq('id', p.id);
+      await db.rpc('_assistant_notify_owner', { p_kind: 'assistant_promo', p_payload: { title: p.title, items: p.items.map((x) => x.label ?? x.kind), posts_done: p.posts_done + 1, ends_on: p.ends_on }, p_key: `promo:${p.id}:${today}` });
+      out[p.title] = { posted: ids.length };
+    } catch (e) {
+      await db.from('assistant_promos').update({ last_error: `${ids.length} of ${p.items.length} posted: ${(e as Error).message}`.slice(0, 500) }).eq('id', p.id);
+      out[p.title] = { error: (e as Error).message };
+    }
+  }
+  return out;
+}
+
 async function handleEvent(db: Db, ev: IgEvent) {
   const s = await settings(db);
   const cfg = igConfig();
@@ -380,7 +414,8 @@ Deno.serve(async (req) => {
     }
     const story = await dailyStory(db).catch((e) => ({ error: (e as Error).message }));
     const report = await dailyReport(db).catch((e) => ({ error: (e as Error).message }));
-    return Response.json({ story, report });
+    const promos = await runPromos(db).catch((e) => ({ error: (e as Error).message }));
+    return Response.json({ story, report, promos });
   }
 
   // Admin actions from the Drop app.
@@ -472,6 +507,8 @@ Deno.serve(async (req) => {
       case 'comment_skip':
         await db.from('assistant_comments').update({ reply_status: 'skipped', decided_by: actor }).eq('id', String(body.comment_id));
         return json(req, { ok: true });
+      case 'promo_post_now':
+        return json(req, await runPromos(db, String(body.promo_id)));
       case 'report_now':
         return json(req, await dailyReport(db, true));
       case 'story_skip':
