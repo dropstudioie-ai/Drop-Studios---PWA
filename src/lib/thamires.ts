@@ -1,7 +1,7 @@
 import { sessionImage } from '../config/classImages';
 import { supabase } from './supabase';
 
-export interface ThSettings { enabled: boolean; auto_reply: boolean; auto_tag_thanks: boolean; daily_story: boolean; story_hour: number; daily_report: boolean; report_hour: number; auto_comment_reply: boolean; notes: string | null }
+export interface ThSettings { enabled: boolean; auto_reply: boolean; auto_tag_thanks: boolean; daily_story: boolean; story_hour: number; daily_report: boolean; report_hour: number; auto_comment_reply: boolean; story_auto_publish: boolean; weekly_schedule: boolean; weekly_hour: number; weekly_days: number[]; notes: string | null }
 export interface ThComment { id: string; username: string | null; text: string; post_caption: string | null; permalink: string | null; reply_text: string | null; reply_status: 'draft' | 'sent' | 'rejected' | 'failed' | 'skipped'; needs_human: boolean; out_of_ordinary: boolean; reason: string | null; translation: string | null; error: string | null; received_at: string }
 export interface ThPromo { id: string; title: string; items: { path: string; kind: 'image' | 'video'; label?: string }[]; every_days: number; post_hour: number; starts_on: string | null; ends_on: string | null; enabled: boolean; last_posted_on: string | null; posts_done: number; last_error: string | null }
 export interface ThGuidance { id: string; comment_id: string | null; question: string; asked_text: string | null; answer: string | null; status: 'open' | 'answered' | 'dismissed'; thread_id: string | null; created_at: string; answered_at: string | null; assistant_threads: { username: string | null } | null }
@@ -62,6 +62,11 @@ export const thamires = {
   dismissGuidance: (id: string) => call({ action: 'guidance_dismiss', guidance_id: id }),
   reports: () => rows<ThReport[]>(supabase.from('assistant_reports').select('*').order('report_date', { ascending: false }).limit(14)),
   reportNow: () => call({ action: 'report_now' }),
+  storyPreview: (storyId: string, index: number) => call<{ png: string }>({ action: 'story_preview', story_id: storyId, index }),
+  publishServer: (storyId: string) => call<{ posted: number; error?: string }>({ action: 'story_publish_server', story_id: storyId }),
+  weekPreview: () => call<{ png: string; week_start: string }>({ action: 'week_preview' }),
+  weekPostNow: () => call<{ ok?: boolean; error?: string; classes?: number }>({ action: 'week_post_now' }),
+  weekly: () => rows<{ id: string; post_date: string; week_start: string; status: string; classes: number | null; error: string | null }[]>(supabase.from('assistant_weekly').select('*').order('post_date', { ascending: false }).limit(6)),
   promos: () => rows<ThPromo[]>(supabase.from('assistant_promos').select('*').order('created_at')),
   setPromo: async (id: string, patch: Partial<Pick<ThPromo, 'enabled' | 'every_days' | 'post_hour' | 'starts_on' | 'ends_on'>>) => { const r = await supabase.from('assistant_promos').update(patch).eq('id', id); if (r.error) throw new Error(r.error.message); },
   postPromoNow: (id: string) => call<Record<string, { posted?: number; error?: string }>>({ action: 'promo_post_now', promo_id: id }),

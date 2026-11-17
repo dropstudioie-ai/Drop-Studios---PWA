@@ -312,9 +312,25 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
         url: '/admin/thamires',
       };
     case 'assistant_story':
+      if (p.failed) return {
+        subject: `⚠️ Thamires couldn't post all of today's Stories`,
+        text: `${hi}\n\nThamires tried to post today's class Stories but Instagram said: ${p.failed}\n\nYou can try again from the admin page:\n${site()}/admin/thamires\n\nDrop Studios`,
+        url: '/admin/thamires',
+      };
+      if (p.posted) return {
+        subject: `🗓️ Today's class Stories are on Instagram (${p.classes} class${p.classes === 1 ? '' : 'es'})`,
+        text: `${hi}\n\nThamires posted today's class Stories, one per class. Tip: open them in Instagram to add a Link sticker to dropstudios.ie/app.\n\n${site()}/admin/thamires\n\nDrop Studios`,
+        url: '/admin/thamires',
+      };
       return {
         subject: `🗓️ Today's Drop Story is ready (${p.classes} class${p.classes === 1 ? '' : 'es'})`,
         text: `${hi}\n\nThamires prepared today's Story with the class times. Check it and publish it in one tap:\n\n${site()}/admin/thamires\n\nDrop Studios`,
+        url: '/admin/thamires',
+      };
+    case 'assistant_week':
+      return {
+        subject: `🗓️ Next week's timetable is on Instagram`,
+        text: `${hi}\n\nThamires posted next week's timetable (week of ${longDate(String(p.week_start))}): ${p.classes} classes${Number(p.specials) ? `, including ${p.specials} special event${Number(p.specials) === 1 ? '' : 's'}` : ''}.\n\n${site()}/admin/thamires\n\nDrop Studios`,
         url: '/admin/thamires',
       };
     case 'assistant_guidance':

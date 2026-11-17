@@ -216,3 +216,10 @@ Deno.test('promo posted email', () => {
   assertStringIncludes(m.text, 'App promo, then Gift card ad');
   assertStringIncludes(m.text, 'post 3');
 });
+
+Deno.test('auto-posted Stories and weekly timetable emails', () => {
+  assertStringIncludes(render({ kind: 'assistant_story', full_name: null, payload: { classes: 2, posted: true } })!.subject, 'are on Instagram (2 classes)');
+  assertStringIncludes(render({ kind: 'assistant_story', full_name: null, payload: { classes: 2, failed: 'timeout' } })!.text, 'timeout');
+  const w = render({ kind: 'assistant_week', full_name: null, payload: { week_start: '2026-11-23', classes: 11, specials: 1 } })!;
+  assertStringIncludes(w.text, '11 classes, including 1 special event');
+});

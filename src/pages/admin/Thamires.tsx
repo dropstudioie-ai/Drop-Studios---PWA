@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAsync } from '../../lib/useAsync';
-import { renderStory, STORY_PHOTOS, storyCount, storyPhoto, thamires, uploadStoryPhoto, type ThComment, type ThPromo, type ThGuidance, type ThMessage, type ThMention, type ThReport, type ThSettings, type ThThread, type ThStory, type Turn } from '../../lib/thamires';
+import { STORY_PHOTOS, storyCount, storyPhoto, thamires, uploadStoryPhoto, type ThComment, type ThPromo, type ThGuidance, type ThMessage, type ThMention, type ThReport, type ThSettings, type ThThread, type ThStory, type Turn } from '../../lib/thamires';
 import { ErrorNotice, PageSpinner, Spinner, useToast } from '../../components/ui';
 import { fmt, localDateKey } from '../../domain/time';
 
@@ -30,12 +30,14 @@ function Setup({ s, onSaved, status }: { s: ThSettings; onSaved: () => void; sta
         <Switch label="Send simple replies automatically" hint="Timetable, prices, booking, location and class questions go out straight away. Anything sensitive still waits for you." checked={s.auto_reply} disabled={!s.enabled} onChange={(v) => void save({ auto_reply: v })} />
         <Switch label="Thank people who tag Drop automatically" hint="Otherwise each thank-you waits for your approval." checked={s.auto_tag_thanks} disabled={!s.enabled} onChange={(v) => void save({ auto_tag_thanks: v })} />
         <Switch label="Reply to simple comments automatically" hint="Thank-yous and quick questions under Drop’s posts get a short public reply. Complaints and new questions still wait for you." checked={s.auto_comment_reply} disabled={!s.enabled} onChange={(v) => void save({ auto_comment_reply: v })} />
+        <Switch label="Post today’s class Stories automatically" hint="One Story per class, posted by Thamires at the time below. Turn off to approve them yourself." checked={s.story_auto_publish} disabled={!s.enabled || !s.daily_story} onChange={(v) => void save({ story_auto_publish: v })} />
+        <Switch label="Post next week’s timetable" hint="Friday, Saturday and Sunday at 18:00: every class Monday to Sunday, special events in gold." checked={s.weekly_schedule} disabled={!s.enabled} onChange={(v) => void save({ weekly_schedule: v })} />
         <Switch label="Prepare a daily Story" hint="Today's classes, ready for you to publish in one tap." checked={s.daily_story} disabled={!s.enabled} onChange={(v) => void save({ daily_story: v })} />
       </div>
       {s.daily_story && (
-        <label className="mt-2 flex items-center gap-2 text-sm">Ready by
+        <label className="mt-2 flex items-center gap-2 text-sm">{s.story_auto_publish ? 'Post at' : 'Ready by'}
           <select className="input w-28" value={s.story_hour} onChange={(e) => void save({ story_hour: Number(e.target.value) })}>
-            {Array.from({ length: 15 }, (_, i) => i + 6).map((h) => <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>)}
+            {Array.from({ length: 16 }, (_, i) => i + 5).map((h) => <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>)}
           </select>
         </label>
       )}
@@ -306,40 +308,48 @@ function TodayStory({ reload }: { reload: () => void }) {
   const toast = useToast();
   const today = localDateKey(new Date());
   const story = useAsync(() => thamires.story(today), [today]);
-  const [imgs, setImgs] = useState<{ url: string; blob: Blob }[]>([]);
+  const [imgs, setImgs] = useState<(string | null)[]>([]);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     const st = story.data as ThStory | null;
     if (!st || !st.lines.length) { setImgs([]); return; }
     let live = true;
-    void Promise.all(st.lines.map((_, i) => renderStory(st, i))).then((blobs) => { if (live) setImgs(blobs.map((blob) => ({ blob, url: URL.createObjectURL(blob) }))); });
+    setImgs(st.lines.map(() => null));
+    // Drawn on the server, exactly as Thamires posts them (one at a time).
+    void (async () => {
+      for (let i = 0; i < st.lines.length; i++) {
+        const r = await thamires.storyPreview(st.id, i).catch(() => null);
+        if (!live) return;
+        setImgs((prev) => prev.map((x, k) => (k === i ? r?.png ?? null : x)));
+      }
+    })();
     return () => { live = false; };
   }, [story.data]);
   const s = story.data as ThStory | null;
   const n = s ? storyCount(s) : 0;
-  const ready = s && (s.status === 'draft' || s.status === 'failed') && imgs.length === n && n > 0;
+  const canPublish = s && (s.status === 'draft' || s.status === 'failed') && n > 0;
   return (
     <div className="space-y-3 text-sm">
-      {!s && <><p>Thamires prepares the Stories automatically each morning: one per class. You can make them now:</p><button className="btn-primary btn-sm" disabled={busy} onClick={async () => { setBusy(true); try { await thamires.prepareStory(); story.reload(); } catch (e) { toast((e as Error).message, 'error'); } finally { setBusy(false); } }}>Prepare today’s Stories</button></>}
+      {!s && <><p>Thamires makes the Stories each morning: one per class. You can make them now:</p><button className="btn-primary btn-sm" disabled={busy} onClick={async () => { setBusy(true); try { await thamires.prepareStory(); story.reload(); } catch (e) { toast((e as Error).message, 'error'); } finally { setBusy(false); } }}>Prepare today’s Stories</button></>}
       {s?.status === 'skipped' && <p>No classes today, so no Story.</p>}
       {n > 0 && (
         <div className="flex gap-3 overflow-x-auto pb-2">
           {s!.lines.map((l, i) => (
             <div key={i} className="w-40 shrink-0 space-y-2">
               <div className="overflow-hidden rounded-2xl bg-ink" style={{ aspectRatio: '9 / 16' }}>
-                {imgs[i] ? <img src={imgs[i].url} alt={`${l.time} ${l.title}`} className="h-full w-full" /> : <span className="flex h-full items-center justify-center text-white/70">Loading…</span>}
+                {imgs[i] ? <img src={imgs[i]!} alt={`${l.time} ${l.title}`} className="h-full w-full" /> : <span className="flex h-full items-center justify-center text-white/70"><Spinner className="h-5 w-5" /></span>}
               </div>
               <p className="text-xs font-semibold">{i + 1}. {l.time} {l.title}</p>
               {s!.status === 'draft' && <PhotoPicker story={s!} index={i} onChanged={() => story.reload()} />}
-              {imgs[i] && <a className="block text-center text-xs font-semibold text-brand-700" href={imgs[i].url} download={`drop-story-${today}-${i + 1}.jpg`}>Download</a>}
+              {imgs[i] && <a className="block text-center text-xs font-semibold text-brand-700" href={imgs[i]!} download={`drop-story-${today}-${i + 1}.png`}>Download</a>}
             </div>
           ))}
         </div>
       )}
-      {ready && (
+      {canPublish && (
         <div className="flex flex-wrap gap-2">
-          <button className="btn-primary btn-sm" disabled={busy} onClick={async () => { setBusy(true); try { const r = await thamires.publishStories(s!.id, imgs.map((x) => x.blob)); toast(`${r.published} ${r.published === 1 ? 'Story' : 'Stories'} published on Instagram`); story.reload(); reload(); } catch (e) { toast((e as Error).message, 'error'); story.reload(); } finally { setBusy(false); } }}>
-            {busy ? <Spinner className="h-4 w-4" /> : s!.status === 'failed' ? 'Try again' : `Publish ${n === 1 ? 'the Story' : `all ${n} Stories`} to Instagram`}
+          <button className="btn-primary btn-sm" disabled={busy} onClick={async () => { setBusy(true); try { const r = await thamires.publishServer(s!.id); if (r.error) toast(r.error, 'error'); else toast(`${r.posted} ${r.posted === 1 ? 'Story' : 'Stories'} published on Instagram`); story.reload(); reload(); } catch (e) { toast((e as Error).message, 'error'); story.reload(); } finally { setBusy(false); } }}>
+            {busy ? <Spinner className="h-4 w-4" /> : s!.status === 'failed' ? 'Try again' : `Publish ${n === 1 ? 'the Story' : `all ${n} Stories`} now`}
           </button>
           {s!.status === 'draft' && <button className="btn-ghost btn-sm" onClick={async () => { await thamires.skipStory(s!.id); story.reload(); }}>Skip today</button>}
         </div>
@@ -347,6 +357,36 @@ function TodayStory({ reload }: { reload: () => void }) {
       {s?.status === 'published' && <><p className="font-semibold text-success">✓ Published on Instagram{(s.ig_media_ids?.length ?? 0) > 1 ? ` (${s.ig_media_ids!.length} Stories)` : ''}</p>{s.insights && <Insights i={s.insights} />}</>}
       {s?.status === 'failed' && <p className="text-danger">Not all published: {s.error}</p>}
       <p className="text-xs text-muted">Tip: after publishing, add a Link sticker to dropstudios.ie/app on each Story in the Instagram app so people can tap to book.</p>
+      <NextWeek />
+    </div>
+  );
+}
+
+/** Next week's timetable Story (posted Fri, Sat and Sun at 18:00). */
+function NextWeek() {
+  const toast = useToast();
+  const [img, setImg] = useState<{ png: string; week_start: string } | null>(null);
+  const [busy, setBusy] = useState<'preview' | 'post' | null>(null);
+  const history = useAsync(() => thamires.weekly(), []);
+  return (
+    <div className="mt-6 border-t border-line pt-4">
+      <h3 className="font-bold">Next week’s timetable</h3>
+      <p className="text-muted">Thamires posts it on Friday, Saturday and Sunday at 18:00, with any special events in gold.</p>
+      <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+        <div className="w-40 shrink-0 overflow-hidden rounded-2xl bg-ink" style={{ aspectRatio: '9 / 16' }}>
+          {img ? <img src={img.png} alt="Next week's timetable" className="h-full w-full" /> : <span className="flex h-full items-center justify-center p-3 text-center text-xs text-white/70">{busy === 'preview' ? <Spinner className="h-5 w-5" /> : 'Tap Preview'}</span>}
+        </div>
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-2">
+            <button className="btn-outline btn-sm" disabled={busy !== null} onClick={async () => { setBusy('preview'); try { setImg(await thamires.weekPreview()); } catch (e) { toast((e as Error).message, 'error'); } finally { setBusy(null); } }}>Preview</button>
+            <button className="btn-primary btn-sm" disabled={busy !== null} onClick={async () => { if (!confirm('Post next week’s timetable to Instagram Stories now?')) return; setBusy('post'); try { const r = await thamires.weekPostNow(); if (r.error) toast(r.error, 'error'); else toast('Posted to Instagram Stories'); history.reload(); } catch (e) { toast((e as Error).message, 'error'); } finally { setBusy(null); } }}>{busy === 'post' ? <Spinner className="h-4 w-4" /> : 'Post now'}</button>
+            {img && <a className="btn-ghost btn-sm" href={img.png} download={`drop-week-${img.week_start}.png`}>Download</a>}
+          </div>
+          <ul className="text-xs text-muted">
+            {(history.data ?? []).map((w) => <li key={w.id}>{w.post_date}: {w.status === 'published' ? `✓ posted (${w.classes ?? 0} classes)` : w.status === 'failed' ? `not posted: ${w.error}` : 'posting…'}</li>)}
+          </ul>
+        </div>
+      </div>
     </div>
   );
 }

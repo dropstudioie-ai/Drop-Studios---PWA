@@ -1,3 +1,4 @@
+import { encodeBase64 } from 'jsr:@std/encoding@1/base64';
 // Thamires: Drop's AI assistant on Instagram.
 // - Instagram webhooks (DMs, story mentions, post mentions): store, draft a reply, send it if auto mode allows.
 // - Admin actions from the Drop app (approve/edit/send drafts, test her, publish the daily Story).
@@ -7,6 +8,7 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.118.0';
 import { adminClient, corsHeaders, json, userClient } from '../_shared/http.ts';
 import { canAutoSend, canAutoSendHolding, draftReply, summariseDay, type Draft, type Turn } from './brain.ts';
 import { ig, igConfig, parseWebhook, verifySignature, type IgEvent } from './instagram.ts';
+import { artworkFor, DROP_LOGO, photoSource, renderClassStory, renderWeekStory, type Assets, type StoryPhoto, type WeekDay } from './story_render.ts';
 
 type Db = SupabaseClient;
 // Keys that aren't tied to one Claude workspace need the workspace ID on every request.
@@ -22,7 +24,7 @@ const background = (p: Promise<unknown>) => {
 
 async function settings(db: Db) {
   const { data } = await db.from('assistant_settings').select('*').single();
-  return data as { enabled: boolean; auto_reply: boolean; auto_tag_thanks: boolean; daily_story: boolean; story_hour: number; daily_report: boolean; report_hour: number; auto_comment_reply: boolean } | null;
+  return data as { enabled: boolean; auto_reply: boolean; auto_tag_thanks: boolean; daily_story: boolean; story_hour: number; daily_report: boolean; report_hour: number; auto_comment_reply: boolean; story_auto_publish: boolean; weekly_schedule: boolean; weekly_hour: number; weekly_days: number[] } | null;
 }
 
 /** Today's date and the current hour in Dublin. */
@@ -362,8 +364,154 @@ async function dailyStory(db: Db, force = false) {
   const { data: row } = await db.from('assistant_stories').insert({
     story_date: today, title: lines.length ? 'TODAY AT DROP' : 'NO CLASSES TODAY', lines, art_slug: lines[0]?.style_slug ?? null, status: lines.length ? 'draft' : 'skipped',
   }).select().single();
-  if (lines.length && row) await db.rpc('_assistant_notify', { p_kind: 'assistant_story', p_payload: { date: today, classes: lines.length }, p_key: `story:${today}` });
-  return { created: row?.id ?? null, classes: lines.length };
+  if (!lines.length || !row) return { created: row?.id ?? null, classes: 0 };
+  if (!force && s?.story_auto_publish) {
+    const posted = await publishStoryServer(db, row.id, null);
+    return { created: row.id, classes: lines.length, posted };
+  }
+  await db.rpc('_assistant_notify', { p_kind: 'assistant_story', p_payload: { date: today, classes: lines.length }, p_key: `story:${today}` });
+  return { created: row.id, classes: lines.length };
+}
+
+// ---------- Stories drawn on the server (so Thamires can post on her own) ----------
+
+const ASSET_BASE = `${Deno.env.get('SUPABASE_URL')}/storage/v1/object/public/assistant-media/assets/`;
+const assetCache = new Map<string, Promise<Uint8Array>>();
+const fetchBytes = async (url: string) => {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`Could not load ${url.split('/').slice(-2).join('/')} (${r.status})`);
+  return new Uint8Array(await r.arrayBuffer());
+};
+const assets: Assets = {
+  get: (path) => {
+    if (!assetCache.has(path)) assetCache.set(path, fetchBytes(ASSET_BASE + path).catch((e) => { assetCache.delete(path); throw e; }));
+    return assetCache.get(path)!;
+  },
+};
+
+interface StoryLine { time: string; title: string; instructor: string | null; style_slug: string | null; instructor_id?: string | null; starts_at?: string }
+interface StoryRow { id: string; story_date: string; lines: StoryLine[]; photo_url: string | null; photos: Record<string, string> | null; status: string; ig_media_ids: string[] | null }
+
+/** The photo for one class's Story: the admin's choice, else the class artwork, else a studio photo. */
+async function photoFor(st: StoryRow, index: number): Promise<StoryPhoto> {
+  const chosen = st.photos?.[String(index)] ?? (index === 0 ? st.photo_url : null);
+  const l = st.lines[index];
+  if (chosen) {
+    const src = photoSource(chosen);
+    if ('url' in src) return { kind: 'photo', image: await fetchBytes(src.url) };
+    return src.asset.startsWith('classes/')
+      ? { kind: 'artwork', image: await assets.get(`${src.asset}.jpg`), blurred: await assets.get(`${src.asset}-blur.jpg`) }
+      : { kind: 'photo', image: await assets.get(`${src.asset}.jpg`) };
+  }
+  const art = artworkFor(l.style_slug, l.instructor_id ?? null, st.story_date);
+  return art ? { kind: 'artwork', image: await assets.get(`${art}.jpg`), blurred: await assets.get(`${art}-blur.jpg`) } : { kind: 'photo', image: await assets.get('studio/photo-6.jpg') };
+}
+
+async function renderFrame(db: Db, storyId: string, index: number) {
+  const { data } = await db.from('assistant_stories').select('*').eq('id', storyId).single();
+  const st = data as StoryRow;
+  if (!st || !st.lines[index]) throw new Error('not_found');
+  return renderClassStory(assets, { date: st.story_date, cls: st.lines[index], photo: await photoFor(st, index), logo: DROP_LOGO });
+}
+
+/** Ask a fresh copy of this function to do one heavy job (drawing is limited to ~2s of CPU per request). */
+async function selfInvoke(job: Record<string, unknown>) {
+  const r = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/thamires`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-cron-secret': Deno.env.get('CRON_SECRET') ?? '' }, body: JSON.stringify(job),
+  });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok || body.error) throw new Error(body.error ?? `job failed (${r.status})`);
+  return body;
+}
+
+/** Draw, upload and publish one class's Story (run in its own request). */
+async function publishFrame(db: Db, storyId: string, index: number) {
+  const cfg = igConfig(); if (!cfg) throw new Error('Instagram is not connected yet.');
+  const png = await renderFrame(db, storyId, index);
+  const path = `stories/${storyId}-${index + 1}-${Date.now()}.png`;
+  const up = await db.storage.from('assistant-media').upload(path, png, { contentType: 'image/png' });
+  if (up.error) throw new Error(up.error.message);
+  const r = await ig.publishStory(cfg, db.storage.from('assistant-media').getPublicUrl(path).data.publicUrl);
+  return { id: r.id, path };
+}
+
+/** Publish all of a day's class Stories in time order; a retry continues where it stopped. */
+async function publishStoryServer(db: Db, storyId: string, actor: string | null) {
+  const { data } = await db.from('assistant_stories').select('*').eq('id', storyId).single();
+  const st = data as StoryRow;
+  if (!st) throw new Error('not_found');
+  const ids = st.status === 'failed' && Array.isArray(st.ig_media_ids) ? [...st.ig_media_ids] : [];
+  const paths: string[] = [];
+  for (let i = ids.length; i < st.lines.length; i++) {
+    try {
+      const r = await selfInvoke({ job: 'story_frame', story_id: storyId, index: i });
+      ids.push(r.id); paths.push(r.path);
+      await db.from('assistant_stories').update({ ig_media_ids: ids }).eq('id', storyId);
+    } catch (e) {
+      await db.from('assistant_stories').update({ status: 'failed', ig_media_ids: ids, error: `${ids.length} of ${st.lines.length} posted: ${(e as Error).message}`, decided_by: actor }).eq('id', storyId);
+      await db.rpc('_assistant_notify_owner', { p_kind: 'assistant_story', p_payload: { date: st.story_date, classes: st.lines.length, failed: (e as Error).message }, p_key: `story-failed:${st.story_date}:${ids.length}` });
+      return { posted: ids.length, error: (e as Error).message };
+    }
+  }
+  await db.from('assistant_stories').update({ status: 'published', ig_media_ids: ids, ig_media_id: ids[0] ?? null, image_path: paths[0] ?? null, image_paths: paths, error: null, decided_by: actor }).eq('id', storyId);
+  await db.rpc('_assistant_notify_owner', { p_kind: 'assistant_story', p_payload: { date: st.story_date, classes: st.lines.length, posted: true }, p_key: `story-posted:${st.story_date}` });
+  return { posted: ids.length };
+}
+
+/** The Monday of the week after `date` (Fri/Sat/Sun -> the coming Monday). */
+function nextMonday(date: string) {
+  const d = new Date(`${date}T12:00:00Z`);
+  const add = ((8 - d.getUTCDay()) % 7) || 7;
+  return new Date(d.getTime() + add * 864e5).toISOString().slice(0, 10);
+}
+
+async function weekData(db: Db, weekStart: string): Promise<WeekDay[]> {
+  const from = new Date(`${weekStart}T00:00:00Z`).getTime() - 3 * 3600e3, to = from + 8 * 864e5;
+  const { data } = await db.from('class_sessions').select('id, starts_at, title, instructors(full_name), studio_events(title, status)')
+    .gte('starts_at', new Date(from).toISOString()).lt('starts_at', new Date(to).toISOString()).eq('status', 'scheduled').order('starts_at');
+  const key = (iso: string) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Dublin' }).format(new Date(iso));
+  const hm = (iso: string) => new Intl.DateTimeFormat('en-IE', { timeZone: 'Europe/Dublin', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(iso));
+  const rows = (data ?? []) as unknown as { starts_at: string; title: string; instructors: { full_name: string } | null; studio_events: { title: string; status: string }[] | null }[];
+  return Array.from({ length: 7 }, (_, k) => {
+    const date = new Date(Date.parse(`${weekStart}T12:00:00Z`) + k * 864e5).toISOString().slice(0, 10);
+    return { date, items: rows.filter((r) => key(r.starts_at) === date).map((r) => ({ time: hm(r.starts_at), title: r.title, instructor: r.instructors?.full_name ?? null,
+      special: r.studio_events?.find((e) => e.status === 'published')?.title ?? null })) };
+  });
+}
+
+const renderWeek = async (db: Db, weekStart: string) =>
+  renderWeekStory(assets, { weekStart, days: await weekData(db, weekStart), background: await assets.get('studio/photo-6-blur.jpg'), logo: DROP_LOGO });
+
+/** Friday, Saturday and Sunday evenings: next week's timetable on one Story. */
+async function weeklyStory(db: Db, force = false) {
+  const s = await settings(db);
+  const { today, hour } = dublinNow();
+  const weekday = new Date(`${today}T12:00:00Z`).getUTCDay();
+  if (!force && (!s?.enabled || !s.weekly_schedule || !(s.weekly_days ?? [5, 6, 0]).includes(weekday) || hour < (s.weekly_hour ?? 18))) return { skipped: 'not_now' };
+  const { data: done } = await db.from('assistant_weekly').select('id, status').eq('post_date', today).maybeSingle();
+  if (done && done.status === 'published' && !force) return { skipped: 'exists' };
+  return selfInvoke({ job: 'week_post', date: today });
+}
+
+async function postWeek(db: Db, date: string) {
+  const cfg = igConfig(); if (!cfg) throw new Error('Instagram is not connected yet.');
+  const weekStart = nextMonday(date);
+  const days = await weekData(db, weekStart);
+  const classes = days.reduce((n, d) => n + d.items.length, 0);
+  const { data: row } = await db.from('assistant_weekly').upsert({ post_date: date, week_start: weekStart, status: 'posting', error: null }, { onConflict: 'post_date' }).select().single();
+  try {
+    const png = await renderWeekStory(assets, { weekStart, days, background: await assets.get('studio/photo-6-blur.jpg'), logo: DROP_LOGO });
+    const path = `weekly/${weekStart}-${date}.png`;
+    const up = await db.storage.from('assistant-media').upload(path, png, { contentType: 'image/png', upsert: true });
+    if (up.error) throw new Error(up.error.message);
+    const r = await ig.publishStory(cfg, db.storage.from('assistant-media').getPublicUrl(path).data.publicUrl);
+    await db.from('assistant_weekly').update({ status: 'published', image_path: path, ig_media_id: r.id, classes }).eq('id', row.id);
+    await db.rpc('_assistant_notify_owner', { p_kind: 'assistant_week', p_payload: { week_start: weekStart, classes, specials: days.reduce((n, d) => n + d.items.filter((i) => i.special).length, 0) }, p_key: `week:${date}` });
+    return { ok: true, id: r.id, classes };
+  } catch (e) {
+    await db.from('assistant_weekly').update({ status: 'failed', error: (e as Error).message }).eq('id', row.id);
+    return { error: (e as Error).message };
+  }
 }
 
 Deno.serve(async (req) => {
@@ -397,7 +545,19 @@ Deno.serve(async (req) => {
   // Scheduled daily Story.
   if (req.headers.get('x-cron-secret')) {
     if (req.headers.get('x-cron-secret') !== Deno.env.get('CRON_SECRET')) return new Response('forbidden', { status: 403 });
-    const job = await req.json().catch(() => ({})) as { check?: boolean; test?: string; name?: string; publish_story?: { story_id: string; image_path?: string; image_paths?: string[] } };
+    const job = await req.json().catch(() => ({})) as { check?: boolean; test?: string; name?: string; publish_story?: { story_id: string; image_path?: string; image_paths?: string[] }; job?: string; story_id?: string; index?: number; date?: string };
+    // Heavy single jobs (one Story drawing each), started by Thamires herself.
+    if (job.job === 'story_frame') {
+      try { return Response.json(await publishFrame(db, String(job.story_id), Number(job.index))); }
+      catch (e) { return Response.json({ error: (e as Error).message }); }
+    }
+    if (job.job === 'week_post') return Response.json(await postWeek(db, String(job.date)));
+    if (job.job === 'render_frame' || job.job === 'render_week') {
+      try {
+        const png = job.job === 'render_frame' ? await renderFrame(db, String(job.story_id), Number(job.index)) : await renderWeek(db, String(job.date));
+        return Response.json({ png: `data:image/png;base64,${encodeBase64(png)}` });
+      } catch (e) { return Response.json({ error: (e as Error).message }); }
+    }
     if (job.publish_story) { // publish already rendered Story images (developer, cron secret only)
       const { story_id, image_path, image_paths } = job.publish_story;
       try { return Response.json({ ok: true, ig_media_ids: await publishStories(db, story_id, image_paths ?? [image_path!], null) }); }
@@ -415,7 +575,8 @@ Deno.serve(async (req) => {
     const story = await dailyStory(db).catch((e) => ({ error: (e as Error).message }));
     const report = await dailyReport(db).catch((e) => ({ error: (e as Error).message }));
     const promos = await runPromos(db).catch((e) => ({ error: (e as Error).message }));
-    return Response.json({ story, report, promos });
+    const weekly = await weeklyStory(db).catch((e) => ({ error: (e as Error).message }));
+    return Response.json({ story, report, promos, weekly });
   }
 
   // Admin actions from the Drop app.
@@ -507,6 +668,16 @@ Deno.serve(async (req) => {
       case 'comment_skip':
         await db.from('assistant_comments').update({ reply_status: 'skipped', decided_by: actor }).eq('id', String(body.comment_id));
         return json(req, { ok: true });
+      case 'story_preview': // one class's Story, drawn exactly as it will be posted
+        return json(req, await selfInvoke({ job: 'render_frame', story_id: String(body.story_id), index: Number(body.index ?? 0) }));
+      case 'week_preview': {
+        const { today } = dublinNow();
+        return json(req, { ...(await selfInvoke({ job: 'render_week', date: nextMonday(today) })), week_start: nextMonday(today) });
+      }
+      case 'story_publish_server':
+        return json(req, await publishStoryServer(db, String(body.story_id), actor));
+      case 'week_post_now':
+        return json(req, await weeklyStory(db, true));
       case 'promo_post_now':
         return json(req, await runPromos(db, String(body.promo_id)));
       case 'report_now':
