@@ -115,6 +115,9 @@ const MESSAGES: Record<string, string> = {
   rental_not_active: 'This booking is no longer active.',
   rental_reschedule_too_late: 'Bookings can be moved up to 24 hours before they start. Please contact the studio.',
   rental_needs_approval: 'That new time needs the studio’s approval. Please contact us to move it.',
+  rental_rules_required: 'Please read and accept the house rules to book.',
+  rental_invalid_addons: 'Please check the add-ons (the DJ can’t be longer than the booking; promotion is for parties).',
+  rental_slot_taken: 'The studio is rented at that time. Please choose another time.',
   rental_reschedule_price_higher: 'That time costs more than your booking. Please cancel and book the new time, or contact the studio.',
 };
 

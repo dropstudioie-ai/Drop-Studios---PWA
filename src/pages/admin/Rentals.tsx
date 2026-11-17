@@ -41,17 +41,51 @@ function Request({ r, count, onDone }: { r: AdminRental; count: number; onDone: 
 
 function Prices({ s, onSaved }: { s: RentalSettings; onSaved: () => void }) {
   const toast = useToast();
-  const fields: [keyof RentalSettings, string][] = [['weekday_cents', 'Mon–Fri daytime'], ['weekday_peak_cents', 'Mon–Fri 18:00–22:00'], ['saturday_cents', 'Saturday'], ['saturday_offer_cents', 'Saturday 17:00–20:00'], ['sunday_cents', 'Sunday'], ['party_cents', 'Parties (per hour)'], ['cleaning_fee_cents', 'Party cleaning fee']];
+  const fields: [keyof RentalSettings, string][] = [['weekday_cents', 'Mon–Fri daytime'], ['weekday_peak_cents', 'Mon–Fri 18:00–22:00'], ['saturday_cents', 'Saturday'], ['saturday_offer_cents', 'Saturday 17:00–20:00'], ['sunday_cents', 'Sunday'], ['party_cents', 'Parties (per hour)'], ['cleaning_fee_cents', 'Party cleaning fee'], ['dj_cents_per_hour', 'DJ (per hour)'], ['marketing_cents_per_week', 'Party promotion (per week)']];
+  const [rules, setRules] = useState(s.house_rules);
   const [v, setV] = useState<Record<string, string>>(Object.fromEntries(fields.map(([k]) => [k, (Number(s[k]) / 100).toFixed(2)])));
   const save = async () => {
     const patch: Partial<RentalSettings> = {};
     for (const [k] of fields) { const c = parseEurosToCents(v[k]); if (c === null) { toast('Please check the prices', 'error'); return; } (patch as Record<string, number>)[k] = c; }
-    try { await rentals.saveSettings(patch); toast('Prices saved. New bookings use them.'); onSaved(); } catch (e) { toast((e as Error).message, 'error'); }
+    try { await rentals.saveSettings({ ...patch, house_rules: rules.trim() }); toast('Saved. New bookings use these prices and rules.'); onSaved(); } catch (e) { toast((e as Error).message, 'error'); }
   };
   return (
-    <Section title="Prices (€ per hour)">
-      <div className="grid gap-3 sm:grid-cols-4">{fields.map(([k, label]) => <Field key={k} label={label}><input className="input" inputMode="decimal" value={v[k]} onChange={(e) => setV({ ...v, [k]: e.target.value })} /></Field>)}</div>
-      <button className="btn-outline btn-sm mt-3" onClick={() => void save()}>Save prices</button>
+    <Section title="Prices, add-ons and house rules">
+      <div className="grid gap-3 sm:grid-cols-4">{fields.map(([k, label]) => <Field key={k} label={`${label} €`}><input className="input" inputMode="decimal" value={v[k]} onChange={(e) => setV({ ...v, [k]: e.target.value })} /></Field>)}</div>
+      <Field label="House rules (one per line; renters must accept them to book)"><textarea className="input mt-1 min-h-40" value={rules} onChange={(e) => setRules(e.target.value)} /></Field>
+      <button className="btn-outline btn-sm mt-3" onClick={() => void save()}>Save</button>
+    </Section>
+  );
+}
+
+/** The door code (sent to renters only after they pay) and the calendar links for your phone. */
+function AccessAndCalendar() {
+  const toast = useToast();
+  const priv = useAsync(() => rentals.privateSettings(), []);
+  const [code, setCode] = useState<string | null>(null);
+  const [show, setShow] = useState(false);
+  if (!priv.data) return null;
+  const base = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/calendar-feed?token=${priv.data.calendar_token}`;
+  const link = (type: string) => `${base}&type=${type}`.replace(/^https:/, 'webcal:');
+  const copy = async (t: string) => { await navigator.clipboard?.writeText(t); toast('Link copied'); };
+  return (
+    <Section title="Front door code and calendar">
+      <Field label="Front door code (sent to renters only after they pay)">
+        <div className="flex gap-2">
+          <input className="input font-mono" type={show ? 'text' : 'password'} value={code ?? priv.data.access_code ?? ''} onChange={(e) => setCode(e.target.value)} />
+          <button className="btn-ghost btn-sm" onClick={() => setShow(!show)}>{show ? 'Hide' : 'Show'}</button>
+          <button className="btn-outline btn-sm" disabled={code === null} onClick={async () => { try { await rentals.saveAccessCode(code ?? ''); toast('Door code saved'); priv.reload(); setCode(null); } catch (e) { toast((e as Error).message, 'error'); } }}>Save</button>
+        </div>
+      </Field>
+      <p className="mt-4 text-sm font-semibold">Calendar on your phone</p>
+      <p className="text-xs text-muted">Tap a link on your iPhone to subscribe (or copy it into Google Calendar → Other calendars → From URL). Set Drop classes to orange and Rentals to blue. Apple Calendar refreshes every few minutes; Google can take a few hours. The Calendar page here is always live.</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <a className="btn-sm rounded-xl bg-[#ff7a00] px-3 py-2 font-semibold text-white" href={link('classes')}>📅 Drop classes</a>
+        <a className="btn-sm rounded-xl bg-[#2563eb] px-3 py-2 font-semibold text-white" href={link('rentals')}>📅 Studio rentals</a>
+        <button className="btn-ghost btn-sm" onClick={() => void copy(`${base}&type=classes`)}>Copy classes link</button>
+        <button className="btn-ghost btn-sm" onClick={() => void copy(`${base}&type=rentals`)}>Copy rentals link</button>
+      </div>
+      <p className="mt-1 text-xs text-muted">Keep these links private: they show renters’ names and phone numbers.</p>
     </Section>
   );
 }
@@ -100,6 +134,7 @@ export default function AdminRentals() {
           </ul>
         ) : <p className="text-sm text-muted">No bookings yet.</p>}
       </Section>
+      <AccessAndCalendar />
       {settings.data && <Prices s={settings.data} onSaved={settings.reload} />}
     </div>
   );

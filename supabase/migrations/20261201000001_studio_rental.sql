@@ -25,9 +25,29 @@ create table if not exists public.rental_settings (
   open_to_min int not null default 1440,            -- 24:00
   max_weeks_ahead int not null default 12,
   hold_minutes int not null default 30,             -- time to pay after starting checkout
-  approval_hold_hours int not null default 48,      -- time to pay after the owner approves
+  approval_hold_hours int not null default 5,       -- time to pay after the owner approves
+  dj_cents_per_hour int not null default 10000,     -- add-on: DJ
+  marketing_cents_per_week int not null default 1000, -- add-on: party promoted on Drop's social media + reception TV
+  house_rules text not null default 'Renters are responsible for anything their group breaks during the booking.
+No food or drinks in the dance room. Parties can have food and drinks in the reception, never inside the room.
+The canteen is for staff only.
+Anything moved during the booking must be put back as it was by the end of the booking.
+Be kind to everyone in the building.
+Keep the front door closed at all times, for everyone''s safety.',
   updated_at timestamptz not null default now()
 );
+
+-- Private rental settings (door code, calendar link): admins only, never in the code repository.
+create table if not exists public.rental_private (
+  id boolean primary key default true check (id),
+  access_code text,                                 -- shared with renters once they've paid
+  calendar_token text not null default replace(gen_random_uuid()::text, '-', '')
+);
+insert into public.rental_private (id) values (true) on conflict do nothing;
+alter table public.rental_private enable row level security;
+drop policy if exists rental_private_admin on public.rental_private;
+create policy rental_private_admin on public.rental_private for all to authenticated using (public.is_admin()) with check (public.is_admin());
+grant select, update on public.rental_private to authenticated;
 insert into public.rental_settings (id) values (true) on conflict do nothing;
 
 create table if not exists public.rental_series (
@@ -38,6 +58,7 @@ create table if not exists public.rental_series (
   minutes int not null check (minutes >= 60 and minutes % 30 = 0),
   is_party boolean not null default false,
   purpose text, group_name text, people int,
+  dj_minutes int not null default 0,
   status text not null default 'active' check (status in ('active', 'ended')),
   created_at timestamptz not null default now()
 );
@@ -55,6 +76,10 @@ create table if not exists public.rental_bookings (
   status text not null check (status in ('pending_approval', 'awaiting_payment', 'held', 'confirmed', 'cancelled', 'declined', 'expired', 'released')),
   approval_reasons text[] not null default '{}',
   rent_cents int not null, cleaning_cents int not null default 0, total_cents int not null,
+  dj_minutes int not null default 0 check (dj_minutes >= 0 and dj_minutes % 30 = 0),
+  marketing_weeks int not null default 0 check (marketing_weeks between 0 and 8),
+  addons_cents int not null default 0,
+  rules_accepted_at timestamptz,
   payment_id uuid references public.payments(id) on delete set null,
   hold_expires_at timestamptz,
   admin_note text,
@@ -141,6 +166,17 @@ begin
   if exists (select 1 from public.class_sessions s where s.status = 'scheduled' and s.starts_at < p_end and s.ends_at > p_start) then
     perform public._fail('rental_class_clash');
   end if;
+  -- Weekly classes that haven't been put on the timetable yet (it's created 5 weeks ahead).
+  if exists (
+    select 1 from public.class_templates t
+    cross join generate_series(ls::date - 1, le::date, interval '1 day') d
+    where t.is_active and extract(isodow from d) = t.weekday and d::date >= t.valid_from and (t.valid_until is null or d::date <= t.valid_until)
+      and ((d::date + t.start_time)::timestamp at time zone 'Europe/Dublin') < p_end
+      and ((d::date + t.start_time)::timestamp at time zone 'Europe/Dublin') + make_interval(mins => t.duration_minutes) > p_start
+      and not exists (select 1 from public.class_sessions s where s.template_id = t.id
+                      and s.starts_at = ((d::date + t.start_time)::timestamp at time zone 'Europe/Dublin'))) then
+    perform public._fail('rental_class_clash');
+  end if;
   if exists (select 1 from public.rental_bookings b where b.during && tstzrange(p_start, p_end, '[)') and b.id is distinct from p_ignore
              and b.status in ('pending_approval', 'awaiting_payment', 'held', 'confirmed')) then
     perform public._fail('rental_unavailable');
@@ -163,6 +199,14 @@ returns jsonb language sql stable security definer set search_path = public, pg_
     select jsonb_build_object('starts_at', s.starts_at, 'ends_at', s.ends_at, 'what', 'Drop class') x
     from public.class_sessions s where s.status = 'scheduled' and s.starts_at < p_to and s.ends_at > p_from
     union all
+    select jsonb_build_object('starts_at', st, 'ends_at', st + make_interval(mins => t.duration_minutes), 'what', 'Drop class')
+    from public.class_templates t
+    cross join generate_series((p_from at time zone 'Europe/Dublin')::date, (p_to at time zone 'Europe/Dublin')::date, interval '1 day') d
+    cross join lateral (select ((d::date + t.start_time)::timestamp at time zone 'Europe/Dublin') st) x2
+    where t.is_active and extract(isodow from d) = t.weekday and d::date >= t.valid_from and (t.valid_until is null or d::date <= t.valid_until)
+      and st < p_to and st + make_interval(mins => t.duration_minutes) > p_from
+      and not exists (select 1 from public.class_sessions s where s.template_id = t.id and s.starts_at = st)
+    union all
     select jsonb_build_object('starts_at', b.starts_at, 'ends_at', b.ends_at, 'what', 'Booked')
     from public.rental_bookings b where b.status in ('pending_approval', 'awaiting_payment', 'held', 'confirmed') and b.starts_at < p_to and b.ends_at > p_from
   ) q where p_to - p_from <= interval '62 days';
@@ -170,16 +214,34 @@ $$;
 grant execute on function public.rental_busy(timestamptz, timestamptz) to anon, authenticated;
 
 -- What a booking would cost and whether it needs the owner's approval (without booking it).
-create or replace function public.rental_quote(p_start timestamptz, p_end timestamptz, p_party boolean)
+-- Add-ons: a DJ (per hour, in 30-minute steps, up to the booking's length) and, for parties, promotion on Drop's
+-- social media and reception TV (per week; charged once even for weekly bookings).
+create or replace function public._rental_addons(p_minutes int, p_party boolean, p_dj_minutes int, p_marketing_weeks int)
+returns int language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare cfg public.rental_settings := (select r from public.rental_settings r limit 1);
+begin
+  if coalesce(p_dj_minutes, 0) < 0 or coalesce(p_dj_minutes, 0) % 30 <> 0 or coalesce(p_dj_minutes, 0) > p_minutes then perform public._fail('rental_invalid_addons'); end if;
+  if coalesce(p_marketing_weeks, 0) not between 0 and 8 or (coalesce(p_marketing_weeks, 0) > 0 and not p_party) then perform public._fail('rental_invalid_addons'); end if;
+  return coalesce(p_dj_minutes, 0) * cfg.dj_cents_per_hour / 60 + coalesce(p_marketing_weeks, 0) * cfg.marketing_cents_per_week;
+end;
+$$;
+
+-- What a booking would cost and whether it needs the owner's approval (without booking it).
+create or replace function public.rental_quote(p_start timestamptz, p_end timestamptz, p_party boolean, p_dj_minutes int default 0, p_marketing_weeks int default 0)
 returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
-declare reasons text[];
+declare reasons text[]; v_price jsonb; v_add int;
 begin
   reasons := public._rental_check(auth.uid(), p_start, p_end);
   if auth.uid() is null then reasons := array_append(array_remove(reasons, 'first_time'), 'first_time'); end if;
-  return public.rental_price(p_start, p_end, p_party) || jsonb_build_object('approval_reasons', to_jsonb(reasons));
+  v_price := public.rental_price(p_start, p_end, p_party);
+  v_add := public._rental_addons((v_price ->> 'minutes')::int, p_party, p_dj_minutes, p_marketing_weeks);
+  return v_price || jsonb_build_object('approval_reasons', to_jsonb(reasons), 'addons_cents', v_add,
+    'dj_cents', coalesce(p_dj_minutes, 0) * (select dj_cents_per_hour from public.rental_settings limit 1) / 60,
+    'marketing_cents', coalesce(p_marketing_weeks, 0) * (select marketing_cents_per_week from public.rental_settings limit 1),
+    'total_cents', (v_price ->> 'total_cents')::int + v_add);
 end;
 $$;
-grant execute on function public.rental_quote(timestamptz, timestamptz, boolean) to anon, authenticated;
+grant execute on function public.rental_quote(timestamptz, timestamptz, boolean, int, int) to anon, authenticated;
 
 -- ---------- Booking ----------
 
@@ -193,12 +255,13 @@ returns jsonb language sql stable security definer set search_path = public, pg_
   select jsonb_build_object('booking_id', b.id, 'starts_at', b.starts_at, 'ends_at', b.ends_at, 'is_party', b.is_party,
     'purpose', b.purpose, 'group_name', b.group_name, 'people', b.people, 'total_cents', b.total_cents,
     'renter', (select full_name from public.profiles where id = b.user_id), 'renter_email', (select email from public.profiles where id = b.user_id),
-    'renter_phone', (select phone from public.profiles where id = b.user_id), 'series', b.series_id is not null, 'reasons', to_jsonb(b.approval_reasons));
+    'renter_phone', (select phone from public.profiles where id = b.user_id), 'series', b.series_id is not null, 'reasons', to_jsonb(b.approval_reasons),
+    'dj_minutes', b.dj_minutes, 'marketing_weeks', b.marketing_weeks);
 $$;
 
 -- Ask for a booking (one-off, or the same time every week: this month now, next month's slots kept for you).
 create or replace function public.request_rental(p_start timestamptz, p_end timestamptz, p_party boolean, p_purpose text,
-  p_group_name text, p_people int, p_recurring boolean)
+  p_group_name text, p_people int, p_recurring boolean, p_accept_rules boolean, p_dj_minutes int default 0, p_marketing_weeks int default 0)
 returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   v_uid uuid := auth.uid();
@@ -214,10 +277,13 @@ declare
   v_price jsonb;
   v_status text;
   v_total int := 0;
+  v_add int;
   b public.rental_bookings;
 begin
   if v_uid is null then perform public._fail('not_authenticated'); end if;
   if length(coalesce(p_purpose, '')) > 300 or length(coalesce(p_group_name, '')) > 80 then perform public._fail('too_long'); end if;
+  if not coalesce(p_accept_rules, false) then perform public._fail('rental_rules_required'); end if;
+  perform public._rental_addons((extract(epoch from p_end - p_start) / 60)::int, p_party, p_dj_minutes, p_marketing_weeks);
   perform 1 from public.profiles where id = v_uid for update;   -- one request at a time per person
 
   -- Every occurrence must be free; approval is needed if any of them needs it.
@@ -233,23 +299,26 @@ begin
   v_status := case when cardinality(v_reasons) > 0 then 'pending_approval' else 'awaiting_payment' end;
 
   if p_recurring then
-    insert into public.rental_series (user_id, weekday, start_local, minutes, is_party, purpose, group_name, people)
+    insert into public.rental_series (user_id, weekday, start_local, minutes, is_party, purpose, group_name, people, dj_minutes)
     values (v_uid, extract(isodow from p_start at time zone 'Europe/Dublin')::int, (p_start at time zone 'Europe/Dublin')::time,
-            (extract(epoch from v_len) / 60)::int, p_party, nullif(btrim(p_purpose), ''), nullif(btrim(p_group_name), ''), p_people)
+            (extract(epoch from v_len) / 60)::int, p_party, nullif(btrim(p_purpose), ''), nullif(btrim(p_group_name), ''), p_people, coalesce(p_dj_minutes, 0))
     returning id into v_series;
   end if;
 
   t := p_start;
   loop
     v_price := public.rental_price(t, t + v_len, p_party);
+    -- The DJ is per date; party promotion is charged once (on the first date).
+    v_add := public._rental_addons((v_price ->> 'minutes')::int, p_party, p_dj_minutes, case when cardinality(v_ids) = 0 then p_marketing_weeks else 0 end);
     insert into public.rental_bookings (user_id, series_id, month_key, starts_at, ends_at, is_party, purpose, group_name, people, status,
-      approval_reasons, rent_cents, cleaning_cents, total_cents, hold_expires_at)
+      approval_reasons, rent_cents, cleaning_cents, total_cents, hold_expires_at, dj_minutes, marketing_weeks, addons_cents, rules_accepted_at)
     values (v_uid, v_series, case when p_recurring then v_month end, t, t + v_len, p_party, nullif(btrim(p_purpose), ''), nullif(btrim(p_group_name), ''), p_people,
-      v_status, v_reasons, (v_price ->> 'rent_cents')::int, (v_price ->> 'cleaning_cents')::int, (v_price ->> 'total_cents')::int,
-      case when v_status = 'awaiting_payment' then now() + make_interval(mins => cfg.hold_minutes) end)
+      v_status, v_reasons, (v_price ->> 'rent_cents')::int, (v_price ->> 'cleaning_cents')::int, (v_price ->> 'total_cents')::int + v_add,
+      case when v_status = 'awaiting_payment' then now() + make_interval(mins => cfg.hold_minutes) end,
+      coalesce(p_dj_minutes, 0), case when cardinality(v_ids) = 0 then coalesce(p_marketing_weeks, 0) else 0 end, v_add, now())
     returning id into v_id;
     v_ids := v_ids || v_id;
-    v_total := v_total + (v_price ->> 'total_cents')::int;
+    v_total := v_total + (v_price ->> 'total_cents')::int + v_add;
     exit when not p_recurring;
     t := t + interval '7 days';
     exit when date_trunc('month', t at time zone 'Europe/Dublin')::date <> v_month;
@@ -268,8 +337,8 @@ begin
     'total_cents', v_total, 'series_id', v_series);
 end;
 $$;
-revoke all on function public.request_rental(timestamptz, timestamptz, boolean, text, text, int, boolean) from public, anon;
-grant execute on function public.request_rental(timestamptz, timestamptz, boolean, text, text, int, boolean) to authenticated;
+revoke all on function public.request_rental(timestamptz, timestamptz, boolean, text, text, int, boolean, boolean, int, int) from public, anon;
+grant execute on function public.request_rental(timestamptz, timestamptz, boolean, text, text, int, boolean, boolean, int, int) to authenticated;
 
 -- Keep a series' slots for the month after p_month, until the last day of p_month (skips slots that are taken or clash).
 create or replace function public._rental_hold_next_month(p_series uuid, p_month date)
@@ -290,9 +359,10 @@ begin
       if not exists (select 1 from public.class_sessions c where c.status = 'scheduled' and c.starts_at < t + make_interval(mins => s.minutes) and c.ends_at > t) then
         v_price := public.rental_price(t, t + make_interval(mins => s.minutes), s.is_party);
         insert into public.rental_bookings (user_id, series_id, month_key, starts_at, ends_at, is_party, purpose, group_name, people, status,
-          rent_cents, cleaning_cents, total_cents, hold_expires_at)
+          rent_cents, cleaning_cents, total_cents, hold_expires_at, dj_minutes, addons_cents, rules_accepted_at)
         values (s.user_id, s.id, v_next, t, t + make_interval(mins => s.minutes), s.is_party, s.purpose, s.group_name, s.people, 'held',
-          (v_price ->> 'rent_cents')::int, (v_price ->> 'cleaning_cents')::int, (v_price ->> 'total_cents')::int, v_until);
+          (v_price ->> 'rent_cents')::int, (v_price ->> 'cleaning_cents')::int, (v_price ->> 'total_cents')::int + s.dj_minutes * (select dj_cents_per_hour from public.rental_settings limit 1) / 60,
+          v_until, s.dj_minutes, s.dj_minutes * (select dj_cents_per_hour from public.rental_settings limit 1) / 60, now());
         n := n + 1;
       end if;
     exception when exclusion_violation then null;   -- someone else already has that slot
@@ -400,7 +470,8 @@ begin
   select * into first_b from public.rental_bookings where payment_id = pay.id order by starts_at limit 1;
   if found then
     insert into public.notification_outbox (user_id, kind, payload, dedupe_key)
-    values (pay.user_id, 'rental_confirmed', public._rental_payload(first_b) || jsonb_build_object('occurrences', n, 'paid_cents', pay.amount_cents), 'rental_conf:' || pay.id)
+    values (pay.user_id, 'rental_confirmed', public._rental_payload(first_b) || jsonb_build_object('occurrences', n, 'paid_cents', pay.amount_cents,
+      'access_code', (select access_code from public.rental_private limit 1), 'house_rules', (select house_rules from public.rental_settings limit 1)), 'rental_conf:' || pay.id)
     on conflict (dedupe_key) do nothing;
     perform public._rental_tell_owner('rental_booked', public._rental_payload(first_b) || jsonb_build_object('occurrences', n, 'paid_cents', pay.amount_cents), 'rental_booked:' || pay.id);
   end if;
@@ -545,7 +616,7 @@ begin
 
   -- Reminders: the renter a day before; the owner a day before and 2 hours before.
   insert into public.notification_outbox (user_id, kind, payload, dedupe_key)
-  select b.user_id, 'rental_reminder', public._rental_payload(b), 'rental_rem24:' || b.id
+  select b.user_id, 'rental_reminder', public._rental_payload(b) || jsonb_build_object('access_code', (select access_code from public.rental_private limit 1)), 'rental_rem24:' || b.id
   from public.rental_bookings b where b.status = 'confirmed' and b.starts_at > now() and b.starts_at <= now() + interval '24 hours'
   on conflict (dedupe_key) do nothing;
   for bk in select b.* from public.rental_bookings b where b.status = 'confirmed' and b.starts_at > now() and b.starts_at <= now() + interval '24 hours' loop
@@ -713,3 +784,88 @@ returns jsonb language sql stable security definer set search_path = public, pg_
 $fn$;
 revoke all on function public.assistant_knowledge() from public, anon, authenticated;
 grant execute on function public.assistant_knowledge() to service_role;
+
+
+-- ---------- Door code for renters (only once they've paid) ----------
+create or replace function public.rental_access(p_booking_id uuid)
+returns text language sql stable security definer set search_path = public, pg_temp as $$
+  select (select access_code from public.rental_private limit 1)
+  where exists (select 1 from public.rental_bookings where id = p_booking_id and user_id = auth.uid() and status = 'confirmed' and ends_at > now());
+$$;
+revoke all on function public.rental_access(uuid) from public, anon;
+grant execute on function public.rental_access(uuid) to authenticated;
+
+-- ---------- Classes and events never go on a rented slot (only an admin can override) ----------
+create or replace function public._rental_taken(p_from timestamptz, p_to timestamptz)
+returns text language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce(b.group_name, p.full_name, 'a renter') from public.rental_bookings b join public.profiles p on p.id = b.user_id
+  where b.status in ('pending_approval', 'awaiting_payment', 'held', 'confirmed') and b.during && tstzrange(p_from, p_to, '[)')
+  order by b.starts_at limit 1;
+$$;
+
+create or replace function public._class_vs_rental() returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_who text;
+begin
+  if new.status <> 'scheduled' then return new; end if;
+  if tg_op = 'UPDATE' and new.starts_at = old.starts_at and new.ends_at = old.ends_at and old.status = 'scheduled' then return new; end if;
+  v_who := public._rental_taken(new.starts_at, new.ends_at);
+  if v_who is null then return new; end if;
+  if auth.uid() is null then
+    -- The automatic weekly timetable skips a rented slot, and tells the owner.
+    if tg_op = 'INSERT' then
+      perform public._rental_tell_owner('rental_problem', jsonb_build_object('class_skipped', new.title, 'starts_at', new.starts_at, 'renter', v_who), 'rental_skip:' || new.template_id || ':' || new.starts_at);
+      return null;
+    end if;
+    return new;
+  end if;
+  if not public.is_admin() then perform public._fail('rental_slot_taken', v_who); end if;
+  return new;   -- an admin's deliberate override
+end;
+$$;
+drop trigger if exists class_vs_rental on public.class_sessions;
+create trigger class_vs_rental before insert or update of starts_at, ends_at, status on public.class_sessions
+  for each row execute function public._class_vs_rental();
+
+-- Workshop and special-class requests also count rentals as "studio busy" (admins can override).
+create or replace function public._studio_clash(p_from timestamptz, p_to timestamptz, p_ignore_event uuid default null, p_ignore_session uuid default null)
+returns text language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce(
+    (select s.title from public.class_sessions s
+     where s.status = 'scheduled' and s.id is distinct from p_ignore_session and s.starts_at < p_to and s.ends_at > p_from
+     order by s.starts_at limit 1),
+    (select e.title from public.studio_events e
+     where e.kind = 'workshop' and e.status = 'pending' and e.id is distinct from p_ignore_event
+       and e.starts_at < p_to and e.ends_at > p_from order by e.starts_at limit 1),
+    case when not public.is_admin() then (select 'Studio rental: ' || public._rental_taken(p_from, p_to)) end);
+$$;
+
+-- ---------- Calendar: classes (orange) and rentals (blue) ----------
+create or replace function public.admin_calendar(p_from timestamptz, p_to timestamptz)
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+begin
+  perform public._require_admin();
+  return public._calendar_events(p_from, p_to, 'all');
+end;
+$$;
+revoke all on function public.admin_calendar(timestamptz, timestamptz) from public, anon;
+grant execute on function public.admin_calendar(timestamptz, timestamptz) to authenticated;
+
+create or replace function public._calendar_events(p_from timestamptz, p_to timestamptz, p_type text)
+returns jsonb language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce(jsonb_agg(x order by x ->> 'starts_at'), '[]') from (
+    select jsonb_build_object('id', 'class-' || s.id, 'type', 'class', 'starts_at', s.starts_at, 'ends_at', s.ends_at,
+      'title', coalesce((select e.title from public.studio_events e where e.session_id = s.id and e.status = 'published' limit 1), s.title),
+      'detail', concat_ws(' · ', i.full_name, case when s.is_special then 'special event' end, s.booked_count || '/' || s.capacity || ' booked')) x
+    from public.class_sessions s left join public.instructors i on i.id = s.instructor_id
+    where p_type in ('all', 'classes') and s.status = 'scheduled' and s.starts_at < p_to and s.ends_at > p_from
+    union all
+    select jsonb_build_object('id', 'rental-' || b.id, 'type', 'rental', 'starts_at', b.starts_at, 'ends_at', b.ends_at,
+      'title', 'Rental: ' || coalesce(b.group_name, p.full_name) || case when b.is_party then ' (party)' else '' end,
+      'detail', concat_ws(' · ', p.full_name, p.phone, b.purpose, case when b.dj_minutes > 0 then 'DJ ' || (b.dj_minutes / 60.0) || 'h' end,
+        case b.status when 'confirmed' then 'paid' else replace(b.status, '_', ' ') end))
+    from public.rental_bookings b join public.profiles p on p.id = b.user_id
+    where p_type in ('all', 'rentals') and b.status in ('pending_approval', 'awaiting_payment', 'held', 'confirmed') and b.starts_at < p_to and b.ends_at > p_from
+  ) q;
+$$;
+revoke all on function public._calendar_events(timestamptz, timestamptz, text) from public, anon, authenticated;
+grant execute on function public._calendar_events(timestamptz, timestamptz, text) to service_role;

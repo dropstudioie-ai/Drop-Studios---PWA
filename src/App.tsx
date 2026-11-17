@@ -21,6 +21,7 @@ const GiftCardPrint = lazy(() => import('./pages/Gift').then((m) => ({ default: 
 const AdminGifts = lazy(() => import('./pages/admin/Gifts'));
 const Rent = lazy(() => import('./pages/Rent'));
 const AdminRentals = lazy(() => import('./pages/admin/Rentals'));
+const AdminCalendar = lazy(() => import('./pages/admin/Calendar'));
 const GetApp = lazy(() => import('./pages/GetApp'));
 const Teach = lazy(() => import('./pages/Teach'));
 const TeachProfile = lazy(() => import('./pages/TeachProfile'));
@@ -104,6 +105,7 @@ export default function App() {
                   <Route path="thamires" element={<AdminThamires />} />
                   <Route path="gifts" element={<AdminGifts />} />
                   <Route path="rentals" element={<AdminRentals />} />
+                  <Route path="calendar" element={<AdminCalendar />} />
                   <Route path="customers" element={<AdminCustomers />} />
                   <Route path="plans" element={<AdminPlans />} />
                   <Route path="styles" element={<AdminStyles />} />

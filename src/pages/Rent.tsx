@@ -33,6 +33,9 @@ export default function Rent() {
   const [group, setGroup] = useState('');
   const [people, setPeople] = useState('');
   const [purpose, setPurpose] = useState('');
+  const [dj, setDj] = useState(0);
+  const [promo, setPromo] = useState(0);
+  const [agree, setAgree] = useState(false);
   const [quote, setQuote] = useState<RentalQuote | null>(null);
   const [quoteErr, setQuoteErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -46,15 +49,15 @@ export default function Rent() {
   useEffect(() => {
     let live = true;
     setQuoteErr(null);
-    rentals.quote(start, end, party).then((q) => { if (live) setQuote(q); }).catch((e) => { if (live) { setQuote(null); setQuoteErr(messageFor((e as Error).message)); } });
+    rentals.quote(start, end, party, Math.min(dj, mins), party ? promo : 0).then((q) => { if (live) setQuote(q); }).catch((e) => { if (live) { setQuote(null); setQuoteErr(messageFor((e as Error).message)); } });
     return () => { live = false; };
-  }, [start, end, party, session?.user.id]);
+  }, [start, end, party, dj, promo, mins, session?.user.id]);
 
   async function book() {
     if (!session) { navigate(`/login?next=${encodeURIComponent('/rent')}`); return; }
     setBusy(true); setError(null);
     try {
-      const r = await rentals.request({ start, end, party, purpose, group, people: people ? Number(people) : null, recurring: weekly });
+      const r = await rentals.request({ start, end, party, purpose, group, people: people ? Number(people) : null, recurring: weekly, djMinutes: Math.min(dj, mins), marketingWeeks: party ? promo : 0 });
       if (r.needs_approval) { setSent(r.reasons); setBusy(false); return; }
       const next = await checkout({ rental_booking_ids: r.booking_ids, idempotency_key: idem });
       if ('redirect' in next) window.location.href = next.redirect; else navigate(next.navigate);
@@ -131,6 +134,28 @@ export default function Rent() {
                   <Field label="How many people?"><input className="input" type="number" min={1} max={200} value={people} onChange={(e) => setPeople(e.target.value)} /></Field>
                 </div>
                 <Field label="What’s it for?"><input className="input" value={purpose} onChange={(e) => setPurpose(e.target.value)} maxLength={300} placeholder="Rehearsal, class, photo shoot, birthday party…" /></Field>
+                <div className="rounded-2xl border border-line p-3">
+                  <p className="font-semibold">Add-ons</p>
+                  <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                    <Field label={`🎧 DJ${s ? ` (${euro(s.dj_cents_per_hour)}/hour)` : ''}`}>
+                      <select className="input" value={Math.min(dj, mins)} onChange={(e) => setDj(Number(e.target.value))}>
+                        <option value={0}>No DJ</option>
+                        {DURATIONS.filter((m) => m <= mins).map((m) => <option key={m} value={m}>{durLabel(m)}</option>)}
+                      </select>
+                    </Field>
+                    <Field label={`📣 Party promotion${s ? ` (${euro(s.marketing_cents_per_week)}/week)` : ''}`} hint={party ? 'On Drop’s social media and the reception TV.' : 'For parties.'}>
+                      <select className="input" value={party ? promo : 0} disabled={!party} onChange={(e) => setPromo(Number(e.target.value))}>
+                        <option value={0}>No promotion</option>
+                        {[1, 2, 3, 4].map((w) => <option key={w} value={w}>{w} week{w > 1 ? 's' : ''}</option>)}
+                      </select>
+                    </Field>
+                  </div>
+                </div>
+                <div className="rounded-2xl bg-canvas p-3 text-sm">
+                  <p className="font-semibold">House rules</p>
+                  <ul className="mt-1 list-disc space-y-0.5 pl-5 text-ink-soft">{(s?.house_rules ?? '').split('\n').filter(Boolean).map((r) => <li key={r}>{r}</li>)}</ul>
+                  <label className="mt-2 flex items-start gap-2 font-semibold"><input type="checkbox" className="mt-0.5 h-5 w-5" checked={agree} onChange={(e) => setAgree(e.target.checked)} />I’ve read the house rules and I’m responsible for my group.</label>
+                </div>
               </div>
               <aside className="card h-fit space-y-3 p-5 lg:sticky lg:top-20">
                 <p className="font-bold">{new Intl.DateTimeFormat('en-IE', { weekday: 'long', day: 'numeric', month: 'long' }).format(start)}, {time}–{hm(end.toISOString())}{weekly ? ' · weekly' : ''}</p>
@@ -140,13 +165,16 @@ export default function Rent() {
                     <ul className="text-sm">
                       {quote.lines.map((l) => <li key={l.rate_cents} className="flex justify-between"><span>{durLabel(l.minutes).replace('h 30', '.5h').replace('h', ' h')} × {euro(l.rate_cents)}</span><span>{euro((l.rate_cents * l.minutes) / 60)}</span></li>)}
                       {quote.cleaning_cents > 0 && <li className="flex justify-between"><span>Cleaning fee</span><span>{euro(quote.cleaning_cents)}</span></li>}
+                      {quote.dj_cents > 0 && <li className="flex justify-between"><span>DJ</span><span>{euro(quote.dj_cents)}</span></li>}
+                      {quote.marketing_cents > 0 && <li className="flex justify-between"><span>Party promotion</span><span>{euro(quote.marketing_cents)}</span></li>}
                     </ul>
                     <p className="flex justify-between border-t border-line pt-2 text-lg font-black"><span>Total{weekly ? ' per date' : ''}</span><span>{euro(quote.total_cents)}</span></p>
                     {quote.approval_reasons.length > 0 && <Notice tone="info">We’ll confirm this booking before you pay ({quote.approval_reasons.map((r) => REASON_LABEL[r] ?? r).join(', ')}). The time is held for you meanwhile.</Notice>}
                   </>
                 )}
                 {error && <Notice tone="warn">{error}</Notice>}
-                <button className="btn-primary w-full text-lg" disabled={busy || !quote || Boolean(quoteErr)} onClick={() => void book()}>
+                {!agree && <p className="text-center text-xs text-muted">Tick the house rules to book.</p>}
+                <button className="btn-primary w-full text-lg" disabled={busy || !quote || Boolean(quoteErr) || !agree} onClick={() => void book()}>
                   {busy ? <Spinner className="h-5 w-5" /> : !session ? 'Sign in to book' : quote?.approval_reasons.length ? 'Send request' : 'Book & pay'}
                 </button>
                 <p className="text-center text-xs text-muted">Secure payment by Square (card, Apple Pay, Google Pay).</p>

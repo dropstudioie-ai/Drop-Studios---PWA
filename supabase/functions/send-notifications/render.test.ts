@@ -236,3 +236,13 @@ Deno.test('studio rental emails', () => {
   assertStringIncludes(rep.subject, 'Weekly studio rental report: 1 booked');
   assertStringIncludes(rep.text, '6.0 hours rented, €270.00 received');
 });
+
+Deno.test('rental confirmation carries the door code and house rules; owner hears about the DJ', () => {
+  const base = { starts_at: '2026-12-06T16:00:00Z', ends_at: '2026-12-06T20:00:00Z', renter: 'Ana', paid_cents: 38500, occurrences: 1, dj_minutes: 120, marketing_weeks: 2 };
+  const c = render({ kind: 'rental_confirmed', full_name: 'Ana', payload: { ...base, access_code: 'X123', house_rules: 'No food in the room.\nKeep the door closed.' } })!;
+  assertStringIncludes(c.text, 'Front door code: X123');
+  assertStringIncludes(c.text, '• No food in the room.');
+  assertStringIncludes(c.text, 'DJ: 2 h');
+  assertStringIncludes(render({ kind: 'rental_booked', full_name: null, payload: base })!.text, 'DJ for 2 hours');
+  assertStringIncludes(render({ kind: 'rental_problem', full_name: null, payload: { class_skipped: 'Heels', starts_at: '2026-12-06T19:00:00Z', renter: 'Zouk team' } })!.text, 'wasn\'t added to the timetable');
+});

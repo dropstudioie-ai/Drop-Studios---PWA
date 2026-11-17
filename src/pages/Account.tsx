@@ -196,6 +196,13 @@ export default function Account() {
   );
 }
 
+/** The front door code, shown once a booking is paid. */
+function DoorCode({ bookingId }: { bookingId: string }) {
+  const [code, setCode] = useState<string | null>(null);
+  return code ? <p className="mt-2 rounded-xl bg-brand-50 p-2 text-sm">🔑 Front door code: <strong className="font-mono">{code}</strong> · Please keep the front door closed at all times.</p>
+    : <button className="mt-2 text-sm font-semibold text-brand-700" onClick={async () => setCode((await rentals.access(bookingId).catch(() => null)) ?? 'Ask at reception')}>🔑 Show the front door code</button>;
+}
+
 /** The member's studio rentals: pay, reschedule (24h+ before) or cancel (refund 7+ days before). */
 function StudioBookings({ uid }: { uid: string }) {
   const toast = useToast();
@@ -251,6 +258,7 @@ function StudioBookings({ uid }: { uid: string }) {
                   </span>
                 )}
               </div>
+              {b.status === 'confirmed' && new Date(b.ends_at).getTime() > now && <DoorCode bookingId={b.id} />}
               {moving?.id === b.id && (
                 <div className="mt-2 flex flex-wrap items-end gap-2 rounded-xl bg-canvas p-2">
                   <Field label="New day"><input className="input" type="date" min={localDateKey(new Date())} value={day} onChange={(e) => setDay(e.target.value)} /></Field>

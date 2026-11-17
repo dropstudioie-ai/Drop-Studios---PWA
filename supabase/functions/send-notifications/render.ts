@@ -33,6 +33,8 @@ const dateWithYear = (d: unknown) => new Intl.DateTimeFormat('en-IE', { timeZone
 /** "Sun 7 Dec, 16:00–20:00" (Dublin time). */
 const dayTime = (d: unknown) => new Intl.DateTimeFormat('en-IE', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(String(d)));
 const slot = (a: unknown, b: unknown) => b ? `${dayTime(a)}–${new Intl.DateTimeFormat('en-IE', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(String(b)))}` : dayTime(a);
+/** DJ / party promotion lines for rental emails. */
+const addons = (p: Record<string, unknown>) => `${Number(p.dj_minutes) ? `\nDJ: ${Number(p.dj_minutes) / 60} h` : ''}${Number(p.marketing_weeks) ? `\nParty promotion: ${p.marketing_weeks} week${Number(p.marketing_weeks) === 1 ? '' : 's'}` : ''}`;
 const longDate = (d: unknown) => new Intl.DateTimeFormat('en-IE', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long' })
   .format(new Date(`${String(d)}T12:00:00Z`));
 
@@ -440,19 +442,19 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
     case 'rental_confirmed':
       return {
         subject: `🎉 Studio booked: ${slot(p.starts_at, p.ends_at)}`,
-        text: `${hi}\n\nYou're booked! Drop Studios, 13 Sackville Place, Dublin 1.\n\n${slot(p.starts_at, p.ends_at)}${Number(p.occurrences) > 1 ? ` + ${Number(p.occurrences) - 1} more date${Number(p.occurrences) > 2 ? 's' : ''}` : ''}\nPaid: ${eur(p.paid_cents)}\n\nGood to know: reception, a bathroom with shower and a kitchen are yours to use. You can reschedule up to 24 hours before, and cancel with a full refund up to 7 days before, in the app:\n${site()}/account#rentals\n\nDrop Studios`,
+        text: `${hi}\n\nYou're booked! Drop Studios, 13 Sackville Place, Dublin 1.\n\n${slot(p.starts_at, p.ends_at)}${Number(p.occurrences) > 1 ? ` + ${Number(p.occurrences) - 1} more date${Number(p.occurrences) > 2 ? 's' : ''}` : ''}\nPaid: ${eur(p.paid_cents)}${addons(p)}${p.access_code ? `\n\n🔑 Front door code: ${p.access_code}\nPlease keep the front door closed at all times, for everyone's safety.` : ''}${p.house_rules ? `\n\nHouse rules:\n${String(p.house_rules).split('\n').map((r) => `• ${r}`).join('\n')}` : ''}\n\nYou can reschedule up to 24 hours before, and cancel with a full refund up to 7 days before, in the app:\n${site()}/account#rentals\n\nDrop Studios`,
         url: '/account#rentals',
       };
     case 'rental_booked':
       return {
         subject: `🏠 Studio booked & paid: ${p.group_name ?? p.renter}, ${slot(p.starts_at, p.ends_at)}`,
-        text: `${hi}\n\n${p.renter} paid ${eur(p.paid_cents)} for ${slot(p.starts_at, p.ends_at)}${Number(p.occurrences) > 1 ? ` and ${Number(p.occurrences) - 1} more dates` : ''}.${p.purpose ? `\nFor: ${p.purpose}` : ''}\n\n${site()}/admin/rentals\n\nDrop Studios`,
+        text: `${hi}\n\n${p.renter} paid ${eur(p.paid_cents)} for ${slot(p.starts_at, p.ends_at)}${Number(p.occurrences) > 1 ? ` and ${Number(p.occurrences) - 1} more dates` : ''}.${p.purpose ? `\nFor: ${p.purpose}` : ''}${Number(p.dj_minutes) ? `\n🎧 They booked a DJ for ${Number(p.dj_minutes) / 60} hour${Number(p.dj_minutes) === 60 ? '' : 's'}: please arrange it.` : ''}${Number(p.marketing_weeks) ? `\n📣 Promote their party for ${p.marketing_weeks} week${Number(p.marketing_weeks) === 1 ? '' : 's'} on Drop's social media and the reception TV.` : ''}\n\n${site()}/admin/rentals\n\nDrop Studios`,
         url: '/admin/rentals',
       };
     case 'rental_reminder':
       return {
         subject: `⏰ Tomorrow: your studio booking at Drop`,
-        text: `${hi}\n\nA reminder that you've booked Drop Studios for ${slot(p.starts_at, p.ends_at)}.\n13 Sackville Place, Dublin 1 (near O'Connell Street). Please leave the room as you found it. Enjoy!\n\nDrop Studios`,
+        text: `${hi}\n\nA reminder that you've booked Drop Studios for ${slot(p.starts_at, p.ends_at)}.\n13 Sackville Place, Dublin 1 (near O'Connell Street).${p.access_code ? `\n\n🔑 Front door code: ${p.access_code}\nPlease keep the front door closed at all times.` : ''}\n\nNo food or drinks in the dance room, and please put everything back as you found it. Enjoy!\n\nDrop Studios`,
         url: '/account#rentals',
       };
     case 'rental_owner_reminder':
@@ -492,7 +494,9 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
     case 'rental_problem':
       return {
         subject: `⚠️ Studio rental payment needs a look`,
-        text: `${hi}\n\n${p.renter} paid for ${p.lost} studio date(s) after their hold ran out, and someone else had already booked that time. Please check and refund or move them:\n${site()}/admin/rentals\n\nDrop Studios`,
+        text: p.class_skipped
+          ? `${hi}\n\nThe weekly class "${p.class_skipped}" on ${slot(p.starts_at, null)} wasn't added to the timetable because the studio is rented then (${p.renter}). If the class should go ahead, move the rental or add the class yourself in the admin timetable.\n\n${site()}/admin/rentals\n\nDrop Studios`
+          : `${hi}\n\n${p.renter} paid for ${p.lost} studio date(s) after their hold ran out, and someone else had already booked that time. Please check and refund or move them:\n${site()}/admin/rentals\n\nDrop Studios`,
         url: '/admin/rentals',
       };
     case 'rental_report': {

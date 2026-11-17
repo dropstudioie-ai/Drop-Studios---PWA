@@ -9,6 +9,7 @@ const TABS = [
   ['thamires', 'Thamires'],
   ['gifts', 'Gift cards'],
   ['rentals', 'Studio rental'],
+  ['calendar', 'Calendar'],
   ['customers', 'Members'],
   ['plans', 'Plans'],
   ['styles', 'Styles'],
