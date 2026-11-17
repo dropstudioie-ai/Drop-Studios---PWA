@@ -416,6 +416,22 @@ run('database: plans, booking, allowances, pauses, security', () => {
       expect(rows[0].booked_count).toBe(1);
     });
 
+    it('members see the front door code only once booked into a class, until it ends', async () => {
+      await db.query(`update rental_private set access_code = 'DOOR-1'`);
+      const c = await createUser(db, 'DoorMember');
+      await buy(c, 'multi-5');
+      const s = await makeSession({ style: 'hip-hop', startsInMinutes: 2 * 24 * 60 });
+      const code = async (uid: string) => (await as<{ c: string | null }>(db, user(uid), `select class_access($1) c`, [s]))[0].c;
+      expect(await code(c)).toBeNull();
+      const r = await book(c, s);
+      expect(await code(c)).toBe('DOOR-1');
+      const other = await createUser(db, 'DoorStranger');
+      expect(await code(other)).toBeNull();
+      await expect(as(db, anon, `select class_access($1)`, [s])).rejects.toThrow(/permission denied/);
+      await as(db, user(c), `select cancel_booking($1)`, [r.booking_id]);
+      expect(await code(c)).toBeNull();
+    });
+
     it('enforces the 3-week booking window', async () => {
       const c = await createUser(db, 'TooEarly');
       await buy(c, 'multi-12');

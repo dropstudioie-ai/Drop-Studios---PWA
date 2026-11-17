@@ -13,7 +13,7 @@ const FEATURES = [
   ['📐', '100 m² dance room'], ['🪵', 'Laminated wooden floor'], ['🪞', 'Floor-to-ceiling mirrors'], ['🌈', 'RGB LED lights + black light'],
   ['🌬️', 'Wall fan + industrial air fans'], ['🚿', 'Bathroom with shower'], ['🍳', 'Fully fitted kitchen'], ['🛋️', 'Spacious reception area'],
 ];
-const PHOTOS = [6, 1, 3, 7];
+const PHOTOS = [19, 25, 18, 17];
 const euro = (c: number) => formatPrice(c, 'EUR');
 const hm = (iso: string) => new Intl.DateTimeFormat('en-IE', { timeZone: 'Europe/Dublin', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(iso));
 const DURATIONS = Array.from({ length: 23 }, (_, i) => 60 + i * 30);   // 1h … 12h

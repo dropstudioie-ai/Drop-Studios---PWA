@@ -404,7 +404,7 @@ async function photoFor(st: StoryRow, index: number): Promise<StoryPhoto> {
       : { kind: 'photo', image: await assets.get(`${src.asset}.jpg`) };
   }
   const art = artworkFor(l.style_slug, l.instructor_id ?? null, st.story_date);
-  return art ? { kind: 'artwork', image: await assets.get(`${art}.jpg`), blurred: await assets.get(`${art}-blur.jpg`) } : { kind: 'photo', image: await assets.get('studio/photo-6.jpg') };
+  return art ? { kind: 'artwork', image: await assets.get(`${art}.jpg`), blurred: await assets.get(`${art}-blur.jpg`) } : { kind: 'photo', image: await assets.get('studio/photo-19.jpg') };
 }
 
 async function renderFrame(db: Db, storyId: string, index: number) {
@@ -480,7 +480,7 @@ async function weekData(db: Db, weekStart: string): Promise<WeekDay[]> {
 }
 
 const renderWeek = async (db: Db, weekStart: string) =>
-  renderWeekStory(assets, { weekStart, days: await weekData(db, weekStart), background: await assets.get('studio/photo-6-blur.jpg'), logo: DROP_LOGO });
+  renderWeekStory(assets, { weekStart, days: await weekData(db, weekStart), background: await assets.get('studio/photo-19-blur.jpg'), logo: DROP_LOGO });
 
 /** Friday, Saturday and Sunday evenings: next week's timetable on one Story. */
 async function weeklyStory(db: Db, force = false) {
@@ -500,7 +500,7 @@ async function postWeek(db: Db, date: string) {
   const classes = days.reduce((n, d) => n + d.items.length, 0);
   const { data: row } = await db.from('assistant_weekly').upsert({ post_date: date, week_start: weekStart, status: 'posting', error: null }, { onConflict: 'post_date' }).select().single();
   try {
-    const png = await renderWeekStory(assets, { weekStart, days, background: await assets.get('studio/photo-6-blur.jpg'), logo: DROP_LOGO });
+    const png = await renderWeekStory(assets, { weekStart, days, background: await assets.get('studio/photo-19-blur.jpg'), logo: DROP_LOGO });
     const path = `weekly/${weekStart}-${date}.png`;
     const up = await db.storage.from('assistant-media').upload(path, png, { contentType: 'image/png', upsert: true });
     if (up.error) throw new Error(up.error.message);

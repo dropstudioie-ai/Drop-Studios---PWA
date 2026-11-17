@@ -79,6 +79,9 @@ export const thamires = {
 
 // ---------- Daily Story image ----------
 
+/** The studio photos approved for the site (public/studio/photo-N.webp). */
+const STUDIO_PHOTO_NUMBERS = [25, 13, 14, 15, 16, 21, 22, 23, 24, 19, 18, 17, 20, 1, 9, 10, 11, 12];
+
 /** Photos to choose from for the Story: Drop's class artwork, then studio photos. */
 export const STORY_PHOTOS: { url: string; label: string }[] = [
   { url: '/classes/heels.webp', label: 'Heels' },
@@ -91,7 +94,7 @@ export const STORY_PHOTOS: { url: string; label: string }[] = [
   { url: '/classes/jazz-funk.webp', label: 'Jazz Funk' },
   { url: '/classes/reggaeton.webp', label: 'Reggaeton' },
   { url: '/classes/choreography.webp', label: 'Choreography' },
-  ...Array.from({ length: 16 }, (_, i) => ({ url: `/studio/photo-${i + 1}.webp`, label: `Studio photo ${i + 1}` })),
+  ...STUDIO_PHOTO_NUMBERS.map((n) => ({ url: `/studio/photo-${n}.webp`, label: `Studio photo ${n}` })),
 ];
 
 /** The photo for one class's Story: the one chosen by an admin, else that instructor's or style's artwork, else a studio photo. */
@@ -99,7 +102,7 @@ export function storyPhoto(s: ThStory, index = 0): string {
   const chosen = s.photos?.[String(index)] ?? (index === 0 ? s.photo_url : null);
   if (chosen) return chosen;
   const l = s.lines[index];
-  return (l && sessionImage(l.style_slug, l.instructor_id ?? null, l.starts_at)?.card) ?? '/studio/photo-6.webp';
+  return (l && sessionImage(l.style_slug, l.instructor_id ?? null, l.starts_at)?.card) ?? '/studio/photo-19.webp';
 }
 
 /** How many Stories a day has: one per class. */

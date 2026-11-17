@@ -1,4 +1,5 @@
 import { isUnlimited, leftLabel, classesLabel } from '../domain/plans';
+import { ClassDoorCode } from './ClassDoorCode';
 import { artworkUrl } from '../lib/events';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -203,6 +204,7 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
         {opts?.authenticated && opts.my_booking_id && (
           <div className="space-y-3">
             <Notice tone="success"><strong>{opts.my_booking_is_ticket ? (session.is_special ? 'You have a ticket.' : 'You’re booked in (Drop In).') : staffFree ? 'You’re booked in (instructor, free).' : 'You’re booked in.'}</strong> See you on the floor!</Notice>
+            <ClassDoorCode sessionId={session.id} />
             {myGuest && <Notice tone="info">👯 <strong>{myGuest}</strong> is coming with you, free. Arrive together and introduce them at reception.</Notice>}
             {!isStaff && !profile?.avatar_path && (
               <Notice tone="info">👋 <strong>Welcome to Drop!</strong> Introduce yourself at reception when you arrive and we’ll take your profile photo. You’ll need it to book your next class.</Notice>

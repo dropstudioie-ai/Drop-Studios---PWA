@@ -108,7 +108,7 @@ function MemberHome() {
 
       <section className="container-page py-12" aria-labelledby="rent-h">
         <div className="card grid items-center gap-6 overflow-hidden p-0 md:grid-cols-2">
-          <img src="/studio/photo-6.webp" alt="The Drop studio" className="h-64 w-full object-cover md:h-full" loading="lazy" />
+          <img src="/studio/photo-19.webp" alt="The Drop studio" className="h-64 w-full object-cover md:h-full" loading="lazy" />
           <div className="p-6">
             <p className="text-xs font-bold uppercase tracking-wider text-accent-600">Studio rental</p>
             <h2 id="rent-h" className="mt-1 text-2xl font-black sm:text-3xl">Rent the Drop studio</h2>

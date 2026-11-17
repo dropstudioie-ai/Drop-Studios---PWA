@@ -14,10 +14,11 @@ const COMMERCIAL: Palette = ['#0F24A8', '#2F5BFF', '#6FA0FF'];
 const CHOREOGRAPHY: Palette = ['#06695F', '#12B5A2', '#5FE6D2'];
 
 const GROUPS: { photos: number[]; palettes: Palette[]; wide?: boolean }[] = [
-  { photos: [2, 3, 4, 6, 7, 12], palettes: [JAZZ_FUNK] },             // purple club light
-  { photos: [1, 5, 8], palettes: [FITDANCE, HIP_HOP, HEELS] },        // warm wooden floors
-  { photos: [9, 10, 11], palettes: [COMMERCIAL, CHOREOGRAPHY] },      // cool blue / grey rooms
-  { photos: [14, 15, 13, 16], palettes: [COMMERCIAL, CHOREOGRAPHY], wide: true }, // blue-wall studio (pro photos)
+  { photos: [17, 20, 18, 12], palettes: [JAZZ_FUNK] },                      // studio in club lights
+  { photos: [23, 19, 1], palettes: [FITDANCE, HIP_HOP, HEELS] },            // warm light, bright room
+  { photos: [9, 10, 11], palettes: [COMMERCIAL, CHOREOGRAPHY] },            // cool blue / grey rooms
+  { photos: [14, 15, 13, 16, 25], palettes: [COMMERCIAL, CHOREOGRAPHY], wide: true }, // blue-wall studio (pro photos)
+  { photos: [24], palettes: [FITDANCE, HEELS, JAZZ_FUNK], wide: true },              // Drop at Dublin Pride (21 and 22 are for Instagram only)
 ];
 export const STUDIO_PHOTOS = GROUPS.flatMap((g) => g.photos).map(photo);
 

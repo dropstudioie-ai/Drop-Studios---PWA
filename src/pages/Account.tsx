@@ -1,4 +1,5 @@
 import { HALF_HOURS, rentals, STATUS_LABEL, toMinutes, type RentalBooking } from '../lib/rentals';
+import { ClassDoorCode } from '../components/ClassDoorCode';
 import { cancelRental, checkout } from '../lib/payments';
 import { messageFor } from '../domain/messages';
 import { downloadReceipt, myReceipts } from '../lib/receipts';
@@ -134,6 +135,7 @@ export default function Account() {
               <div>
                 <p className="font-bold">{b.session!.title}{b.payment_id && <span className="chip ml-2 bg-accent-500 align-middle text-ink">{b.payment?.kind === 'drop_in' ? 'Drop In' : 'Ticket'}</span>}</p>
                 <p className="text-sm text-muted">{fmt.dateTime(b.session!.starts_at)}{b.session!.instructor ? ` · ${b.session!.instructor.full_name}` : ''}</p>
+                <ClassDoorCode sessionId={b.session_id} className="mt-2" />
               </div>
               {b.payment_id
                 ? <span className="max-w-28 text-right text-xs text-muted">Contact the studio to change</span>
