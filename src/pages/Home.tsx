@@ -112,7 +112,7 @@ function MemberHome() {
           <div className="p-6">
             <p className="text-xs font-bold uppercase tracking-wider text-accent-600">Studio rental</p>
             <h2 id="rent-h" className="mt-1 text-2xl font-black sm:text-3xl">Rent the Drop studio</h2>
-            <p className="mt-2 text-ink-soft">100 m² with mirrors, wooden floor, RGB lights, shower, kitchen and reception. For rehearsals, classes, shoots and parties, from €25/hour.</p>
+            <p className="mt-2 text-ink-soft">100 m² with mirrors, wooden floor, RGB lights, shower, kitchen and reception. For rehearsals, classes, shoots and parties. Book and pay in the app.</p>
             <Link to="/rent" className="btn-primary mt-4">See prices &amp; book</Link>
           </div>
         </div>
