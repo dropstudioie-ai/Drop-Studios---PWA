@@ -30,6 +30,9 @@ const day = (iso: unknown) => {
 const eur = (cents: unknown) => new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR' }).format(Number(cents) / 100);
 /** "17 November 2031" (dates far ahead need the year). */
 const dateWithYear = (d: unknown) => new Intl.DateTimeFormat('en-IE', { timeZone: TZ, day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(String(d)));
+/** "Sun 7 Dec, 16:00–20:00" (Dublin time). */
+const dayTime = (d: unknown) => new Intl.DateTimeFormat('en-IE', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(String(d)));
+const slot = (a: unknown, b: unknown) => b ? `${dayTime(a)}–${new Intl.DateTimeFormat('en-IE', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(String(b)))}` : dayTime(a);
 const longDate = (d: unknown) => new Intl.DateTimeFormat('en-IE', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long' })
   .format(new Date(`${String(d)}T12:00:00Z`));
 
@@ -413,6 +416,96 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
         text: `${hi}\n\nGood news: ${p.recipient_name ?? 'your friend'} just redeemed the ${p.plan_name} you gave them. Thank you for bringing someone new to Drop!\n\nDrop Studios`,
         url: '/account',
       };
+    // ---------- Studio rental ----------
+    case 'rental_requested': {
+      const why = ((p.reasons ?? []) as string[]).map((r) => ({ first_time: 'first-time renter', outside_hours: 'outside 07:00–24:00', beyond_12_weeks: 'more than 12 weeks ahead' }[r] ?? r)).join(', ');
+      return {
+        subject: `🏠 Studio rental request: ${p.group_name ?? p.renter}, ${slot(p.starts_at, p.ends_at)}`,
+        text: `${hi}\n\n${p.renter} (${p.renter_email}${p.renter_phone ? `, ${p.renter_phone}` : ''}) wants to rent the studio:\n\n${slot(p.starts_at, p.ends_at)}${p.series ? ` and every week at the same time this month (${p.occurrences} dates)` : ''}\n${p.is_party ? 'Party (cleaning fee included)\n' : ''}${p.group_name ? `Group: ${p.group_name}\n` : ''}${p.people ? `People: ${p.people}\n` : ''}${p.purpose ? `For: ${p.purpose}\n` : ''}Total: ${eur(p.month_total_cents ?? p.total_cents)}\n\nNeeds your approval because: ${why}.\nThe time is held for them until you decide. Approve or decline:\n${site()}/admin/rentals\n\nDrop Studios`,
+        url: '/admin/rentals',
+      };
+    }
+    case 'rental_approved':
+      return {
+        subject: `✅ Your studio booking is approved: please pay to confirm`,
+        text: `${hi}\n\nGood news: your request to rent Drop Studios on ${slot(p.starts_at, p.ends_at)}${p.series ? ` (and the other ${Number(p.occurrences) - 1} dates this month)` : ''} is approved.${p.note ? `\n\nA note from the studio: ${p.note}` : ''}\n\nPlease pay within ${p.pay_within_hours} hours to confirm it, otherwise the time is released:\n${site()}/account#rentals\n\nDrop Studios`,
+        url: '/account#rentals',
+      };
+    case 'rental_declined':
+      return {
+        subject: `About your studio booking request`,
+        text: `${hi}\n\nSorry, we can't confirm your request to rent the studio on ${slot(p.starts_at, p.ends_at)}.${p.note ? `\n\n${p.note}` : ''}\n\nYou can choose another time here:\n${site()}/rent\n\nDrop Studios`,
+        url: '/rent',
+      };
+    case 'rental_confirmed':
+      return {
+        subject: `🎉 Studio booked: ${slot(p.starts_at, p.ends_at)}`,
+        text: `${hi}\n\nYou're booked! Drop Studios, 13 Sackville Place, Dublin 1.\n\n${slot(p.starts_at, p.ends_at)}${Number(p.occurrences) > 1 ? ` + ${Number(p.occurrences) - 1} more date${Number(p.occurrences) > 2 ? 's' : ''}` : ''}\nPaid: ${eur(p.paid_cents)}\n\nGood to know: reception, a bathroom with shower and a kitchen are yours to use. You can reschedule up to 24 hours before, and cancel with a full refund up to 7 days before, in the app:\n${site()}/account#rentals\n\nDrop Studios`,
+        url: '/account#rentals',
+      };
+    case 'rental_booked':
+      return {
+        subject: `🏠 Studio booked & paid: ${p.group_name ?? p.renter}, ${slot(p.starts_at, p.ends_at)}`,
+        text: `${hi}\n\n${p.renter} paid ${eur(p.paid_cents)} for ${slot(p.starts_at, p.ends_at)}${Number(p.occurrences) > 1 ? ` and ${Number(p.occurrences) - 1} more dates` : ''}.${p.purpose ? `\nFor: ${p.purpose}` : ''}\n\n${site()}/admin/rentals\n\nDrop Studios`,
+        url: '/admin/rentals',
+      };
+    case 'rental_reminder':
+      return {
+        subject: `⏰ Tomorrow: your studio booking at Drop`,
+        text: `${hi}\n\nA reminder that you've booked Drop Studios for ${slot(p.starts_at, p.ends_at)}.\n13 Sackville Place, Dublin 1 (near O'Connell Street). Please leave the room as you found it. Enjoy!\n\nDrop Studios`,
+        url: '/account#rentals',
+      };
+    case 'rental_owner_reminder':
+      return {
+        subject: `⏰ Studio rental ${p.when}: ${p.group_name ?? p.renter}, ${slot(p.starts_at, p.ends_at)}`,
+        text: `${hi}\n\nReminder: ${p.group_name ?? p.renter} has the studio ${p.when}, ${slot(p.starts_at, p.ends_at)}.\nContact: ${p.renter}${p.renter_phone ? `, ${p.renter_phone}` : ''}${p.renter_email ? `, ${p.renter_email}` : ''}${p.is_party ? '\nIt’s a party (cleaning fee paid).' : ''}${p.people ? `\nPeople: ${p.people}` : ''}\n\nDrop Studios`,
+        url: '/admin/rentals',
+      };
+    case 'rental_next_month_due':
+      return {
+        subject: `📅 Keep your weekly studio slot: pay for next month`,
+        text: `${hi}\n\nYour ${p.count} studio dates next month (from ${slot(p.first_at, null)}) are kept for you until ${dayTime(p.deadline)}. Pay ${eur(p.total_cents)} before then to keep them; after that they become available to others.\n\n${site()}/account#rentals\n\nDrop Studios`,
+        url: '/account#rentals',
+      };
+    case 'rental_released':
+      return {
+        subject: `Your weekly studio slot was released`,
+        text: `${hi}\n\nNext month's payment for your weekly studio slot wasn't received, so those dates (from ${slot(p.first_at, null)}) are now free for others to book. If you'd still like them, book again here (if they're still free):\n${site()}/rent\n\nDrop Studios`,
+        url: '/rent',
+      };
+    case 'rental_cancelled':
+      return p.owner ? {
+        subject: `Studio rental cancelled: ${p.group_name ?? p.renter}, ${slot(p.starts_at, p.ends_at)}`,
+        text: `${hi}\n\n${p.renter} cancelled their studio booking for ${slot(p.starts_at, p.ends_at)}. ${Number(p.refund_cents) ? `Refund: ${eur(p.refund_cents)}.` : 'No refund (less than 7 days before, or not paid).'} The time is free again.\n\nDrop Studios`,
+        url: '/admin/rentals',
+      } : {
+        subject: `Your studio booking is cancelled`,
+        text: `${hi}\n\nYour studio booking for ${slot(p.starts_at, p.ends_at)} is cancelled. ${Number(p.refund_cents) ? `We're refunding ${eur(p.refund_cents)} to your card; it usually shows within 5–10 days.` : 'As it was less than 7 days before (or not paid), there is no refund.'}\n\nDrop Studios`,
+        url: '/account#rentals',
+      };
+    case 'rental_rescheduled':
+      return {
+        subject: p.owner ? `Studio rental moved: ${p.group_name ?? p.renter}` : `Your studio booking was moved`,
+        text: `${hi}\n\n${p.owner ? `${p.renter} moved their booking` : 'Your studio booking has moved'}: from ${slot(p.starts_at, p.ends_at)} to ${slot(p.new_starts_at, p.new_ends_at)}.\n\nDrop Studios`,
+        url: p.owner ? '/admin/rentals' : '/account#rentals',
+      };
+    case 'rental_problem':
+      return {
+        subject: `⚠️ Studio rental payment needs a look`,
+        text: `${hi}\n\n${p.renter} paid for ${p.lost} studio date(s) after their hold ran out, and someone else had already booked that time. Please check and refund or move them:\n${site()}/admin/rentals\n\nDrop Studios`,
+        url: '/admin/rentals',
+      };
+    case 'rental_report': {
+      const label = p.kind === 'daily' ? 'Daily' : p.kind === 'weekly' ? 'Weekly' : 'Monthly';
+      const span = p.kind === 'daily' ? 'Tomorrow' : p.kind === 'weekly' ? 'This week' : 'This month';
+      const past = p.kind === 'daily' ? 'Today' : p.kind === 'weekly' ? 'Last week' : 'Last month';
+      const up = (Array.isArray(p.upcoming) ? p.upcoming : []) as { starts_at: string; ends_at: string; who: string; party: boolean; status: string }[];
+      return {
+        subject: `🏠 ${label} studio rental report: ${up.filter((u) => u.status === 'confirmed').length} booked ${span.toLowerCase()}`,
+        text: `${hi}\n\nThamires' ${label.toLowerCase()} studio rental report.\n\n${past}: ${Number(p.past_hours).toFixed(1)} hours rented, ${eur(p.past_revenue_cents)} received, ${p.new_requests} new booking${Number(p.new_requests) === 1 ? '' : 's'}.\n\n${span}: ${up.length ? up.map((u) => `• ${slot(u.starts_at, u.ends_at)}: ${u.who}${u.party ? ' (party)' : ''}${u.status !== 'confirmed' ? ` [${u.status.replace('_', ' ')}]` : ''}`).join('\n') : 'no bookings yet.'}\n${Number(p.pending_approval) ? `\n⏳ ${p.pending_approval} request${Number(p.pending_approval) === 1 ? '' : 's'} waiting for your approval.` : ''}${Number(p.unpaid_next_month) ? `\n📅 ${p.unpaid_next_month} weekly renter${Number(p.unpaid_next_month) === 1 ? ' hasn’t' : 's haven’t'} paid next month yet.` : ''}\n\n${site()}/admin/rentals\n\nDrop Studios`,
+        url: '/admin/rentals',
+      };
+    }
     case 'membership_cancelled': {
       const n = Number(p.bookings_cancelled) || 0;
       return {

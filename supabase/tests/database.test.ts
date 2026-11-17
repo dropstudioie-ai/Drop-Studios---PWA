@@ -1995,4 +1995,130 @@ run('database: plans, booking, allowances, pauses, security', () => {
       await expectError(as(db, user(admin), `select assistant_set_story_photo($1, 'https://evil.example/x.jpg', 0)`, [st.id]), 'invalid_photo');
     });
   });
+  describe('studio rental', () => {
+    // A Dublin date/time `weeks` weeks ahead on a given ISO weekday (1 = Monday).
+    const at = async (weeks: number, isoDay: number, time: string) =>
+      (await db.query(`select ((date_trunc('week', current_date + $1::int * 7)::date + $2::int - 1) + $3::time) at time zone 'Europe/Dublin' t`, [weeks, isoDay, time])).rows[0].t as Date;
+    const plus = (d: Date, minutes: number) => new Date(d.getTime() + minutes * 60e3);
+    let renters = 0;
+    const confirmedRenter = async (name: string) => {
+      const u = await createUser(db, name);
+      const s = await at(30 + renters++, 2, '09:00');   // a confirmed booking far away (a different week each), so they count as a returning renter
+      await db.query(`insert into rental_bookings (user_id, starts_at, ends_at, status, rent_cents, total_cents) values ($1, $2, $3, 'confirmed', 2500, 2500)`, [u, s, plus(s, 60)]);
+      return u;
+    };
+
+    it('prices half hour by half hour at each slot’s rate, parties at €45 + €30 cleaning', async () => {
+      const price = async (start: Date, mins: number, party = false) => (await db.query(`select rental_price($1, $2, $3) p`, [start, plus(start, mins), party])).rows[0].p;
+      expect((await price(await at(3, 1, '10:00'), 120)).total_cents).toBe(5000);           // weekday daytime €25/h
+      expect((await price(await at(3, 1, '18:00'), 120)).total_cents).toBe(9000);           // weekday 18–22 €45/h
+      expect((await price(await at(3, 1, '17:00'), 120)).total_cents).toBe(7000);           // 17–18 €25 + 18–19 €45 (split)
+      expect((await price(await at(3, 1, '21:30'), 60)).total_cents).toBe(3500);            // 21:30–22 €45/2 + 22–22:30 €25/2
+      expect((await price(await at(3, 6, '16:00'), 240)).total_cents).toBe(12000);          // Sat 16–17 €45, 17–20 €25 x3
+      expect((await price(await at(3, 7, '14:00'), 120)).total_cents).toBe(9000);           // Sunday €45/h
+      const party = await price(await at(3, 1, '10:00'), 180, true);
+      expect(party).toMatchObject({ rent_cents: 13500, cleaning_cents: 3000, total_cents: 16500 });
+    });
+
+    it('never during a Drop class, never double-booked, 30-minute steps, minimum 1 hour', async () => {
+      const a = await confirmedRenter('RentA'), b = await confirmedRenter('RentB');
+      const s = await at(3, 3, '09:00');
+      await expectError(as(db, user(a), `select request_rental($1, $2, false, 'x', null, 5, false)`, [s, plus(s, 30)]), 'rental_min_hour');
+      await expectError(as(db, user(a), `select request_rental($1, $2, false, 'x', null, 5, false)`, [plus(s, 15), plus(s, 90)]), 'rental_half_hours');
+      const [{ r }] = await as<{ r: { needs_approval: boolean; booking_ids: string[] } }>(db, user(a), `select request_rental($1, $2, false, 'Rehearsal', 'Zouk team', 10, false) r`, [s, plus(s, 120)]);
+      expect(r.needs_approval).toBe(false);   // returning renter, regular hours, within 12 weeks
+      await expectError(as(db, user(b), `select request_rental($1, $2, false, 'x', null, 5, false)`, [plus(s, 60), plus(s, 180)]), 'rental_unavailable');
+      await expect(db.query(`insert into rental_bookings (user_id, starts_at, ends_at, status, rent_cents, total_cents) values ($1, $2, $3, 'confirmed', 1, 1)`, [b, plus(s, 30), plus(s, 90)])).rejects.toThrow(/rental_no_double_booking/);
+      const style = (await db.query(`select id from dance_styles limit 1`)).rows[0].id;
+      const c = await at(3, 3, '13:00');
+      await db.query(`insert into class_sessions (title, style_id, starts_at, ends_at, capacity) values ('Test class', $1, $2, $3, 10)`, [style, c, plus(c, 60)]);
+      await expectError(as(db, user(b), `select request_rental($1, $2, false, 'x', null, 5, false)`, [plus(c, -30), plus(c, 60)]), 'rental_class_clash');
+      const busy = (await as<{ b: { what: string }[] }>(db, anon, `select rental_busy($1, $2) b`, [s, plus(s, 600)]))[0].b;
+      expect(new Set(busy.map((x) => x.what))).toEqual(new Set(['Booked', 'Drop class']));
+    });
+
+    it('first-time renters, late nights and bookings over 12 weeks ahead wait for the owner before paying', async () => {
+      const fresh = await createUser(db, 'RentNew');
+      const s = await at(4, 2, '10:00');
+      const [{ r }] = await as<{ r: { needs_approval: boolean; reasons: string[]; booking_ids: string[] } }>(db, user(fresh), `select request_rental($1, $2, false, 'Photo shoot', null, 3, false) r`, [s, plus(s, 60)]);
+      expect(r).toMatchObject({ needs_approval: true, reasons: ['first_time'] });
+      await expectError(as(db, user(fresh), `select create_rental_checkout($1, $2, 'square')`, [r.booking_ids, randomUUID()]), 'rental_not_payable');
+      expect((await db.query(`select count(*)::int n from notification_outbox where kind = 'rental_requested'`)).rows[0].n).toBeGreaterThan(0);
+      await expectError(as(db, user(fresh), `select admin_decide_rental($1, true, null)`, [r.booking_ids[0]]), 'forbidden');
+      await as(db, user(admin), `select admin_decide_rental($1, true, 'Welcome!')`, [r.booking_ids[0]]);
+      const [{ c }] = await as<{ c: { payment_id: string; amount_cents: number } }>(db, user(fresh), `select create_rental_checkout($1, $2, 'square') c`, [r.booking_ids, randomUUID()]);
+      expect(c.amount_cents).toBe(2500);
+      await as(db, service, `select fulfill_payment($1, 'square', 'pi_rent', $2, 2500, 'eur')`, [c.payment_id, `evt_${randomUUID()}`]);
+      expect((await db.query(`select status from rental_bookings where id = $1`, [r.booking_ids[0]])).rows[0].status).toBe('confirmed');
+
+      const returning = await confirmedRenter('RentLate');
+      const late = await at(4, 4, '23:00');
+      const [{ r: lr }] = await as<{ r: { reasons: string[] } }>(db, user(returning), `select request_rental($1, $2, false, 'x', null, 3, false) r`, [late, plus(late, 120)]);
+      expect(lr.reasons).toEqual(['outside_hours']);
+      const far = await at(14, 2, '10:00');
+      const [{ r: fr }] = await as<{ r: { reasons: string[] } }>(db, user(returning), `select request_rental($1, $2, false, 'x', null, 3, false) r`, [far, plus(far, 60)]);
+      expect(fr.reasons).toEqual(['beyond_12_weeks']);
+    });
+
+    it('monthly bookings keep next month’s slots until the end of the month; unpaid, they are released', async () => {
+      const zouk = await confirmedRenter('RentZouk');
+      // The first Sunday of next month, 16:00–20:00, every week of that month.
+      const first = (await db.query(`select ((d + ((7 - extract(isodow from d)::int) % 7)) + time '16:00') at time zone 'Europe/Dublin' t
+        from (select (date_trunc('month', current_date) + interval '1 month')::date d) x`)).rows[0].t as Date;
+      const [{ r }] = await as<{ r: { booking_ids: string[]; series_id: string; total_cents: number } }>(db, user(zouk), `select request_rental($1, $2, false, 'Zouk practice', 'Zouk team', 20, true) r`, [first, plus(first, 240)]);
+      expect(r.booking_ids.length).toBeGreaterThanOrEqual(4);
+      expect(r.total_cents).toBe(r.booking_ids.length * 18000);
+      const held = (await db.query(`select count(*)::int n, min(hold_expires_at) h from rental_bookings where series_id = $1 and status = 'held'`, [r.series_id])).rows[0];
+      expect(held.n).toBeGreaterThanOrEqual(4);   // the month after is kept for them
+      // Someone else can't take a held slot.
+      const other = await confirmedRenter('RentOther');
+      const heldSlot = (await db.query(`select starts_at, ends_at from rental_bookings where series_id = $1 and status = 'held' order by starts_at limit 1`, [r.series_id])).rows[0];
+      await expectError(as(db, user(other), `select request_rental($1, $2, false, 'x', null, 3, false)`, [heldSlot.starts_at, heldSlot.ends_at]), 'rental_unavailable');
+      // Pay this month: confirmed.
+      const [{ c }] = await as<{ c: { payment_id: string; amount_cents: number } }>(db, user(zouk), `select create_rental_checkout($1, $2, 'square') c`, [r.booking_ids, randomUUID()]);
+      await as(db, service, `select fulfill_payment($1, 'square', 'pi_zouk', $2, $3, 'eur')`, [c.payment_id, `evt_${randomUUID()}`, c.amount_cents]);
+      expect((await db.query(`select count(*)::int n from rental_bookings where series_id = $1 and status = 'confirmed'`, [r.series_id])).rows[0].n).toBe(r.booking_ids.length);
+      // Not paid by the end of the month: the held slots are released and the renter is told.
+      await db.query(`update rental_bookings set hold_expires_at = now() - interval '1 minute' where series_id = $1 and status = 'held'`, [r.series_id]);
+      await db.query(`select rental_jobs()`);
+      expect((await db.query(`select count(*)::int n from rental_bookings where series_id = $1 and status = 'held'`, [r.series_id])).rows[0].n).toBe(0);
+      expect((await db.query(`select count(*)::int n from notification_outbox where kind = 'rental_released' and user_id = $1`, [zouk])).rows[0].n).toBe(1);
+      await as(db, user(other), `select request_rental($1, $2, false, 'x', null, 3, false)`, [heldSlot.starts_at, heldSlot.ends_at]); // now free
+    });
+
+    it('reschedule up to 24h before (no dearer, no approval needed); refund only 7+ days before', async () => {
+      const u = await confirmedRenter('RentMove');
+      const s = await at(5, 2, '10:00');
+      const [{ r }] = await as<{ r: { booking_ids: string[] } }>(db, user(u), `select request_rental($1, $2, false, 'x', null, 3, false) r`, [s, plus(s, 120)]);
+      const id = r.booking_ids[0];
+      const [{ c }] = await as<{ c: { payment_id: string } }>(db, user(u), `select create_rental_checkout($1, $2, 'square') c`, [r.booking_ids, randomUUID()]);
+      await as(db, service, `select fulfill_payment($1, 'square', 'pi_mv', $2, 5000, 'eur')`, [c.payment_id, `evt_${randomUUID()}`]);
+      await expectError(as(db, user(u), `select reschedule_rental($1, $2)`, [id, await at(5, 7, '08:00')]), 'rental_reschedule_price_higher'); // Sunday costs more
+      await as(db, user(u), `select reschedule_rental($1, $2)`, [id, await at(5, 3, '10:00')]);
+      await db.query(`update rental_bookings set starts_at = now() + interval '20 hours', ends_at = now() + interval '22 hours' where id = $1`, [id]);
+      await expectError(as(db, user(u), `select reschedule_rental($1, $2)`, [id, await at(5, 4, '10:00')]), 'rental_reschedule_too_late');
+      const [{ x }] = await as<{ x: { refund_cents: number } }>(db, user(u), `select cancel_rental($1) x`, [id]);
+      expect(x.refund_cents).toBe(0);   // less than 7 days before: no refund
+      const s2 = await at(6, 2, '10:00');
+      const [{ r: r2 }] = await as<{ r: { booking_ids: string[] } }>(db, user(u), `select request_rental($1, $2, false, 'x', null, 3, false) r`, [s2, plus(s2, 60)]);
+      const [{ c: c2 }] = await as<{ c: { payment_id: string } }>(db, user(u), `select create_rental_checkout($1, $2, 'square') c`, [r2.booking_ids, randomUUID()]);
+      await as(db, service, `select fulfill_payment($1, 'square', 'pi_mv2', $2, 2500, 'eur')`, [c2.payment_id, `evt_${randomUUID()}`]);
+      const [{ x: x2 }] = await as<{ x: { refund_cents: number } }>(db, user(u), `select cancel_rental($1) x`, [r2.booking_ids[0]]);
+      expect(x2.refund_cents).toBe(2500);   // 7+ days before: full refund
+      const other = await createUser(db, 'RentNosy');
+      await expectError(as(db, user(other), `select cancel_rental($1)`, [r2.booking_ids[0]]), 'not_found');
+      expect(await as(db, user(other), `select id from rental_bookings`)).toHaveLength(0);
+    });
+
+    it('reminders a day and 2 hours before, and the owner’s daily report', async () => {
+      const u = await confirmedRenter('RentSoon');
+      const { rows: [b] } = await db.query(`insert into rental_bookings (user_id, starts_at, ends_at, status, rent_cents, total_cents) values ($1, now() + interval '90 minutes', now() + interval '150 minutes', 'confirmed', 2500, 2500) returning id`, [u]);
+      await db.query(`select rental_jobs()`);
+      const kinds = (await db.query(`select kind, payload ->> 'when' w from notification_outbox where payload ->> 'booking_id' = $1`, [b.id])).rows;
+      expect(kinds.filter((k) => k.kind === 'rental_reminder')).toHaveLength(1);
+      expect(kinds.filter((k) => k.kind === 'rental_owner_reminder').map((k) => k.w).sort()).toEqual(['in 2 hours', 'tomorrow']);
+      const rep = (await db.query(`select rental_report_payload('weekly') p`)).rows[0].p;
+      expect(rep).toHaveProperty('upcoming');
+    });
+  });
 });

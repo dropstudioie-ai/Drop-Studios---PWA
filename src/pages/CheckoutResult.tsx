@@ -21,6 +21,7 @@ export function CheckoutSuccess() {
   const [isDropIn, setIsDropIn] = useState(false);
   const [reward, setReward] = useState(false);
   const [giftId, setGiftId] = useState<string | null>(null);
+  const [rental, setRental] = useState(false);
   const { session, profile } = useAuth();
   const uid = session?.user.id;
 
@@ -37,6 +38,7 @@ export function CheckoutSuccess() {
           setIsTest(p.is_test);
           setIsTicket(p.kind === 'ticket' || p.kind === 'drop_in');
           setIsDropIn(p.kind === 'drop_in');
+          if (p.kind === 'rental') setRental(true);
           if (p.kind === 'gift') setGiftId((await gifts.byPayment(p.id).catch(() => null))?.id ?? 'unknown');
           setView('succeeded');
           // Back after completing 3 months? The loyalty reward is added with this payment.
@@ -76,7 +78,16 @@ export function CheckoutSuccess() {
           </div>
         </>
       )}
-      {view === 'succeeded' && !giftId && (
+      {view === 'succeeded' && rental && (
+        <>
+          <p className="text-5xl" aria-hidden="true">🏠</p>
+          <h1 className="mt-4 text-3xl font-black">The studio is yours!</h1>
+          <p className="mt-2 text-ink-soft">Your booking is confirmed and we’ve emailed you the details. You can move it up to 24 hours before, or cancel with a full refund up to 7 days before.</p>
+          {isTest && <div className="mt-4 text-left"><Notice tone="test"><strong>TEST purchase.</strong> No real payment was taken.</Notice></div>}
+          <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center"><Link to="/account#rentals" className="btn-primary">My bookings</Link></div>
+        </>
+      )}
+      {view === 'succeeded' && !giftId && !rental && (
         <>
           <p className="text-5xl" aria-hidden="true">🎉</p>
           <h1 className="mt-4 text-3xl font-black">You’re in!</h1>

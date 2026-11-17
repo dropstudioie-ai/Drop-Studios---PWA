@@ -106,6 +106,18 @@ function MemberHome() {
         </section>
       )}
 
+      <section className="container-page py-12" aria-labelledby="rent-h">
+        <div className="card grid items-center gap-6 overflow-hidden p-0 md:grid-cols-2">
+          <img src="/studio/photo-6.webp" alt="The Drop studio" className="h-64 w-full object-cover md:h-full" loading="lazy" />
+          <div className="p-6">
+            <p className="text-xs font-bold uppercase tracking-wider text-accent-600">Studio rental</p>
+            <h2 id="rent-h" className="mt-1 text-2xl font-black sm:text-3xl">Rent the Drop studio</h2>
+            <p className="mt-2 text-ink-soft">100 m² with mirrors, wooden floor, RGB lights, shower, kitchen and reception. For rehearsals, classes, shoots and parties, from €25/hour.</p>
+            <Link to="/rent" className="btn-primary mt-4">See prices &amp; book</Link>
+          </div>
+        </div>
+      </section>
+
       <section className="bg-[#070605] py-12 text-[#f3e7c6]" aria-labelledby="gift-h">
         <div className="container-page grid items-center gap-8 md:grid-cols-2">
           <div>

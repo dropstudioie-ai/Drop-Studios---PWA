@@ -85,7 +85,7 @@ Deno.serve(async (req) => {
       locationId,
       siteUrl,
       buyerEmail: auth.user.email,
-      kind: body.kind === 'ticket' ? (payment.kind === 'drop_in' ? 'drop_in' : 'ticket') : body.kind === 'gift' ? 'gift' : 'membership',
+      kind: body.kind === 'ticket' ? (payment.kind === 'drop_in' ? 'drop_in' : 'ticket') : body.kind === 'gift' || body.kind === 'rental' ? body.kind : 'membership',
       supportEmail: Deno.env.get('SUPPORT_EMAIL'),
     });
   }

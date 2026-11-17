@@ -1,8 +1,11 @@
+import { HALF_HOURS, rentals, STATUS_LABEL, toMinutes, type RentalBooking } from '../lib/rentals';
+import { cancelRental, checkout } from '../lib/payments';
+import { messageFor } from '../domain/messages';
 import { downloadReceipt, myReceipts } from '../lib/receipts';
 import { gifts } from '../lib/gifts';
 import { UNLIMITED_CLASSES } from '../domain/plans';
 import { useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import type { Booking, Membership } from '../api/types';
 import { useAsync } from '../lib/useAsync';
@@ -10,7 +13,7 @@ import { AppError } from '../lib/supabase';
 import { NotificationSettings } from '../components/NotificationSettings';
 import { useAuth } from '../auth/AuthProvider';
 import { cancellationOutcome, cutoffLabel, DEFAULT_POLICY } from '../domain/booking';
-import { fmt, localDateKey } from '../domain/time';
+import { fmt, localDateKey, zonedTime } from '../domain/time';
 import { validDob } from '../domain/profile';
 import { MembershipCard } from '../components/MembershipCard';
 import { manageSubscription } from '../lib/payments';
@@ -171,6 +174,7 @@ export default function Account() {
         </section>
       )}
 
+      <StudioBookings uid={uid} />
       <Receipts />
       <GiftsBought uid={uid} />
       <NotificationSettings />
@@ -189,6 +193,81 @@ export default function Account() {
         }} />
       )}
     </div>
+  );
+}
+
+/** The member's studio rentals: pay, reschedule (24h+ before) or cancel (refund 7+ days before). */
+function StudioBookings({ uid }: { uid: string }) {
+  const toast = useToast();
+  const navigate = useNavigate();
+  const list = useAsync(() => rentals.mine(uid), [uid]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [moving, setMoving] = useState<RentalBooking | null>(null);
+  const [day, setDay] = useState(''); const [time, setTime] = useState('10:00');
+  const now = Date.now();
+  const rows = (list.data ?? []).filter((b) => new Date(b.ends_at).getTime() > now - 864e5 && !['declined', 'expired', 'released', 'cancelled'].includes(b.status) || (b.status === 'cancelled' && new Date(b.starts_at).getTime() > now));
+  if (!list.data?.length) return null;
+  const hm = (iso: string) => new Intl.DateTimeFormat('en-IE', { timeZone: 'Europe/Dublin', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(iso));
+  const dayLabel = (iso: string) => new Intl.DateTimeFormat('en-IE', { timeZone: 'Europe/Dublin', weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(iso));
+  // Unpaid bookings are paid together: a weekly series month by month, others one by one.
+  const groups = new Map<string, RentalBooking[]>();
+  for (const b of rows.filter((x) => (x.status === 'awaiting_payment' || x.status === 'held') && (!x.hold_expires_at || new Date(x.hold_expires_at).getTime() > now))) {
+    const k = b.series_id ? `${b.series_id}:${b.month_key}` : b.id;
+    groups.set(k, [...(groups.get(k) ?? []), b]);
+  }
+  const pay = async (ids: string[]) => {
+    setBusy(ids[0]);
+    try { const next = await checkout({ rental_booking_ids: ids, idempotency_key: crypto.randomUUID() }); if ('redirect' in next) window.location.href = next.redirect; else navigate(next.navigate); }
+    catch (e) { toast(messageFor((e as { code?: string }).code ?? (e as Error).message), 'error'); setBusy(null); }
+  };
+  return (
+    <section id="rentals" className="mt-10" aria-labelledby="rentals-h">
+      <div className="flex items-center justify-between gap-2"><h2 id="rentals-h" className="text-xl font-black">Studio bookings</h2><Link to="/rent" className="btn-outline btn-sm">Book the studio</Link></div>
+      {[...groups.values()].map((g) => (
+        <div key={g[0].id} className="mt-3"><Notice tone="warn">
+          <strong>{g[0].status === 'held' ? `Keep your weekly slot: ${g.length} date${g.length === 1 ? '' : 's'} next month` : `${g.length > 1 ? `${g.length} dates` : dayLabel(g[0].starts_at)} waiting for payment`}</strong>
+          {g[0].hold_expires_at && <> · pay by {fmt.dateTime(g[0].hold_expires_at)}</>}
+          <button className="btn-primary btn-sm ml-2" disabled={busy === g[0].id} onClick={() => void pay(g.map((x) => x.id))}>{busy === g[0].id ? <Spinner className="h-4 w-4" /> : `Pay ${formatPrice(g.reduce((n, x) => n + x.total_cents, 0), 'EUR')}`}</button>
+        </Notice></div>
+      ))}
+      <ul className="mt-3 divide-y divide-line rounded-2xl border border-line">
+        {rows.map((b) => {
+          const hoursLeft = (new Date(b.starts_at).getTime() - now) / 3600e3;
+          return (
+            <li key={b.id} className="p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span><span className="font-semibold">{dayLabel(b.starts_at)}, {hm(b.starts_at)}–{hm(b.ends_at)}</span>{b.is_party && ' 🎉'}{b.group_name && <span className="text-muted"> · {b.group_name}</span>}
+                  <span className={`block text-xs ${b.status === 'confirmed' ? 'text-success' : 'text-muted'}`}>{STATUS_LABEL[b.status]}{b.refund_cents ? ` · refund ${formatPrice(b.refund_cents, 'EUR')} ${b.refund_status === 'refunded' ? 'sent' : b.refund_status === 'failed' ? 'failed (we’ll sort it)' : 'on its way'}` : ''}</span></span>
+                {b.status !== 'cancelled' && hoursLeft > 0 && (
+                  <span className="flex gap-2">
+                    {hoursLeft >= 24 && b.status !== 'pending_approval' && <button className="btn-ghost btn-sm" onClick={() => { setMoving(b); setDay(localDateKey(new Date(b.starts_at))); setTime(hm(b.starts_at)); }}>Move</button>}
+                    <button className="btn-ghost btn-sm text-danger" disabled={busy === b.id} onClick={async () => {
+                      const refund = b.status === 'confirmed' && hoursLeft >= 24 * 7;
+                      if (!confirm(b.status !== 'confirmed' ? 'Cancel this booking?' : refund ? `Cancel and get a full refund of ${formatPrice(b.total_cents, 'EUR')}?` : 'Cancel this booking? It’s less than 7 days away, so it can’t be refunded.')) return;
+                      setBusy(b.id);
+                      try { const r = await cancelRental(b.id); toast(r.refund_cents ? `Cancelled. ${formatPrice(r.refund_cents, 'EUR')} is being refunded to your card.` : 'Booking cancelled.'); list.reload(); }
+                      catch (e) { toast(messageFor((e as { code?: string }).code ?? (e as Error).message), 'error'); } finally { setBusy(null); }
+                    }}>Cancel</button>
+                  </span>
+                )}
+              </div>
+              {moving?.id === b.id && (
+                <div className="mt-2 flex flex-wrap items-end gap-2 rounded-xl bg-canvas p-2">
+                  <Field label="New day"><input className="input" type="date" min={localDateKey(new Date())} value={day} onChange={(e) => setDay(e.target.value)} /></Field>
+                  <Field label="From"><select className="input" value={time} onChange={(e) => setTime(e.target.value)}>{HALF_HOURS.map((h) => <option key={h}>{h}</option>)}</select></Field>
+                  <button className="btn-primary btn-sm" disabled={busy === b.id} onClick={async () => {
+                    setBusy(b.id);
+                    try { await rentals.reschedule(b.id, zonedTime(day, toMinutes(time))); toast('Booking moved'); setMoving(null); list.reload(); }
+                    catch (e) { toast(messageFor((e as Error).message), 'error'); } finally { setBusy(null); }
+                  }}>Move it</button>
+                  <button className="btn-ghost btn-sm" onClick={() => setMoving(null)}>Close</button>
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 

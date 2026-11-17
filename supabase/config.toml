@@ -33,3 +33,6 @@ verify_jwt = false
 
 [functions.thamires]
 verify_jwt = false
+
+[functions.rental-cancel]
+verify_jwt = true

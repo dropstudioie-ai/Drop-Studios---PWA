@@ -19,6 +19,8 @@ const GiftShop = lazy(() => import('./pages/Gift'));
 const GiftRedeem = lazy(() => import('./pages/Gift').then((m) => ({ default: m.GiftRedeem })));
 const GiftCardPrint = lazy(() => import('./pages/Gift').then((m) => ({ default: m.GiftCardPrint })));
 const AdminGifts = lazy(() => import('./pages/admin/Gifts'));
+const Rent = lazy(() => import('./pages/Rent'));
+const AdminRentals = lazy(() => import('./pages/admin/Rentals'));
 const GetApp = lazy(() => import('./pages/GetApp'));
 const Teach = lazy(() => import('./pages/Teach'));
 const TeachProfile = lazy(() => import('./pages/TeachProfile'));
@@ -81,6 +83,7 @@ export default function App() {
                 <Route path="privacy" element={<Privacy />} />
                 <Route path="app" element={<GetApp />} />
                 <Route path="gift" element={<GiftShop />} />
+                <Route path="rent" element={<Rent />} />
                 <Route path="gift/redeem" element={<RequireAuth><GiftRedeem /></RequireAuth>} />
                 <Route path="gift/card/:id" element={<RequireAuth><GiftCardPrint /></RequireAuth>} />
                 <Route path="checkout/success" element={<RequireAuth><CheckoutSuccess /></RequireAuth>} />
@@ -100,6 +103,7 @@ export default function App() {
                   <Route path="feedback" element={<AdminFeedback />} />
                   <Route path="thamires" element={<AdminThamires />} />
                   <Route path="gifts" element={<AdminGifts />} />
+                  <Route path="rentals" element={<AdminRentals />} />
                   <Route path="customers" element={<AdminCustomers />} />
                   <Route path="plans" element={<AdminPlans />} />
                   <Route path="styles" element={<AdminStyles />} />

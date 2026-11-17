@@ -103,6 +103,19 @@ const MESSAGES: Record<string, string> = {
   send_date_required: 'Please choose the day the gift card email should arrive.',
   invalid_send_date: 'Please choose a day from today up to a year ahead.',
   too_long: 'That message is a bit too long.',
+  rental_invalid_time: 'Please choose a valid start and end time.',
+  rental_in_past: 'That time has already passed.',
+  rental_half_hours: 'Bookings start on the hour or half hour, in 30-minute steps.',
+  rental_min_hour: 'The minimum booking is 1 hour.',
+  rental_too_long: 'For bookings longer than 16 hours, please contact the studio.',
+  rental_class_clash: 'There’s a Drop class at that time. Please choose another time.',
+  rental_unavailable: 'Sorry, the studio is already booked at that time.',
+  rental_not_pending: 'This request has already been decided.',
+  rental_not_payable: 'This booking can’t be paid any more (it may have expired). Please book again.',
+  rental_not_active: 'This booking is no longer active.',
+  rental_reschedule_too_late: 'Bookings can be moved up to 24 hours before they start. Please contact the studio.',
+  rental_needs_approval: 'That new time needs the studio’s approval. Please contact us to move it.',
+  rental_reschedule_price_higher: 'That time costs more than your booking. Please cancel and book the new time, or contact the studio.',
 };
 
 export function messageFor(code: string | null | undefined, fallback = 'Something went wrong. Please try again.'): string {

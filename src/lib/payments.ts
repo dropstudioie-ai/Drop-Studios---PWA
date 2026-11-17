@@ -8,6 +8,7 @@ export const paymentsMode: PaymentsMode = import.meta.env.VITE_PAYMENTS_MODE ===
 export type CheckoutRequest =
   | { plan_id: string; selected_style_id: string | null; idempotency_key: string }
   | { session_id: string; idempotency_key: string; guest_name?: string }
+  | { rental_booking_ids: string[]; idempotency_key: string }
   | { plan_id: string; gift: true; idempotency_key: string; recipient_name: string | null; recipient_email: string | null; message: string | null; send_on: string | null };
 
 async function invoke<T>(fn: string, body: Record<string, unknown>): Promise<T> {
@@ -56,3 +57,7 @@ export const adminRefund = (paymentId: string, amountCents: number, reason: stri
 /** Admin: change a member's sign-in email (auth account and profile). */
 export const adminMemberEmail = (userId: string, email: string) =>
   invoke<{ ok: boolean; email: string }>('admin-member-email', { user_id: userId, email });
+
+/** A renter (or admin) cancels a studio booking; refunded to the card when it's 7+ days before (or the admin chooses). */
+export const cancelRental = (bookingId: string, refund?: boolean) =>
+  invoke<{ ok: boolean; refund_cents: number; refunded?: boolean }>('rental-cancel', { booking_id: bookingId, ...(typeof refund === 'boolean' ? { refund } : {}) });

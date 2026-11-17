@@ -223,3 +223,16 @@ Deno.test('auto-posted Stories and weekly timetable emails', () => {
   const w = render({ kind: 'assistant_week', full_name: null, payload: { week_start: '2026-11-23', classes: 11, specials: 1 } })!;
   assertStringIncludes(w.text, '11 classes, including 1 special event');
 });
+
+Deno.test('studio rental emails', () => {
+  const base = { starts_at: '2026-12-06T16:00:00Z', ends_at: '2026-12-06T20:00:00Z', renter: 'Ana Silva', renter_email: 'ana@example.com', renter_phone: '0871234567', group_name: 'Zouk team', total_cents: 18000 };
+  const req = render({ kind: 'rental_requested', full_name: 'Jorge', payload: { ...base, series: true, occurrences: 4, month_total_cents: 72000, reasons: ['first_time'] } })!;
+  assertStringIncludes(req.subject, 'Zouk team, Sun, 6 Dec, 16:00–20:00');
+  assertStringIncludes(req.text, 'first-time renter');
+  assertStringIncludes(req.text, '€720.00');
+  assertStringIncludes(render({ kind: 'rental_owner_reminder', full_name: null, payload: { ...base, when: 'in 2 hours' } })!.subject, 'in 2 hours');
+  assertStringIncludes(render({ kind: 'rental_cancelled', full_name: null, payload: { ...base, refund_cents: 18000 } })!.text, 'refunding €180.00');
+  const rep = render({ kind: 'rental_report', full_name: null, payload: { kind: 'weekly', upcoming: [{ ...base, who: 'Zouk team', party: false, status: 'confirmed' }], past_hours: 6, past_revenue_cents: 27000, new_requests: 2, pending_approval: 1, unpaid_next_month: 0 } })!;
+  assertStringIncludes(rep.subject, 'Weekly studio rental report: 1 booked');
+  assertStringIncludes(rep.text, '6.0 hours rented, €270.00 received');
+});
