@@ -11,6 +11,7 @@ const HIP_HOP: Palette = ['#C77A00', '#F5B400', '#FFE45C'];
 const HEELS: Palette = ['#8E0B1F', '#E5243B', '#FF7A7A'];
 const JAZZ_FUNK: Palette = ['#4A1FB8', '#8B5CF6', '#C9A8FF'];
 const COMMERCIAL: Palette = ['#0F24A8', '#2F5BFF', '#6FA0FF'];
+const REGGAETON: Palette = ['#A3124F', '#E8287A', '#FF7DB5'];
 const CHOREOGRAPHY: Palette = ['#06695F', '#12B5A2', '#5FE6D2'];
 
 const GROUPS: { photos: number[]; palettes: Palette[]; wide?: boolean }[] = [
@@ -19,6 +20,7 @@ const GROUPS: { photos: number[]; palettes: Palette[]; wide?: boolean }[] = [
   { photos: [9, 10, 11], palettes: [COMMERCIAL, CHOREOGRAPHY] },            // cool blue / grey rooms
   { photos: [50, 14, 15, 13, 16, 25], palettes: [COMMERCIAL, CHOREOGRAPHY], wide: true }, // blue-wall studio (pro photos)
   { photos: [26, 47, 39, 36, 28, 40, 27, 30, 45], palettes: [FITDANCE, HIP_HOP] },               // real FitDance classes
+  { photos: [53, 55, 51], palettes: [REGGAETON] },                                   // Humberto's Reggaeton class
   { photos: [24], palettes: [FITDANCE, HEELS, JAZZ_FUNK], wide: true },              // Drop at Dublin Pride (21 and 22 are for Instagram only)
 ];
 export const STUDIO_PHOTOS = GROUPS.flatMap((g) => g.photos).map(photo);

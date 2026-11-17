@@ -80,7 +80,7 @@ export const thamires = {
 // ---------- Daily Story image ----------
 
 /** The studio photos approved for the site (public/studio/photo-N.webp). */
-const STUDIO_PHOTO_NUMBERS = [50, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 25, 13, 14, 15, 16, 21, 22, 23, 24, 19, 18, 17, 20, 1, 9, 10, 11, 12];
+const STUDIO_PHOTO_NUMBERS = [53, 55, 51, 52, 54, 50, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 25, 13, 14, 15, 16, 21, 22, 23, 24, 19, 18, 17, 20, 1, 9, 10, 11, 12];
 
 /** Photos to choose from for the Story: Drop's class artwork, then studio photos. */
 export const STORY_PHOTOS: { url: string; label: string }[] = [
@@ -92,9 +92,9 @@ export const STORY_PHOTOS: { url: string; label: string }[] = [
   { url: '/classes/commercial.webp', label: 'Commercial' },
   { url: '/classes/hip-hop.webp', label: 'Hip Hop' },
   { url: '/classes/jazz-funk.webp', label: 'Jazz Funk' },
-  { url: '/classes/reggaeton.webp', label: 'Reggaeton' },
+  { url: '/classes/reggaeton.webp', label: 'Reggaeton (Humberto)' },
   { url: '/classes/choreography.webp', label: 'Choreography' },
-  ...STUDIO_PHOTO_NUMBERS.map((n) => ({ url: `/studio/photo-${n}.webp`, label: n === 50 ? 'FitDance class (group)' : n >= 26 && n <= 49 ? `FitDance class ${n - 25}` : `Studio photo ${n}` })),
+  ...STUDIO_PHOTO_NUMBERS.map((n) => ({ url: `/studio/photo-${n}.webp`, label: n >= 51 && n <= 55 ? `Reggaeton class ${n - 50}` : n === 50 ? 'FitDance class (group)' : n >= 26 && n <= 49 ? `FitDance class ${n - 25}` : `Studio photo ${n}` })),
 ];
 
 /** The photo for one class's Story: the one chosen by an admin, else that instructor's or style's artwork, else a studio photo. */

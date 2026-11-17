@@ -34,6 +34,7 @@ export function sessionImage(slug: string | null | undefined, instructorId: stri
 // Real photos from each style's classes (public/studio/photo-N.webp), shown on the class page.
 const CLASS_PHOTOS: Record<string, number[]> = {
   fitdance: [26, 47, 39, 36, 28, 40, 27, 30, 45],
+  reggaeton: [53, 55, 51],   // Humberto's class
 };
 
 const CLASS_GROUP_PHOTO: Record<string, number> = { fitdance: 50 };
