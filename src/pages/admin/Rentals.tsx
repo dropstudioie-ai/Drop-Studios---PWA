@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAsync } from '../../lib/useAsync';
-import { REASON_LABEL, rentals, STATUS_LABEL, type AdminRental, type RentalSettings } from '../../lib/rentals';
+import { REASON_LABEL, rentals, STATUS_LABEL, type AdminRental, type RentalBlock, type RentalSettings } from '../../lib/rentals';
 import { cancelRental } from '../../lib/payments';
 import { formatPrice, parseEurosToCents } from '../../domain/money';
 import { messageFor } from '../../domain/messages';
@@ -90,6 +90,70 @@ function AccessAndCalendar() {
   );
 }
 
+/** Regular hires (other teachers' weekly classes): closed for rental. Months "to be confirmed" wait for the owner. */
+function RegularHires() {
+  const toast = useToast();
+  const list = useAsync(() => rentals.blocks(new Date()), []);
+  const [open, setOpen] = useState(false);
+  const rows = list.data ?? [];
+  if (!rows.length) return null;
+  const dayOnly = (iso: string) => new Intl.DateTimeFormat('en-IE', { timeZone: 'Europe/Dublin', weekday: 'long' }).format(new Date(iso));
+  const t = (iso: string) => new Intl.DateTimeFormat('en-IE', { timeZone: 'Europe/Dublin', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(iso));
+  const by = (d: string) => new Intl.DateTimeFormat('en-IE', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(`${d}T12:00:00Z`));
+  const weekly = [...new Map(rows.map((r) => [`${r.title}|${dayOnly(r.starts_at)}|${t(r.starts_at)}`, r])).values()];
+  const pending = [...new Set(rows.filter((r) => r.confirm_by).map((r) => r.confirm_by!))];
+  const decide = async (confirmBy: string, keep: boolean, title: string | null) => {
+    if (!keep && !confirm(`Free ${title ?? 'all these'} times so people can rent them?`)) return;
+    try { const n = await rentals.decideBlocks(confirmBy, keep, title); toast(keep ? `Confirmed (${n} dates stay closed)` : `Freed ${n} dates for rental`); list.reload(); }
+    catch (e) { toast(messageFor((e as Error).message), 'error'); }
+  };
+  const remove = async (b: RentalBlock) => {
+    if (!confirm(`Free ${b.title} on ${when(b.starts_at, b.ends_at)} for rental?`)) return;
+    try { await rentals.removeBlock(b.id); toast('Freed'); list.reload(); } catch (e) { toast(messageFor((e as Error).message), 'error'); }
+  };
+  return (
+    <Section title="Regular hires (closed for rental)">
+      <ul className="space-y-1 text-sm">
+        {weekly.map((r) => {
+          const one = rows.filter((x) => x.title === r.title && dayOnly(x.starts_at) === dayOnly(r.starts_at) && t(x.starts_at) === t(r.starts_at));
+          return <li key={r.id}><span className="inline-block h-2.5 w-2.5 rounded-full bg-[#2563eb]" /> <strong>{r.title}</strong> · {one.length > 1 ? `${dayOnly(r.starts_at)}s` : when(r.starts_at, r.ends_at).split(',')[0]}, {t(r.starts_at)}–{t(r.ends_at)} <span className="text-muted">· until {new Intl.DateTimeFormat('en-IE', { timeZone: 'Europe/Dublin', day: 'numeric', month: 'short' }).format(new Date(one[one.length - 1].starts_at))}</span></li>;
+        })}
+      </ul>
+      {pending.map((d) => {
+        const titles = [...new Set(rows.filter((r) => r.confirm_by === d).map((r) => r.title))];
+        return (
+          <div key={d} className="mt-4 rounded-2xl border-2 border-accent-500 p-3">
+            <p className="text-sm font-semibold">Please confirm by {by(d)}: do these stay in the new month?</p>
+            <ul className="mt-2 space-y-1.5 text-sm">
+              {titles.map((ti) => (
+                <li key={ti} className="flex flex-wrap items-center justify-between gap-2">
+                  <span>{ti}</span>
+                  <span className="flex gap-2">
+                    <button className="btn-primary btn-sm" onClick={() => void decide(d, true, ti)}>Keep</button>
+                    <button className="btn-ghost btn-sm" onClick={() => void decide(d, false, ti)}>Free</button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <button className="btn-outline btn-sm mt-3" onClick={() => void decide(d, true, null)}>Keep all</button>
+          </div>
+        );
+      })}
+      <button className="mt-3 text-sm font-semibold text-brand-700" onClick={() => setOpen(!open)}>{open ? 'Hide dates' : 'Free a single date (e.g. a week they cancel)'}</button>
+      {open && (
+        <ul className="mt-2 divide-y divide-line text-sm">
+          {rows.map((b) => (
+            <li key={b.id} className="flex items-center justify-between gap-2 py-1.5">
+              <span>{when(b.starts_at, b.ends_at)} · {b.title}{b.confirm_by ? <span className="text-muted"> · to be confirmed</span> : null}</span>
+              <button className="btn-ghost btn-sm text-danger" onClick={() => void remove(b)}>Free</button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Section>
+  );
+}
+
 export default function AdminRentals() {
   const toast = useToast();
   const from = new Date(Date.now() - 7 * 864e5), to = new Date(Date.now() + 16 * 7 * 864e5);
@@ -134,6 +198,7 @@ export default function AdminRentals() {
           </ul>
         ) : <p className="text-sm text-muted">No bookings yet.</p>}
       </Section>
+      <RegularHires />
       <AccessAndCalendar />
       {settings.data && <Prices s={settings.data} onSaved={settings.reload} />}
     </div>

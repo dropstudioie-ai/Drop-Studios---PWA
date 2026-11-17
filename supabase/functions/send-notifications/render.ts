@@ -491,6 +491,17 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
         text: `${hi}\n\n${p.owner ? `${p.renter} moved their booking` : 'Your studio booking has moved'}: from ${slot(p.starts_at, p.ends_at)} to ${slot(p.new_starts_at, p.new_ends_at)}.\n\nDrop Studios`,
         url: p.owner ? '/admin/rentals' : '/account#rentals',
       };
+    case 'rental_blocks_confirm': {
+      const slots = (Array.isArray(p.slots) ? p.slots : []) as { title: string; day: string; from: string; to: string }[];
+      const month = new Intl.DateTimeFormat('en-IE', { timeZone: TZ, month: 'long' }).format(new Date(String(p.first_at)));
+      const by = new Intl.DateTimeFormat('en-IE', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(String(p.confirm_by)));
+      const list = slots.map((x) => `• ${x.title}: ${x.day}s ${x.from}–${x.to}`).join('\n');
+      return {
+        subject: p.late ? `⚠️ Still waiting: are the ${month} regular hires staying?` : `📅 Please confirm: do these regular hires stay in ${month}?`,
+        text: `${hi}\n\n${p.late ? `These ${month} times were due to be confirmed by ${by}. They're still closed for studio rental until you decide` : `Please confirm by ${by} whether these times stay closed for studio rental in ${month}`}:\n\n${list}\n\nKeep them or free them (all at once or one by one) in Admin → Studio rental → Regular hires:\n${site()}/admin/rentals\n\nDrop Studios`,
+        url: '/admin/rentals',
+      };
+    }
     case 'rental_problem':
       return {
         subject: `⚠️ Studio rental payment needs a look`,

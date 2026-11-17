@@ -237,6 +237,14 @@ Deno.test('studio rental emails', () => {
   assertStringIncludes(rep.text, '6.0 hours rented, €270.00 received');
 });
 
+Deno.test('the owner is asked to confirm next month’s regular hires', () => {
+  const m = render({ kind: 'rental_blocks_confirm', full_name: 'Jorge', payload: { confirm_by: '2026-11-30', first_at: '2026-12-04T17:30:00Z', late: false, slots: [{ title: 'Kar ballet', day: 'Friday', from: '17:30', to: '19:30' }] } })!;
+  assertStringIncludes(m.subject, 'regular hires stay in December');
+  assertStringIncludes(m.text, 'by Monday, 30 November');
+  assertStringIncludes(m.text, '• Kar ballet: Fridays 17:30–19:30');
+  assertStringIncludes(render({ kind: 'rental_blocks_confirm', full_name: null, payload: { confirm_by: '2026-11-30', first_at: '2026-12-04T17:30:00Z', late: true, slots: [] } })!.subject, 'Still waiting');
+});
+
 Deno.test('rental confirmation carries the door code and house rules; owner hears about the DJ', () => {
   const base = { starts_at: '2026-12-06T16:00:00Z', ends_at: '2026-12-06T20:00:00Z', renter: 'Ana', paid_cents: 38500, occurrences: 1, dj_minutes: 120, marketing_weeks: 2 };
   const c = render({ kind: 'rental_confirmed', full_name: 'Ana', payload: { ...base, access_code: 'X123', house_rules: 'No food in the room.\nKeep the door closed.' } })!;

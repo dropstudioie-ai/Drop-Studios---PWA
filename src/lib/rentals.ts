@@ -19,6 +19,9 @@ export const STATUS_LABEL: Record<RentalStatus, string> = {
   cancelled: 'Cancelled', declined: 'Not available', expired: 'Expired (not paid in time)', released: 'Released (not paid in time)',
 };
 
+/** A regular hire: another teacher's class that closes the studio for rental. */
+export interface RentalBlock { id: string; title: string; starts_at: string; ends_at: string; confirm_by: string | null }
+
 export const rentals = {
   settings: async () => (unwrap(await supabase.from('rental_settings').select('*').limit(1)) as RentalSettings[])[0],
   busy: async (from: Date, to: Date) => unwrap(await supabase.rpc('rental_busy', { p_from: from.toISOString(), p_to: to.toISOString() })) as Busy[],
@@ -31,6 +34,9 @@ export const rentals = {
   admin: async (from: Date, to: Date) => unwrap(await supabase.rpc('admin_rentals', { p_from: from.toISOString(), p_to: to.toISOString() })) as AdminRental[],
   decide: async (id: string, approve: boolean, note: string) => unwrap(await supabase.rpc('admin_decide_rental', { p_booking_id: id, p_approve: approve, p_note: note || null })),
   access: async (bookingId: string) => unwrap(await supabase.rpc('rental_access', { p_booking_id: bookingId })) as string | null,
+  blocks: async (from: Date) => unwrap(await supabase.from('rental_blocks').select('id, title, starts_at, ends_at, confirm_by').gte('ends_at', from.toISOString()).order('starts_at')) as RentalBlock[],
+  decideBlocks: async (confirmBy: string, keep: boolean, title: string | null) => unwrap(await supabase.rpc('admin_decide_rental_blocks', { p_confirm_by: confirmBy, p_keep: keep, p_title: title })) as number,
+  removeBlock: async (id: string) => { unwrap(await supabase.rpc('admin_remove_rental_block', { p_id: id })); },
   privateSettings: async () => (unwrap(await supabase.from('rental_private').select('*').limit(1)) as { access_code: string | null; calendar_token: string }[])[0],
   saveAccessCode: async (code: string) => { const r = await supabase.from('rental_private').update({ access_code: code || null }).eq('id', true); if (r.error) throw new Error(r.error.message); },
   calendar: async (from: Date, to: Date) => unwrap(await supabase.rpc('admin_calendar', { p_from: from.toISOString(), p_to: to.toISOString() })) as { id: string; type: 'class' | 'rental'; starts_at: string; ends_at: string; title: string; detail: string }[],

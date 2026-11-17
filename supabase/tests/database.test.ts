@@ -2174,6 +2174,35 @@ run('database: plans, booking, allowances, pauses, security', () => {
       await db.query(`update class_templates set is_active = false where id = $1`, [t.id]);
     });
 
+    it('regular hires close the studio for rental and Drop classes, and December waits for the owner’s confirmation', async () => {
+      const owner = await createUser(db, 'HireOwner');
+      await db.query(`update profiles set role = 'admin', finance_access = true where id = $1`, [owner]);
+      const u = await confirmedRenter('RentHire');
+      const from = await at(11, 5, '00:00');
+      const day = (d: Date) => d.toISOString().slice(0, 10);
+      // Fridays 17:30–19:30 for 2 weeks, to be confirmed by tomorrow.
+      const [{ n }] = await as<{ n: number }>(db, user(owner), `select admin_add_rental_blocks('Test ballet', 5, '17:30', '19:30', $1::date, $1::date + 13, current_date + 1) n`, [day(plus(from, 12 * 60))]);
+      expect(n).toBe(2);
+      expect(await as(db, user(u), `select * from rental_blocks`)).toHaveLength(0);   // private
+      const s = await at(11, 5, '18:00');
+      await expectError(as(db, user(u), `select request_rental($1, $2, false, 'x', null, 5, false, true)`, [s, plus(s, 60)]), 'rental_unavailable');
+      const ok = await at(11, 5, '19:30');
+      await as(db, user(u), `select rental_quote($1, $2, false)`, [ok, plus(ok, 60)]);
+      const busy = (await as<{ b: { what: string; starts_at: string }[] }>(db, anon, `select rental_busy($1, $2) b`, [from, plus(from, 24 * 60)]))[0].b;
+      expect(busy.some((x) => x.what === 'Booked')).toBe(true);
+      expect((await db.query(`select _rental_taken($1, $2) t`, [s, plus(s, 30)])).rows[0].t).toBe('Test ballet');
+      await db.query(`select rental_jobs()`);
+      const ask = (await db.query(`select payload from notification_outbox where kind = 'rental_blocks_confirm' and user_id = $1`, [owner])).rows;
+      expect(ask).toHaveLength(1);
+      expect(ask[0].payload.slots).toEqual([{ title: 'Test ballet', day: 'Friday', from: '17:30', to: '19:30' }]);
+      const [{ k }] = await as<{ k: number }>(db, user(owner), `select admin_decide_rental_blocks(current_date + 1, true) k`);
+      expect(k).toBe(2);
+      await expectError(as(db, user(u), `select admin_decide_rental_blocks(current_date + 1, false)`), 'forbidden');
+      await as(db, user(owner), `select admin_remove_rental_block(id) from rental_blocks where title = 'Test ballet'`);
+      expect((await db.query(`select count(*)::int n from rental_blocks`)).rows[0].n).toBe(0);
+      await db.query(`update profiles set role = 'customer', finance_access = false where id = $1`, [owner]);
+    });
+
     it('reminders a day and 2 hours before, and the owner’s daily report', async () => {
       const u = await confirmedRenter('RentSoon');
       const { rows: [b] } = await db.query(`insert into rental_bookings (user_id, starts_at, ends_at, status, rent_cents, total_cents) values ($1, now() + interval '90 minutes', now() + interval '150 minutes', 'confirmed', 2500, 2500) returning id`, [u]);
