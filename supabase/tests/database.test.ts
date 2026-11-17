@@ -252,6 +252,69 @@ run('database: plans, booking, allowances, pauses, security', () => {
       expect(await as(db, user(allowed), `select id from membership_plans where code = 'unlimited'`)).toHaveLength(0);
     });
 
+    it('gift cards: a member buys a pack for a friend, the friend redeems it (app or reception), once', async () => {
+      const buyer = await createUser(db, 'GiftBuyer'), friend = await createUser(db, 'GiftFriend'), walkIn = await createUser(db, 'GiftWalkIn');
+      const plans = (await as<{ g: { id: string; code: string; gift_name: string; price_cents: number }[] }>(db, anon, `select giftable_plans() g`))[0].g;
+      expect(plans.map((p) => p.code)).not.toContain('unlimited'); // private plans can't be gifted
+      const multi8 = plans.find((p) => p.code === 'multi-8')!;
+      expect(multi8.gift_name).toContain('1 month');
+      await expectError(as(db, user(buyer), `select create_gift_checkout($1, 'Ana', 'not-an-email', 'x', current_date, $2, 'square')`, [multi8.id, randomUUID()]), 'invalid_email');
+      await expectError(as(db, user(buyer), `select create_gift_checkout($1, 'Ana', 'ana@example.com', 'x', null, $2, 'square')`, [multi8.id, randomUUID()]), 'send_date_required');
+      const [{ r: co }] = await as<{ r: { payment_id: string; amount_cents: number; billing_interval: string } }>(db, user(buyer),
+        `select create_gift_checkout($1, 'Ana', 'Ana@Example.com', 'Happy birthday 💃', current_date, $2, 'square') as r`, [multi8.id, randomUUID()]);
+      expect(co).toMatchObject({ amount_cents: 7900, billing_interval: 'one_off' }); // one month, paid once
+      const { rows: [pending] } = await db.query(`select code, status from gift_cards where payment_id = $1`, [co.payment_id]);
+      expect(pending.status).toBe('pending_payment');
+      await expectError(as(db, user(friend), `select gift_card_lookup($1)`, [pending.code]), 'gift_card_not_found'); // unpaid codes don't work
+
+      await as(db, service, `select fulfill_payment($1, 'square', 'pi_gift', $2, 7900, 'eur')`, [co.payment_id, `evt_${randomUUID()}`]);
+      const { rows: [g] } = await db.query(`select * from gift_cards where payment_id = $1`, [co.payment_id]);
+      expect(g.status).toBe('active');
+      expect(new Date(g.expires_at).getTime()).toBeGreaterThan(Date.now() + 4 * 365 * 864e5); // 5 years by default
+      const { rows: mails } = await db.query(`select kind, to_email, user_id from notification_outbox where dedupe_key in ($1, $2)`, [`gift_bought:${g.id}`, `gift_received:${g.id}`]);
+      expect(mails.map((m) => m.kind).sort()).toEqual(['gift_card_bought', 'gift_card_received']);
+      expect(mails.find((m) => m.kind === 'gift_card_received')!.to_email).toBe('ana@example.com');
+      // The buyer can't see other people's cards; the friend can't see the card before redeeming it.
+      expect(await as(db, user(buyer), `select id from gift_cards where id = $1`, [g.id])).toHaveLength(1);
+      expect(await as(db, user(friend), `select id from gift_cards where id = $1`, [g.id])).toHaveLength(0);
+
+      const [{ l }] = await as<{ l: { plan_name: string; status: string } }>(db, user(friend), `select gift_card_lookup($1) l`, [g.code.toLowerCase()]);
+      expect(l).toMatchObject({ status: 'active' });
+      const [{ r }] = await as<{ r: { membership_id: string } }>(db, user(friend), `select redeem_gift_card($1) r`, [g.code]);
+      const { rows: [m] } = await db.query(`select user_id, classes_total, classes_remaining, expires_at, subscription_id from memberships where id = $1`, [r.membership_id]);
+      expect(m).toMatchObject({ user_id: friend, classes_total: 8, classes_remaining: 8, subscription_id: null });
+      await expectError(as(db, user(walkIn), `select redeem_gift_card($1)`, [g.code]), 'gift_card_used');
+      expect((await db.query(`select count(*)::int n from notification_outbox where dedupe_key = $1`, [`gift_redeemed:${g.id}`])).rows[0].n).toBe(1);
+
+      // A printed card redeemed at reception; a single-style pack asks which style.
+      const single = plans.find((p) => p.code === 'single-4')!;
+      const [{ r: co2 }] = await as<{ r: { payment_id: string } }>(db, user(buyer), `select create_gift_checkout($1, null, null, null, null, $2, 'square') as r`, [single.id, randomUUID()]);
+      await as(db, service, `select fulfill_payment($1, 'square', 'pi_gift2', $2, 4900, 'eur')`, [co2.payment_id, `evt_${randomUUID()}`]);
+      const { rows: [g2] } = await db.query(`select code from gift_cards where payment_id = $1`, [co2.payment_id]);
+      await expectError(as(db, user(walkIn), `select admin_redeem_gift_card($1, $2)`, [g2.code, walkIn]), 'forbidden');
+      await expectError(as(db, user(admin), `select admin_redeem_gift_card($1, $2)`, [g2.code, walkIn]), 'style_required');
+      const style = (await db.query(`select id from dance_styles where is_active order by sort_order limit 1`)).rows[0].id;
+      await as(db, user(admin), `select admin_redeem_gift_card($1, $2, $3)`, [g2.code, walkIn, style]);
+      expect((await db.query(`select redeemed_via, redeemed_by from gift_cards where code = $1`, [g2.code])).rows[0]).toMatchObject({ redeemed_via: 'reception', redeemed_by: walkIn });
+
+      // Expired and wrong codes.
+      await db.query(`update gift_cards set status = 'active', redeemed_by = null, expires_at = now() - interval '1 day' where code = $1`, [g2.code]);
+      await expectError(as(db, user(friend), `select redeem_gift_card($1, $2)`, [g2.code, style]), 'gift_card_expired');
+      await expectError(as(db, user(friend), `select redeem_gift_card('DROP-NOPE-NOPE')`), 'gift_card_not_found');
+    });
+
+    it('a gift card email scheduled for a later day is only sent on that day', async () => {
+      const buyer = await createUser(db, 'GiftLater');
+      const pid = await planId('intro-3');
+      const [{ r }] = await as<{ r: { payment_id: string } }>(db, user(buyer), `select create_gift_checkout($1, 'Leo', 'leo@example.com', null, current_date + 3, $2, 'square') as r`, [pid, randomUUID()]);
+      await as(db, service, `select fulfill_payment($1, 'square', 'pi_gl', $2, 3500, 'eur')`, [r.payment_id, `evt_${randomUUID()}`]);
+      const { rows: [g] } = await db.query(`select id from gift_cards where payment_id = $1`, [r.payment_id]);
+      expect((await db.query(`select count(*)::int n from notification_outbox where dedupe_key = $1`, [`gift_received:${g.id}`])).rows[0].n).toBe(0);
+      await db.query(`update gift_cards set send_on = current_date where id = $1`, [g.id]);
+      await db.query(`select queue_gift_card_emails()`);
+      expect((await db.query(`select count(*)::int n from notification_outbox where dedupe_key = $1`, [`gift_received:${g.id}`])).rows[0].n).toBe(1);
+    });
+
     it('intro offer is limited to first-time customers', async () => {
       const c = await createUser(db, 'IntroTwice');
       await buy(c, 'intro-3');

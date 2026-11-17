@@ -7,7 +7,8 @@ export const paymentsMode: PaymentsMode = import.meta.env.VITE_PAYMENTS_MODE ===
 /** A membership plan, or a ticket for a special event (session_id). */
 export type CheckoutRequest =
   | { plan_id: string; selected_style_id: string | null; idempotency_key: string }
-  | { session_id: string; idempotency_key: string; guest_name?: string };
+  | { session_id: string; idempotency_key: string; guest_name?: string }
+  | { plan_id: string; gift: true; idempotency_key: string; recipient_name: string | null; recipient_email: string | null; message: string | null; send_on: string | null };
 
 async function invoke<T>(fn: string, body: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.functions.invoke(fn, { body });

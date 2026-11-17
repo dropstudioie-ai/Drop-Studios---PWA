@@ -7,6 +7,7 @@ const TABS = [
   ['events', 'Events'],
   ['feedback', 'Feedback'],
   ['thamires', 'Thamires'],
+  ['gifts', 'Gift cards'],
   ['customers', 'Members'],
   ['plans', 'Plans'],
   ['styles', 'Styles'],

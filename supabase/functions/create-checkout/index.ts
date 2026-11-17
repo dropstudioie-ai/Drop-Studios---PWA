@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
   // A new membership checkout replaces the member's unfinished ones. First make
   // sure none of them was actually paid (a webhook can lag a few seconds), and
   // switch their Square payment links off so they can't be paid later.
-  if (body.kind !== 'ticket') {
+  if (body.kind === 'membership') {
     const { data: open } = await adminClient()
       .from('payments')
       .select('id, provider_session_id, provider_link_id')
@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
   // Monthly memberships are sold as a Square subscription (card saved and
   // charged each month by Square); everything else is a one-off payment.
   let linkBody: unknown;
-  if (body.kind !== 'ticket' && payment.billing_interval === 'monthly') {
+  if (body.kind === 'membership' && payment.billing_interval === 'monthly') {
     const cfg = squareConfig();
     const { data: plan } = await adminClient().from('membership_plans')
       .select('id, code, name, price_cents, currency').eq('id', payment.plan_id).maybeSingle();
@@ -85,7 +85,7 @@ Deno.serve(async (req) => {
       locationId,
       siteUrl,
       buyerEmail: auth.user.email,
-      kind: body.kind === 'ticket' ? (payment.kind === 'drop_in' ? 'drop_in' : 'ticket') : 'membership',
+      kind: body.kind === 'ticket' ? (payment.kind === 'drop_in' ? 'drop_in' : 'ticket') : body.kind === 'gift' ? 'gift' : 'membership',
       supportEmail: Deno.env.get('SUPPORT_EMAIL'),
     });
   }

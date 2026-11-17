@@ -196,3 +196,17 @@ Deno.test('private plan invitation', () => {
   assertStringIncludes(m.text, '/memberships');
   assertEquals(m.url, '/memberships');
 });
+
+Deno.test('gift card emails: buyer, friend (with message and redeem link) and redeemed', () => {
+  const b = render({ kind: 'gift_card_bought', full_name: 'Jorge', payload: { gift_card_id: 'g1', code: 'DROP-AB12-CD34', plan_name: 'Committed · 1 month (gift)', recipient_name: 'Ana', recipient_email: 'ana@example.com', send_on: '2026-12-24', expires_at: '2031-11-17T10:00:00Z' } })!;
+  assertStringIncludes(b.subject, 'gift card for Ana');
+  assertStringIncludes(b.text, 'DROP-AB12-CD34');
+  assertStringIncludes(b.text, 'on Thursday, 24 December');
+  assertStringIncludes(b.text, '/gift/card/g1');
+  const f = render({ kind: 'gift_card_received', full_name: 'Jorge', payload: { code: 'DROP-AB12-CD34', plan_name: 'Committed · 1 month (gift)', from_name: 'Jorge Luiz', message: 'Happy birthday!', recipient_name: 'Ana Silva', expires_at: '2031-11-17T10:00:00Z' } })!;
+  assertStringIncludes(f.subject, 'Jorge Luiz sent you a dance gift');
+  assertStringIncludes(f.text, 'Hi Ana,');
+  assertStringIncludes(f.text, '“Happy birthday!”');
+  assertStringIncludes(f.text, '/gift/redeem?code=DROP-AB12-CD34');
+  assertStringIncludes(render({ kind: 'gift_card_redeemed', full_name: null, payload: { plan_name: 'Intro', recipient_name: 'Ana' } })!.subject, 'Ana has started using your gift');
+});

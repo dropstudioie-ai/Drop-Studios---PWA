@@ -19,7 +19,7 @@ export interface CheckoutPayment {
 /** Body for POST /v2/online-checkout/payment-links. */
 export function paymentLinkRequest(
   p: CheckoutPayment,
-  opts: { locationId: string; siteUrl: string; buyerEmail?: string | null; kind: 'membership' | 'ticket' | 'drop_in'; supportEmail?: string | null },
+  opts: { locationId: string; siteUrl: string; buyerEmail?: string | null; kind: 'membership' | 'ticket' | 'drop_in' | 'gift'; supportEmail?: string | null },
 ) {
   return {
     // Same key for retries, so Square returns the same link instead of a second one.
@@ -33,6 +33,7 @@ export function paymentLinkRequest(
         quantity: '1',
         note: opts.kind === 'ticket' ? 'Workshop ticket'
           : opts.kind === 'drop_in' ? 'Drop In: single class'
+          : opts.kind === 'gift' ? 'Digital gift card. Code sent by email after payment.'
           : `${p.class_count} classes. Prepaid pack, no subscription.`,
         base_price_money: { amount: p.amount_cents, currency: p.currency.toUpperCase() },
       }],

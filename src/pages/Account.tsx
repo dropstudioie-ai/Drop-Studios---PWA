@@ -1,3 +1,4 @@
+import { gifts } from '../lib/gifts';
 import { UNLIMITED_CLASSES } from '../domain/plans';
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
@@ -169,6 +170,7 @@ export default function Account() {
         </section>
       )}
 
+      <GiftsBought uid={uid} />
       <NotificationSettings />
       <ProfileSection uid={uid} onSaved={refreshProfile} />
 
@@ -185,6 +187,30 @@ export default function Account() {
         }} />
       )}
     </div>
+  );
+}
+
+/** Gift cards this member bought for others, with a link to each printable card. */
+function GiftsBought({ uid }: { uid: string }) {
+  const list = useAsync(() => gifts.mine(uid), [uid]);
+  return (
+    <section className="mt-10" aria-labelledby="gifts-h">
+      <div className="flex items-center justify-between gap-2">
+        <h2 id="gifts-h" className="text-xl font-black">Gift cards</h2>
+        <div className="flex gap-2"><Link to="/gift/redeem" className="btn-ghost btn-sm">Redeem a code</Link><Link to="/gift" className="btn-outline btn-sm">🎁 Give one</Link></div>
+      </div>
+      {list.data?.length ? (
+        <ul className="mt-3 space-y-2">
+          {list.data.map((g) => (
+            <li key={g.id}><Link to={`/gift/card/${g.id}`} className="card flex items-center justify-between gap-3 p-3 hover:bg-canvas">
+              <span><span className="block font-semibold">{g.plan_snapshot.plan_name.replace(' (gift)', '')}{g.recipient_name ? ` for ${g.recipient_name}` : ''}</span>
+                <span className="text-xs text-muted">{g.status === 'redeemed' ? '✓ Redeemed' : g.recipient_email && !g.recipient_emailed_at ? `Email goes on ${g.send_on}` : 'Not used yet'} · {g.code}</span></span>
+              <span className="text-sm font-semibold text-brand-700">View ›</span>
+            </Link></li>
+          ))}
+        </ul>
+      ) : <p className="mt-2 text-sm text-muted">A unique present for someone who loves to dance. Choose a pack and the day it arrives.</p>}
+    </section>
   );
 }
 

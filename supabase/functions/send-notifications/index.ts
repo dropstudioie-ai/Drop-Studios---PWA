@@ -54,7 +54,8 @@ Deno.serve(async (req) => {
       else errors.push(`email ${res.status}: ${(await res.text()).slice(0, 200)}`);
     }
 
-    if (pushOn) {
+    // Messages to a non-member address (e.g. a friend's gift card) are email only, never the buyer's phone.
+    if (pushOn && !n.direct) {
       const { data: subs } = await db.from('push_subscriptions').select('id, endpoint, p256dh, auth').eq('user_id', n.user_id);
       for (const sub of subs ?? []) {
         try {

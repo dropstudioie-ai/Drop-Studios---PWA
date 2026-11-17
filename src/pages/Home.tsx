@@ -1,3 +1,4 @@
+import { GiftCardVisual } from './Gift';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { useAsync } from '../lib/useAsync';
@@ -104,6 +105,21 @@ function MemberHome() {
           </div>
         </section>
       )}
+
+      <section className="bg-[#070605] py-12 text-[#f3e7c6]" aria-labelledby="gift-h">
+        <div className="container-page grid items-center gap-8 md:grid-cols-2">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.35em] text-[#d4af37]">Gift cards</p>
+            <h2 id="gift-h" className="mt-2 bg-gradient-to-r from-[#b8902b] via-[#f7e08a] to-[#c9a227] bg-clip-text font-display text-3xl font-black uppercase leading-[0.95] text-transparent sm:text-5xl">Give the gift of dance</h2>
+            <p className="mt-3 max-w-md text-[#eadcb5]">A unique present for someone you love who can’t stop dancing. Pick a pack, add your message and choose the day it arrives, or print it and give it in person.</p>
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+              <Link to="/gift" className="btn bg-gradient-to-r from-[#a8801f] via-[#f5dc85] to-[#c9a227] text-lg font-black text-[#0b0906]">Buy a gift card 🎁</Link>
+              <Link to="/gift/redeem" className="btn border-2 border-[#d4af37]/50 text-lg text-[#f3d77e] hover:bg-white/5">Redeem a gift card</Link>
+            </div>
+          </div>
+          <GiftCardVisual planName="Drop Studios" small />
+        </div>
+      </section>
 
       <section className="container-page py-12">
         <h2 className="text-2xl font-black sm:text-3xl">How it works</h2>

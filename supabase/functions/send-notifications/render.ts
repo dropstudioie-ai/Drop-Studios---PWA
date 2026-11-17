@@ -7,6 +7,7 @@ export interface Claimed {
   payload: Record<string, unknown>;
   email: string | null;
   full_name: string | null;
+  direct?: boolean;
 }
 
 export interface Message {
@@ -27,6 +28,8 @@ const day = (iso: unknown) => {
 };
 
 const eur = (cents: unknown) => new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR' }).format(Number(cents) / 100);
+/** "17 November 2031" (dates far ahead need the year). */
+const dateWithYear = (d: unknown) => new Intl.DateTimeFormat('en-IE', { timeZone: TZ, day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(String(d)));
 const longDate = (d: unknown) => new Intl.DateTimeFormat('en-IE', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long' })
   .format(new Date(`${String(d)}T12:00:00Z`));
 
@@ -362,6 +365,31 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
         subject: `✨ You're invited: ${p.plan_name} at Drop Studios`,
         text: `${hi}\n\nWe've unlocked a membership just for you: ${p.plan_name}.\n\n• ${p.summary}\n• ${p.price} a month, renews monthly for ${p.months} months, then you choose whether to continue\n• You can pause it, like any Drop membership\n\nIt's only visible to members we invite. Sign in and you'll find it on the memberships page:\n${site()}/memberships\n\nSee you on the dance floor!\nDrop Studios`,
         url: '/memberships',
+      };
+    case 'gift_card_bought': {
+      const who = p.recipient_name ? ` for ${p.recipient_name}` : '';
+      const delivery = p.recipient_email
+        ? `We'll email it to ${p.recipient_name ?? 'your friend'} (${p.recipient_email}) on ${longDate(String(p.send_on))}.`
+        : 'Give the code in person: print the card from the link below, or just tell them the code.';
+      return {
+        subject: `🎁 Your Drop gift card${who} is ready`,
+        text: `${hi}\n\nThank you! Your gift card${who} is paid and ready.\n\n${p.plan_name}\nCode: ${p.code}\nValid until ${dateWithYear(p.expires_at)}\n\n${delivery}\n\nPrintable card (black and gold):\n${site()}/gift/card/${p.gift_card_id}\n\nThey can redeem it in the app (${site()}/gift/redeem) or at reception.\n\nDrop Studios`,
+        url: `/gift/card/${p.gift_card_id}`,
+      };
+    }
+    case 'gift_card_received': {
+      const name = p.recipient_name ? `Hi ${String(p.recipient_name).split(' ')[0]},` : 'Hi,';
+      return {
+        subject: `🎁 ${p.from_name ?? 'Someone special'} sent you a dance gift from Drop Studios`,
+        text: `${name}\n\n${p.from_name ?? 'Someone special'} has given you ${p.plan_name} at Drop Studios, a dance studio in Dublin city centre (13 Sackville Place).${p.message ? `\n\nTheir message:\n“${p.message}”` : ''}\n\nYour gift card code: ${p.code}\nValid until ${dateWithYear(p.expires_at)}\n\nTo use it, open ${site()}/gift/redeem?code=${encodeURIComponent(String(p.code))} , create your free account (or sign in) and your classes are ready to book. You can also show this email at reception.\n\nHeels, Hip Hop, Reggaeton, Commercial, FitDance and more, for every level. See you on the dance floor! 💃\n\nDrop Studios`,
+        url: `/gift/redeem?code=${encodeURIComponent(String(p.code))}`,
+      };
+    }
+    case 'gift_card_redeemed':
+      return {
+        subject: `🎉 ${p.recipient_name ?? 'Your friend'} has started using your gift`,
+        text: `${hi}\n\nGood news: ${p.recipient_name ?? 'your friend'} just redeemed the ${p.plan_name} you gave them. Thank you for bringing someone new to Drop!\n\nDrop Studios`,
+        url: '/account',
       };
     case 'membership_cancelled': {
       const n = Number(p.bookings_cancelled) || 0;

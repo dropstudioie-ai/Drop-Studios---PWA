@@ -15,6 +15,10 @@ const Checkout = lazy(() => import('./pages/Checkout'));
 const CheckoutSuccess = lazy(() => import('./pages/CheckoutResult').then((m) => ({ default: m.CheckoutSuccess })));
 const CheckoutCancelled = lazy(() => import('./pages/CheckoutResult').then((m) => ({ default: m.CheckoutCancelled })));
 const Account = lazy(() => import('./pages/Account'));
+const GiftShop = lazy(() => import('./pages/Gift'));
+const GiftRedeem = lazy(() => import('./pages/Gift').then((m) => ({ default: m.GiftRedeem })));
+const GiftCardPrint = lazy(() => import('./pages/Gift').then((m) => ({ default: m.GiftCardPrint })));
+const AdminGifts = lazy(() => import('./pages/admin/Gifts'));
 const GetApp = lazy(() => import('./pages/GetApp'));
 const Teach = lazy(() => import('./pages/Teach'));
 const TeachProfile = lazy(() => import('./pages/TeachProfile'));
@@ -76,6 +80,9 @@ export default function App() {
                 <Route path="terms" element={<Terms />} />
                 <Route path="privacy" element={<Privacy />} />
                 <Route path="app" element={<GetApp />} />
+                <Route path="gift" element={<GiftShop />} />
+                <Route path="gift/redeem" element={<RequireAuth><GiftRedeem /></RequireAuth>} />
+                <Route path="gift/card/:id" element={<RequireAuth><GiftCardPrint /></RequireAuth>} />
                 <Route path="checkout/success" element={<RequireAuth><CheckoutSuccess /></RequireAuth>} />
                 <Route path="checkout/cancelled" element={<CheckoutCancelled />} />
                 <Route path="checkout/:code" element={<RequireAuth><Checkout /></RequireAuth>} />
@@ -92,6 +99,7 @@ export default function App() {
                   <Route path="events" element={<AdminEvents />} />
                   <Route path="feedback" element={<AdminFeedback />} />
                   <Route path="thamires" element={<AdminThamires />} />
+                  <Route path="gifts" element={<AdminGifts />} />
                   <Route path="customers" element={<AdminCustomers />} />
                   <Route path="plans" element={<AdminPlans />} />
                   <Route path="styles" element={<AdminStyles />} />

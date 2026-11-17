@@ -4,6 +4,7 @@ import { api } from '../api';
 import { Notice, Spinner } from '../components/ui';
 import { useAuth } from '../auth/AuthProvider';
 import { LoyaltyRewardPopup } from '../components/LoyaltyReward';
+import { gifts } from '../lib/gifts';
 
 type View = 'waiting' | 'succeeded' | 'failed' | 'timeout';
 
@@ -19,6 +20,7 @@ export function CheckoutSuccess() {
   const [isTicket, setIsTicket] = useState(false);
   const [isDropIn, setIsDropIn] = useState(false);
   const [reward, setReward] = useState(false);
+  const [giftId, setGiftId] = useState<string | null>(null);
   const { session, profile } = useAuth();
   const uid = session?.user.id;
 
@@ -35,6 +37,7 @@ export function CheckoutSuccess() {
           setIsTest(p.is_test);
           setIsTicket(p.kind === 'ticket' || p.kind === 'drop_in');
           setIsDropIn(p.kind === 'drop_in');
+          if (p.kind === 'gift') setGiftId((await gifts.byPayment(p.id).catch(() => null))?.id ?? 'unknown');
           setView('succeeded');
           // Back after completing 3 months? The loyalty reward is added with this payment.
           if (p.kind === 'membership' && uid) api.hasRecentReward(uid).then((r) => !cancelled && setReward(r)).catch(() => {});
@@ -61,7 +64,19 @@ export function CheckoutSuccess() {
           <p className="mt-2 text-ink-soft">This usually takes a few seconds.</p>
         </>
       )}
-      {view === 'succeeded' && (
+      {view === 'succeeded' && giftId && (
+        <>
+          <p className="text-5xl" aria-hidden="true">🎁</p>
+          <h1 className="mt-4 text-3xl font-black">Your gift card is ready!</h1>
+          <p className="mt-2 text-ink-soft">We’ve emailed you the code. If you chose a day, we’ll email your friend on that day. You can also print the card now.</p>
+          {isTest && <div className="mt-4 text-left"><Notice tone="test"><strong>TEST purchase.</strong> No real payment was taken.</Notice></div>}
+          <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
+            {giftId !== 'unknown' && <Link to={`/gift/card/${giftId}`} className="btn-primary">See and print the card</Link>}
+            <Link to="/account" className="btn-outline">My account</Link>
+          </div>
+        </>
+      )}
+      {view === 'succeeded' && !giftId && (
         <>
           <p className="text-5xl" aria-hidden="true">🎉</p>
           <h1 className="mt-4 text-3xl font-black">You’re in!</h1>

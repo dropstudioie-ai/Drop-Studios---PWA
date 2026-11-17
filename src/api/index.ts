@@ -140,7 +140,7 @@ export const api = {
 
   paymentStatus: async (paymentId: string) =>
     unwrap(await supabase.from('payments').select('id, kind, status, is_test, amount_cents, currency, failure_reason').eq('id', paymentId).maybeSingle()) as {
-      id: string; kind: 'membership' | 'ticket' | 'drop_in'; status: string; is_test: boolean; amount_cents: number; currency: string; failure_reason: string | null;
+      id: string; kind: 'membership' | 'ticket' | 'drop_in' | 'gift'; status: string; is_test: boolean; amount_cents: number; currency: string; failure_reason: string | null;
     } | null,
 };
 

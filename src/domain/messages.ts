@@ -96,6 +96,13 @@ const MESSAGES: Record<string, string> = {
   cannot_demote_self: 'You can’t remove your own admin access.',
   payments_not_configured: 'Online payments are not set up yet. Please contact the studio.',
   test_payments_disabled: 'Test payments are disabled on this server.',
+  gift_card_not_found: 'We couldn’t find that gift card code. Please check it and try again.',
+  gift_card_used: 'This gift card has already been used.',
+  gift_card_expired: 'This gift card has expired. Please contact the studio.',
+  gift_card_not_active: 'This gift card can’t be used. Please contact the studio.',
+  send_date_required: 'Please choose the day the gift card email should arrive.',
+  invalid_send_date: 'Please choose a day from today up to a year ahead.',
+  too_long: 'That message is a bit too long.',
 };
 
 export function messageFor(code: string | null | undefined, fallback = 'Something went wrong. Please try again.'): string {

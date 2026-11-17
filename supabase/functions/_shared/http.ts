@@ -39,7 +39,8 @@ export function adminClient(): SupabaseClient {
 /** Either a membership plan or a workshop ticket. */
 export type CheckoutBody =
   | { kind: 'membership'; plan_id: string; selected_style_id: string | null; idempotency_key: string }
-  | { kind: 'ticket'; session_id: string; idempotency_key: string; guest_name?: string | null };
+  | { kind: 'ticket'; session_id: string; idempotency_key: string; guest_name?: string | null }
+  | { kind: 'gift'; plan_id: string; idempotency_key: string; recipient_name: string | null; recipient_email: string | null; message: string | null; send_on: string | null };
 
 export async function readCheckoutBody(req: Request): Promise<CheckoutBody | null> {
   try {
@@ -50,6 +51,11 @@ export async function readCheckoutBody(req: Request): Promise<CheckoutBody | nul
         guest_name: typeof b.guest_name === 'string' && b.guest_name.trim() ? b.guest_name.trim().slice(0, 80) : null };
     }
     if (typeof b.plan_id !== 'string') return null;
+    if (b.gift === true) {
+      const str = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null);
+      return { kind: 'gift', plan_id: b.plan_id, idempotency_key: b.idempotency_key, recipient_name: str(b.recipient_name, 80),
+        recipient_email: str(b.recipient_email, 200), message: str(b.message, 500), send_on: str(b.send_on, 10) };
+    }
     return {
       kind: 'membership',
       plan_id: b.plan_id,
@@ -63,6 +69,12 @@ export async function readCheckoutBody(req: Request): Promise<CheckoutBody | nul
 
 /** Creates the pending payment server-side (price from the database). */
 export function startCheckout(supa: SupabaseClient, body: CheckoutBody, provider: 'square' | 'dev_test') {
+  if (body.kind === 'gift') {
+    return supa.rpc('create_gift_checkout', {
+      p_plan_id: body.plan_id, p_recipient_name: body.recipient_name, p_recipient_email: body.recipient_email,
+      p_message: body.message, p_send_on: body.send_on, p_idempotency_key: body.idempotency_key, p_provider: provider,
+    });
+  }
   return body.kind === 'ticket'
     ? supa.rpc('create_ticket_checkout', {
       p_session_id: body.session_id,
@@ -71,8 +83,8 @@ export function startCheckout(supa: SupabaseClient, body: CheckoutBody, provider
       p_guest_name: body.guest_name ?? null,
     })
     : supa.rpc('create_checkout', {
-      p_plan_id: body.plan_id,
-      p_selected_style_id: body.selected_style_id,
+      p_plan_id: (body as { plan_id: string }).plan_id,
+      p_selected_style_id: (body as { selected_style_id: string | null }).selected_style_id,
       p_idempotency_key: body.idempotency_key,
       p_provider: provider,
     });
