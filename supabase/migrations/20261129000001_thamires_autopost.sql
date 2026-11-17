@@ -33,7 +33,7 @@ where id = 'assistant-media';
 -- Run at one minute past each hour, so 7:00 and 18:00 posts go out at 7:01 and 18:01.
 do $$
 begin
-  if exists (select 1 from pg_extension where extname = 'pg_cron') and exists (select 1 from cron.job where jobname = 'drop-thamires-story') then
-    perform cron.alter_job((select jobid from cron.job where jobname = 'drop-thamires-story'), schedule := '1 * * * *');
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    execute $q$select cron.alter_job(jobid, schedule := '1 * * * *') from cron.job where jobname = 'drop-thamires-story'$q$;
   end if;
 end $$;
