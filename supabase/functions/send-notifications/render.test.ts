@@ -188,3 +188,11 @@ Deno.test('Thamires: comment alerts and comments/reactions/Story numbers in the 
   assertStringIncludes(r.text, 'reacted to 7');
   assertStringIncludes(r.text, '210 people reached, 2 replies');
 });
+
+Deno.test('private plan invitation', () => {
+  const m = render({ kind: 'plan_invitation', full_name: 'Rachel Hersee', payload: { plan_name: 'UNLIMITED', summary: 'Unlimited classes, every style', price: '€150', months: 3 } })!;
+  assertStringIncludes(m.subject, "You're invited: UNLIMITED");
+  assertStringIncludes(m.text, '€150 a month, renews monthly for 3 months');
+  assertStringIncludes(m.text, '/memberships');
+  assertEquals(m.url, '/memberships');
+});

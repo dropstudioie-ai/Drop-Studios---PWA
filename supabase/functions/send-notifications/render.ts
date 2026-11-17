@@ -357,6 +357,12 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
         url: '/admin/thamires',
       };
     }
+    case 'plan_invitation':
+      return {
+        subject: `✨ You're invited: ${p.plan_name} at Drop Studios`,
+        text: `${hi}\n\nWe've unlocked a membership just for you: ${p.plan_name}.\n\n• ${p.summary}\n• ${p.price} a month, renews monthly for ${p.months} months, then you choose whether to continue\n• You can pause it, like any Drop membership\n\nIt's only visible to members we invite. Sign in and you'll find it on the memberships page:\n${site()}/memberships\n\nSee you on the dance floor!\nDrop Studios`,
+        url: '/memberships',
+      };
     case 'membership_cancelled': {
       const n = Number(p.bookings_cancelled) || 0;
       return {

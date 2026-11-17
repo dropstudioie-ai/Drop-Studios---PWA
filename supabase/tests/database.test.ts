@@ -258,6 +258,16 @@ run('database: plans, booking, allowances, pauses, security', () => {
       await expectError(as(db, user(c), `select create_checkout($1, null, $2)`, [await planId('intro-3'), randomUUID()]), 'intro_not_eligible');
     });
 
+    it('the Intro Pack disappears for members who have already bought a plan (visitors still see it)', async () => {
+      const fresh = await createUser(db, 'IntroFresh'), returning = await createUser(db, 'IntroUsed');
+      expect(await as(db, user(fresh), `select id from membership_plans where code = 'intro-3'`)).toHaveLength(1);
+      expect(await as(db, anon, `select id from membership_plans where code = 'intro-3'`)).toHaveLength(1);
+      await buy(returning, 'intro-3');
+      expect(await as(db, user(returning), `select id from membership_plans where code = 'intro-3'`)).toHaveLength(0);
+      expect((await as(db, user(returning), `select code from membership_plans`)).length).toBeGreaterThan(0); // the rest still show
+      expect(await as(db, user(admin), `select id from membership_plans where code = 'intro-3'`)).toHaveLength(1);
+    });
+
     it('single-style plan requires an eligible style', async () => {
       const c = await createUser(db, 'NoStyle');
       await expectError(as(db, user(c), `select create_checkout($1, null, $2)`, [await planId('single-4'), randomUUID()]), 'style_required');
