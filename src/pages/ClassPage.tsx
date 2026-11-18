@@ -75,8 +75,8 @@ export default function ClassPage() {
               <h2 id="photos-h" className="text-2xl font-black">Inside a {s.name} class</h2>
               {classGroupPhoto(s.slug) && <img src={classGroupPhoto(s.slug)!} alt={`A ${s.name} class at ${STUDIO.name}, all smiles after class`} width={2268} height={1550} loading="lazy" className="mt-4 w-full rounded-2xl" />}
               <ul className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {classPhotos(s.slug).map((src) => (
-                  <li key={src}><img src={src} alt={`Members dancing in a ${s.name} class at ${STUDIO.name}`} width={1125} height={2000} loading="lazy" className="aspect-[3/4] w-full rounded-2xl object-cover object-top" /></li>
+                {classPhotos(s.slug).map(({ src, focus }) => (
+                  <li key={src}><img src={src} alt={`Members dancing in a ${s.name} class at ${STUDIO.name}`} width={1125} height={2000} loading="lazy" className="aspect-[3/4] w-full rounded-2xl object-cover" style={{ objectPosition: focus }} /></li>
                 ))}
               </ul>
             </section>
