@@ -102,6 +102,8 @@ const MESSAGES: Record<string, string> = {
   guest_name_required: 'Add your friend’s name.',
   friend_offer_unavailable: 'The free friend offer isn’t available for this booking.',
   not_enough_spots_for_friend: 'There’s only one spot left in this class, so your friend can’t come to this one. Try another class.',
+  choice_not_found: 'We couldn’t find that cancelled class.',
+  choice_already_made: 'You’ve already chosen for this class.',
   gift_card_expired: 'This gift card has expired. Please contact the studio.',
   gift_card_not_active: 'This gift card can’t be used. Please contact the studio.',
   send_date_required: 'Please choose the day the gift card email should arrive.',

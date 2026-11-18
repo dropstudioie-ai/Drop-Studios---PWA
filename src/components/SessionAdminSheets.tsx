@@ -95,7 +95,7 @@ export function CancelSessionSheet({ session, onClose, onDone }: {
     <Sheet open onClose={onClose} title="Cancel this class?">
       <p className="text-sm">{session.title} · {fmt.dateTime(session.starts_at)}</p>
       <div className="mt-3"><Notice tone="warn">
-        {session.booked_count != null ? `All ${session.booked_count} booking(s)` : 'All bookings'} will be cancelled. Members get their class back (tickets and Drop Ins are flagged for a refund) and are notified by email and phone.
+        {session.booked_count != null ? `All ${session.booked_count} booking(s)` : 'All bookings'} will be cancelled. Members get their class back and are notified by email and phone. People who paid (tickets and Drop Ins) are asked whether they want a class credit, valid 1 month, or a refund.
       </Notice></div>
       <div className="mt-3"><Field label="Reason (shown to members)"><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Instructor unwell" /></Field></div>
       {error && <div className="mt-3"><ErrorNotice error={error} /></div>}

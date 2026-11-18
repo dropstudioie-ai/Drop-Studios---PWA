@@ -265,3 +265,12 @@ Deno.test('Black Friday gift emails: bring a friend, collect at reception, free 
   assertStringIncludes(bonus.subject, 'free Intro gift');
   assertStringIncludes(bonus.text, 'DROP-ZZ12-YY34');
 });
+
+Deno.test('cancelled paid class: member chooses a credit or a refund; the owner hears about refunds', () => {
+  const m = render({ kind: 'ticket_choice', full_name: 'Magdalena', payload: { choice_id: 'c1', title: 'Hip Hop', starts_at: '2026-11-18T19:30:00Z', amount_cents: 1500, credit_days: 30, reason: 'Instructor ill' } })!;
+  assertStringIncludes(m.subject, 'class credit or a refund');
+  assertStringIncludes(m.text, 'next 30 days');
+  assertStringIncludes(m.text, 'refund of €15.00');
+  const o = render({ kind: 'ticket_refund_requested', full_name: 'Jorge', payload: { member: 'Magdalena', user_id: 'u1', title: 'Hip Hop', starts_at: '2026-11-18T19:30:00Z', amount_cents: 1500 } })!;
+  assertStringIncludes(o.subject, 'Magdalena');
+});

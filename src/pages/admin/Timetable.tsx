@@ -126,7 +126,7 @@ export default function AdminTimetable() {
       {newSession && <SessionSheet styles={styles} instructors={instructors} onClose={() => setNewSession(false)} onSaved={() => { toast('Class added.'); void sessions.reload(); }} />}
       {roster && <StaffRoster sessionId={roster.id} isAdmin onClose={() => setRoster(null)} onChanged={() => void sessions.reload()} />}
       {editingSession && <EditSessionSheet sessionId={editingSession} onClose={() => setEditingSession(null)} onDone={(n) => { toast(n ? `Class updated. ${n} member(s) notified.` : 'Class updated.'); void sessions.reload(); }} />}
-      {cancelling && <CancelSessionSheet session={cancelling} onClose={() => setCancelling(null)} onDone={(n) => { toast(`Class cancelled. ${n} booking(s) refunded.`); void sessions.reload(); }} />}
+      {cancelling && <CancelSessionSheet session={cancelling} onClose={() => setCancelling(null)} onDone={(n) => { toast(`Class cancelled. ${n} booking(s) cancelled and notified.`); void sessions.reload(); }} />}
     </>
   );
 }

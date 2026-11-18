@@ -865,6 +865,42 @@ run('database: plans, booking, allowances, pauses, security', () => {
         db, user(uid), `select create_ticket_checkout($1, $2, 'square') as r`, [sessionId, randomUUID()],
       ))[0].r;
 
+    it('a cancelled paid Drop In asks the member: class credit (1 month) or refund', async () => {
+      const owner = await createUser(db, 'ChoiceOwner');
+      await db.query(`update profiles set role = 'admin', finance_access = true where id = $1`, [owner]);
+      const paidDropIn = async (uid: string) => {
+        const s = await makeSession({ style: 'hip-hop', startsInMinutes: 2 * 24 * 60 });
+        const r = await dropIn(uid, s);
+        await as(db, service, `select fulfill_payment($1, 'square', $2, $3, 1500, 'eur')`, [r.payment_id, `pi_${randomUUID()}`, `evt_${randomUUID()}`]);
+        return (await db.query(`select id from bookings where payment_id = $1`, [r.payment_id])).rows[0].id as string;
+      };
+      const m = await createUser(db, 'ChoiceMember');
+      const b1 = await paidDropIn(m);
+      await as(db, user(owner), `select admin_cancel_booking($1, 'She can''t make it')`, [b1]);
+      const [c1] = await as<{ id: string; status: string; amount_cents: number }>(db, user(m), `select * from ticket_choices where booking_id = $1`, [b1]);
+      expect(c1).toMatchObject({ status: 'waiting', amount_cents: 1500 });
+      expect((await db.query(`select count(*)::int n from notification_outbox where kind = 'ticket_choice' and user_id = $1`, [m])).rows[0].n).toBe(1);
+      expect((await db.query(`select count(*)::int n from audit_log where action = 'ticket_refund_required' and details ->> 'booking_id' = $1`, [b1])).rows[0].n).toBe(0); // not until chosen
+      const other = await createUser(db, 'ChoiceSnoop');
+      await expectError(as(db, user(other), `select choose_ticket_credit_or_refund($1, true)`, [c1.id]), 'choice_not_found');
+      const [{ r }] = await as<{ r: { choice: string; membership_id: string } }>(db, user(m), `select choose_ticket_credit_or_refund($1, true) r`, [c1.id]);
+      expect(r.choice).toBe('credit');
+      const { rows: [mem] } = await db.query(`select classes_remaining, expires_at from memberships where id = $1`, [r.membership_id]);
+      expect(mem.classes_remaining).toBe(1);
+      expect(Math.round((new Date(mem.expires_at).getTime() - Date.now()) / 864e5)).toBe(30);
+      await expectError(as(db, user(m), `select choose_ticket_credit_or_refund($1, false)`, [c1.id]), 'choice_already_made');
+      // Refund chosen: the studio is told.
+      const b2 = await paidDropIn(m);
+      await as(db, user(owner), `select admin_cancel_booking($1, 'Class moved')`, [b2]);
+      const [c2] = await as<{ id: string }>(db, user(m), `select id from ticket_choices where booking_id = $1`, [b2]);
+      await as(db, user(m), `select choose_ticket_credit_or_refund($1, false)`, [c2.id]);
+      expect((await db.query(`select count(*)::int n from audit_log where action = 'ticket_refund_required' and details ->> 'booking_id' = $1`, [b2])).rows[0].n).toBe(1);
+      expect((await db.query(`select count(*)::int n from notification_outbox where kind = 'ticket_refund_requested' and user_id = $1`, [owner])).rows[0].n).toBe(1);
+      await as(db, user(owner), `select admin_mark_ticket_refunded($1)`, [c2.id]);
+      expect((await db.query(`select status from ticket_choices where id = $1`, [c2.id])).rows[0].status).toBe('refunded');
+      await db.query(`update profiles set role = 'customer', finance_access = false where id = $1`, [owner]);
+    });
+
     it('charges €15 for FitDance, Reggaeton, Commercial and Hip Hop and €17 for other styles', async () => {
       const { rows } = await db.query(`select slug, drop_in_price_cents as p from dance_styles order by sort_order`);
       expect(Object.fromEntries(rows.map((r) => [r.slug, r.p]))).toEqual({

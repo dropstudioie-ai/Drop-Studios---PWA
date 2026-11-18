@@ -4,6 +4,7 @@ import { cancelRental, checkout } from '../lib/payments';
 import { messageFor } from '../domain/messages';
 import { downloadReceipt, myReceipts } from '../lib/receipts';
 import { gifts } from '../lib/gifts';
+import { ticketChoices } from '../lib/ticketChoices';
 import { UNLIMITED_CLASSES } from '../domain/plans';
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -122,6 +123,8 @@ export default function Account() {
             busy={busy} onPause={() => setPausing(m)} onResume={() => void resume(m)} />
         ))}
       </section>}
+
+      <TicketChoices uid={uid} onChanged={() => void data.reload()} />
 
       <section className="mt-10" aria-labelledby="upcoming-h">
         <div className="flex items-end justify-between">
@@ -317,7 +320,6 @@ function Receipts() {
   );
 }
 
-/** Gift cards this member bought for others, with a link to each printable card. */
 /** Send a gift card that hasn't been given yet (e.g. the free Black Friday gift) by email. */
 function SendGift({ id, onSent }: { id: string; onSent: () => void }) {
   const toast = useToast();
@@ -342,6 +344,37 @@ function SendGift({ id, onSent }: { id: string; onSent: () => void }) {
   );
 }
 
+/** A cancelled paid class: the member picks a class credit (valid 1 month) or a refund. */
+function TicketChoices({ uid, onChanged }: { uid: string; onChanged: () => void }) {
+  const toast = useToast();
+  const list = useAsync(() => ticketChoices.mine(uid), [uid]);
+  const [busy, setBusy] = useState<string | null>(null);
+  if (!list.data?.length) return null;
+  const choose = async (id: string, credit: boolean) => {
+    setBusy(id);
+    try {
+      const r = await ticketChoices.choose(id, credit);
+      toast(r.choice === 'credit' ? `Class credit added: book any class until ${fmt.date(r.expires_at!)} 💃` : 'Refund requested. The studio will refund it to your card.');
+      list.reload(); onChanged();
+    } catch (e) { toast(messageFor((e as Error).message), 'error'); } finally { setBusy(null); }
+  };
+  return (
+    <section id="choices" className="mt-8 scroll-mt-20 space-y-3">
+      {list.data.map((c) => (
+        <div key={c.id} className="card border-2 border-accent-500 p-4">
+          <p className="font-bold">Your {c.class_title} class on {fmt.dateTime(c.class_starts_at)} was cancelled.</p>
+          <p className="mt-1 text-sm text-ink-soft">You paid {formatPrice(c.amount_cents, 'EUR')}. What would you prefer?</p>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <button className="btn-primary" disabled={busy === c.id} onClick={() => void choose(c.id, true)}>{busy === c.id ? <Spinner className="h-4 w-4" /> : '🎟️ Class credit: book any class within 1 month'}</button>
+            <button className="btn-outline" disabled={busy === c.id} onClick={() => void choose(c.id, false)}>💶 Refund {formatPrice(c.amount_cents, 'EUR')} to my card</button>
+          </div>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+/** Gift cards this member bought for others, with a link to each printable card. */
 function GiftsBought({ uid }: { uid: string }) {
   const list = useAsync(() => gifts.mine(uid), [uid]);
   return (
