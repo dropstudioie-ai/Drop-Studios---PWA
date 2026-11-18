@@ -32,9 +32,11 @@ export function sessionImage(slug: string | null | undefined, instructorId: stri
 }
 
 // Real photos from each style's classes (public/studio/photo-N.webp), shown on the class page.
-const CLASS_PHOTOS: Record<string, number[]> = {
+// [photo, vertical focus %] where the dancers sit lower in the frame (high ceilings).
+const CLASS_PHOTOS: Record<string, (number | [number, number])[]> = {
   fitdance: [26, 47, 39, 36, 28, 40, 27, 30, 45],
   reggaeton: [53, 55, 51],   // Humberto's class
+  'hip-hop': [[61, 80], [58, 85], [60, 85], [63, 85], [57, 55], [66, 50]],   // Ana Souto's class
 };
 
 const CLASS_GROUP_PHOTO: Record<string, number> = { fitdance: 50 };
@@ -45,6 +47,9 @@ export function classGroupPhoto(slug: string | null | undefined): string | null 
   return n ? `/studio/photo-${n}.webp` : null;
 }
 
-export function classPhotos(slug: string | null | undefined): string[] {
-  return (slug ? CLASS_PHOTOS[slug] ?? [] : []).map((n) => `/studio/photo-${n}.webp`);
+export function classPhotos(slug: string | null | undefined): { src: string; focus: string }[] {
+  return (slug ? CLASS_PHOTOS[slug] ?? [] : []).map((x) => {
+    const [n, y] = Array.isArray(x) ? x : [x, 0];
+    return { src: `/studio/photo-${n}.webp`, focus: `50% ${y}%` };
+  });
 }
