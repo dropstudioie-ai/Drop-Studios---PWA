@@ -11,7 +11,7 @@ import { useAuth } from '../auth/AuthProvider';
 
 const FEATURES = [
   ['📐', '100 m² dance room'], ['🪵', 'Laminated wooden floor'], ['🪞', 'Floor-to-ceiling mirrors'], ['🌈', 'RGB LED lights + black light'],
-  ['🌬️', 'Wall fan + industrial air fans'], ['🚿', 'Bathroom with shower'], ['🍳', 'Fully fitted kitchen'], ['🛋️', 'Spacious reception area'],
+  ['🔊', 'JBL PartyBox sound system'], ['🌬️', 'Wall fan + industrial air fans'], ['🚿', 'Bathroom with shower'], ['🍳', 'Fully fitted kitchen'], ['🛋️', 'Spacious reception area'],
 ];
 const PHOTOS = [19, 25, 18, 17];
 const euro = (c: number) => formatPrice(c, 'EUR');
@@ -82,6 +82,24 @@ export default function Rent() {
           <div className="grid grid-cols-2 gap-2">
             {PHOTOS.map((n) => <img key={n} src={`/studio/photo-${n}.webp`} alt="The Drop studio" className="aspect-[3/4] w-full rounded-2xl object-cover" loading="lazy" />)}
           </div>
+        </div>
+      </section>
+
+      <section className="container-page grid items-center gap-6 pt-10 md:grid-cols-[1fr_1.1fr]">
+        <div className="grid grid-cols-2 gap-2">
+          <img src="/studio/sound-front.webp" alt="The studio's JBL PartyBox 310 speaker with its light show" className="aspect-[3/4] w-full rounded-2xl object-cover" loading="lazy" />
+          <img src="/studio/sound-back.webp" alt="The speaker’s inputs: two microphone inputs, AUX in and USB" className="aspect-[3/4] w-full rounded-2xl object-cover" loading="lazy" />
+        </div>
+        <div>
+          <p className="chip bg-accent-50 text-accent-600">Included with every booking</p>
+          <h2 className="mt-2 text-2xl font-black sm:text-3xl">🔊 The sound system</h2>
+          <p className="mt-2 text-ink-soft">A JBL PartyBox 310: big, room-filling sound with a built-in light show that moves to the beat.</p>
+          <ul className="mt-3 space-y-1 text-sm">
+            <li>• Play from your phone over Bluetooth</li>
+            <li>• Two microphone inputs (one also takes a guitar), each with its own volume</li>
+            <li>• AUX input and USB, for a laptop or a music stick</li>
+            <li>• Want a DJ for your party? Add one when you book.</li>
+          </ul>
         </div>
       </section>
 
