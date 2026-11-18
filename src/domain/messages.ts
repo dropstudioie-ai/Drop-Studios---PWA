@@ -98,6 +98,8 @@ const MESSAGES: Record<string, string> = {
   test_payments_disabled: 'Test payments are disabled on this server.',
   gift_card_not_found: 'We couldn’t find that gift card code. Please check it and try again.',
   gift_card_used: 'This gift card has already been used.',
+  choice_not_found: 'We couldn’t find that cancelled class.',
+  choice_already_made: 'You’ve already chosen for this class.',
   gift_card_expired: 'This gift card has expired. Please contact the studio.',
   gift_card_not_active: 'This gift card can’t be used. Please contact the studio.',
   send_date_required: 'Please choose the day the gift card email should arrive.',

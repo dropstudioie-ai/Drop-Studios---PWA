@@ -412,6 +412,18 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
         url: `/gift/redeem?code=${encodeURIComponent(String(p.code))}`,
       };
     }
+    case 'ticket_choice':
+      return {
+        subject: `Your ${p.title} class was cancelled: choose a class credit or a refund`,
+        text: `${hi}\n\nYour ${p.title} class on ${slot(p.starts_at, null)} has been cancelled${p.reason ? ` (${p.reason})` : ''}.\n\nYou paid ${eur(p.amount_cents)}. What would you prefer?\n\n• A class credit: book any class in the next ${p.credit_days} days, nothing to pay\n• A refund of ${eur(p.amount_cents)} to your card\n\nChoose in the app:\n${site()}/account#choices\n\nDrop Studios`,
+        url: '/account#choices',
+      };
+    case 'ticket_refund_requested':
+      return {
+        subject: `💶 Refund requested: ${p.member}, ${eur(p.amount_cents)}`,
+        text: `${hi}\n\n${p.member} chose a refund (not a class credit) for the cancelled ${p.title} class on ${slot(p.starts_at, null)}.\n\nRefund ${eur(p.amount_cents)} in Admin → Members → ${p.member} → Payments → Refund, then tap “Refunded” in Admin → Overview.\n${site()}/admin/customers?user=${p.user_id}\n\nDrop Studios`,
+        url: `/admin/customers?user=${p.user_id}`,
+      };
     case 'gift_card_redeemed':
       return {
         subject: `🎉 ${p.recipient_name ?? 'Your friend'} has started using your gift`,

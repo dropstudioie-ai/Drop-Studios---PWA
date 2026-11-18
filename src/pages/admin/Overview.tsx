@@ -1,3 +1,4 @@
+import { ticketChoices } from '../../lib/ticketChoices';
 import { useAuth } from '../../auth/AuthProvider';
 import { Link } from 'react-router-dom';
 import { useState } from 'react';
@@ -5,8 +6,8 @@ import { supabase } from '../../lib/supabase';
 import { unwrap } from '../../api';
 import { useAsync } from '../../lib/useAsync';
 import { formatPrice } from '../../domain/money';
-import { addDaysToKey, localDateKey } from '../../domain/time';
-import { ErrorNotice, Notice, PageSpinner } from '../../components/ui';
+import { addDaysToKey, fmt, localDateKey } from '../../domain/time';
+import { ErrorNotice, Notice, PageSpinner, useToast } from '../../components/ui';
 import { Section, Table, Td } from './shared';
 
 interface Analytics {
@@ -76,7 +77,7 @@ function SalesOverview() {
       </div>
       {a.loading && !d ? <PageSpinner /> : a.error ? <ErrorNotice error={a.error} onRetry={a.reload} /> : d && (
         <>
-          {t && t.refunds_to_review > 0 && <div className="mb-4"><Notice tone="warn">{t.refunds_to_review} paid class{t.refunds_to_review === 1 ? '' : 'es'} (tickets or Drop Ins) need a refund in Square. See the Audit log (“ticket refund required”).</Notice></div>}
+          <CancelledPaidClasses />
           {d.test_payments_excluded > 0 && <div className="mb-4"><Notice tone="test">{d.test_payments_excluded} TEST payment(s) in this period are excluded from all revenue figures.</Notice></div>}
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Stat label="Revenue" value={formatPrice(d.revenue_cents, 'EUR', { forceDecimals: true })}
@@ -133,5 +134,33 @@ function SalesOverview() {
         </>
       )}
     </>
+  );
+}
+
+/** Cancelled paid classes: waiting for the member to choose (credit or refund), and refunds to do in Square. */
+function CancelledPaidClasses() {
+  const toast = useToast();
+  const list = useAsync(() => ticketChoices.open(), []);
+  const rows = list.data ?? [];
+  if (!rows.length) return null;
+  const act = async (fn: () => Promise<unknown>, msg: string) => { try { await fn(); toast(msg); list.reload(); } catch (e) { toast((e as Error).message, 'error'); } };
+  return (
+    <div className="mb-6 rounded-2xl border-2 border-accent-500 bg-accent-50 p-4">
+      <p className="font-bold">Cancelled paid classes</p>
+      <ul className="mt-2 divide-y divide-accent-500/30 text-sm">
+        {rows.map((c) => (
+          <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+            <span><Link className="font-semibold underline" to={`/admin/customers?user=${c.user_id}`}>{c.member?.full_name ?? 'Member'}</Link> · {c.class_title}, {fmt.dateTime(c.class_starts_at)} · {formatPrice(c.amount_cents, 'EUR')}
+              <span className="block text-xs text-muted">{c.status === 'waiting' ? 'Waiting for them to choose a class credit or a refund (asked by email and in the app)' : 'Chose a refund: refund it in Square (member → Payments → Refund)'}</span></span>
+            {c.status === 'waiting' ? (
+              <span className="flex gap-2">
+                <button className="btn-outline btn-sm" onClick={() => void act(() => ticketChoices.adminChoose(c.id, true), 'Class credit given (valid 1 month)')}>Give credit</button>
+                <button className="btn-ghost btn-sm" onClick={() => void act(() => ticketChoices.adminChoose(c.id, false), 'Marked as refund')}>They want a refund</button>
+              </span>
+            ) : <button className="btn-primary btn-sm" onClick={() => void act(() => ticketChoices.markRefunded(c.id), 'Marked refunded')}>Refunded ✓</button>}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

@@ -254,3 +254,12 @@ Deno.test('rental confirmation carries the door code and house rules; owner hear
   assertStringIncludes(render({ kind: 'rental_booked', full_name: null, payload: base })!.text, 'DJ for 2 hours');
   assertStringIncludes(render({ kind: 'rental_problem', full_name: null, payload: { class_skipped: 'Heels', starts_at: '2026-12-06T19:00:00Z', renter: 'Zouk team' } })!.text, 'wasn\'t added to the timetable');
 });
+
+Deno.test('cancelled paid class: member chooses a credit or a refund; the owner hears about refunds', () => {
+  const m = render({ kind: 'ticket_choice', full_name: 'Magdalena', payload: { choice_id: 'c1', title: 'Hip Hop', starts_at: '2026-11-18T19:30:00Z', amount_cents: 1500, credit_days: 30, reason: 'Instructor ill' } })!;
+  assertStringIncludes(m.subject, 'class credit or a refund');
+  assertStringIncludes(m.text, 'next 30 days');
+  assertStringIncludes(m.text, 'refund of €15.00');
+  const o = render({ kind: 'ticket_refund_requested', full_name: 'Jorge', payload: { member: 'Magdalena', user_id: 'u1', title: 'Hip Hop', starts_at: '2026-11-18T19:30:00Z', amount_cents: 1500 } })!;
+  assertStringIncludes(o.subject, 'Magdalena');
+});
