@@ -318,10 +318,34 @@ function Receipts() {
 }
 
 /** Gift cards this member bought for others, with a link to each printable card. */
+/** Send a gift card that hasn't been given yet (e.g. the free Black Friday gift) by email. */
+function SendGift({ id, onSent }: { id: string; onSent: () => void }) {
+  const toast = useToast();
+  const today = localDateKey(new Date());
+  const [open, setOpen] = useState(false);
+  const [f, setF] = useState({ name: '', email: '', message: '', on: today });
+  const [busy, setBusy] = useState(false);
+  if (!open) return <button className="mt-2 text-sm font-semibold text-brand-700" onClick={() => setOpen(true)}>✉️ Send it by email</button>;
+  const send = async () => {
+    setBusy(true);
+    try { await gifts.send(id, f.name, f.email, f.message, f.on); toast(f.on === today ? 'Sent! 🎁' : `It will be emailed on ${f.on}`); onSent(); }
+    catch (e) { toast(messageFor((e as Error).message), 'error'); } finally { setBusy(false); }
+  };
+  return (
+    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+      <input className="input" placeholder="Their name" value={f.name} maxLength={80} onChange={(e) => setF({ ...f, name: e.target.value })} />
+      <input className="input" type="email" placeholder="Their email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
+      <input className="input sm:col-span-2" placeholder="Your message (optional)" value={f.message} maxLength={500} onChange={(e) => setF({ ...f, message: e.target.value })} />
+      <label className="text-sm">Send it on <input className="input" type="date" min={today} value={f.on} onChange={(e) => setF({ ...f, on: e.target.value })} /></label>
+      <button className="btn-primary btn-sm self-end" disabled={busy || !f.email.trim()} onClick={() => void send()}>{busy ? <Spinner className="h-4 w-4" /> : 'Send gift'}</button>
+    </div>
+  );
+}
+
 function GiftsBought({ uid }: { uid: string }) {
   const list = useAsync(() => gifts.mine(uid), [uid]);
   return (
-    <section className="mt-10" aria-labelledby="gifts-h">
+    <section id="gifts" className="mt-10 scroll-mt-20" aria-labelledby="gifts-h">
       <div className="flex items-center justify-between gap-2">
         <h2 id="gifts-h" className="text-xl font-black">Gift cards</h2>
         <div className="flex gap-2"><Link to="/gift/redeem" className="btn-ghost btn-sm">Redeem a code</Link><Link to="/gift" className="btn-outline btn-sm">🎁 Give one</Link></div>
@@ -329,11 +353,14 @@ function GiftsBought({ uid }: { uid: string }) {
       {list.data?.length ? (
         <ul className="mt-3 space-y-2">
           {list.data.map((g) => (
-            <li key={g.id}><Link to={`/gift/card/${g.id}`} className="card flex items-center justify-between gap-3 p-3 hover:bg-canvas">
-              <span><span className="block font-semibold">{g.plan_snapshot.plan_name.replace(' (gift)', '')}{g.recipient_name ? ` for ${g.recipient_name}` : ''}</span>
-                <span className="text-xs text-muted">{g.status === 'redeemed' ? '✓ Redeemed' : g.recipient_email && !g.recipient_emailed_at ? `Email goes on ${g.send_on}` : 'Not used yet'} · {g.code}</span></span>
-              <span className="text-sm font-semibold text-brand-700">View ›</span>
-            </Link></li>
+            <li key={g.id} className="card p-3">
+              <Link to={`/gift/card/${g.id}`} className="flex items-center justify-between gap-3">
+                <span><span className="block font-semibold">{g.is_bonus ? '🎁 Free gift: ' : ''}{g.plan_snapshot.plan_name.replace(' (gift)', '').replace(' (free gift)', '')}{g.recipient_name ? ` for ${g.recipient_name}` : ''}</span>
+                  <span className="text-xs text-muted">{g.status === 'redeemed' ? '✓ Redeemed' : g.recipient_email && !g.recipient_emailed_at ? `Email goes on ${g.send_on}` : g.recipient_emailed_at ? 'Sent by email' : g.collect_at_reception ? (g.collected_at ? 'Collected at reception' : 'Ready to collect at reception') : 'Not given yet'} · {g.code}{g.friend_free ? ' · 👯 brings a friend free' : ''}</span></span>
+                <span className="text-sm font-semibold text-brand-700">View ›</span>
+              </Link>
+              {g.status === 'active' && !g.recipient_email && <SendGift id={g.id} onSent={list.reload} />}
+            </li>
           ))}
         </ul>
       ) : <p className="mt-2 text-sm text-muted">A unique present for someone who loves to dance. Choose a pack and the day it arrives.</p>}

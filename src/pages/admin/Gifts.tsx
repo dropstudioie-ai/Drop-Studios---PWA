@@ -89,25 +89,42 @@ export default function AdminGifts() {
   if (list.error) return <ErrorNotice error={list.error} onRetry={list.reload} />;
   const rows = list.data ?? [];
   const sold = rows.reduce((n, g) => n + g.plan_snapshot.price_cents, 0);
+  const paid = rows.filter((g) => !g.is_bonus);
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap gap-2 text-sm">
-        <span className="chip bg-brand-50 text-brand-700">🎁 {rows.length} sold · {formatPrice(sold, 'EUR')}</span>
+        <span className="chip bg-brand-50 text-brand-700">🎁 {paid.length} sold · {formatPrice(sold, 'EUR')}</span>
         <span className="chip bg-success/10 text-success">{rows.filter((g) => g.status === 'redeemed').length} redeemed</span>
         <span className="chip bg-accent-50 text-accent-600">{rows.filter((g) => g.status === 'active').length} waiting to be used</span>
         <Link to="/gift" className="chip bg-canvas font-semibold">Open the gift card page ↗</Link>
       </div>
       <RedeemAtReception onDone={list.reload} />
+      {rows.some((g) => g.collect_at_reception && !g.collected_at && g.status === 'active') && (
+        <Section title="To collect at reception">
+          <p className="mb-2 text-sm text-muted">Print the card, put it in an envelope with the buyer’s name, and tick it off when they collect it.</p>
+          <ul className="divide-y divide-line">
+            {rows.filter((g) => g.collect_at_reception && !g.collected_at && g.status === 'active').map((g) => (
+              <li key={g.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                <span><strong>{g.buyer?.full_name}</strong> · {g.plan_snapshot.plan_name.replace(' (gift)', '')}{g.recipient_name ? ` for ${g.recipient_name}` : ''} · <span className="font-mono">{g.code}</span></span>
+                <span className="flex gap-2">
+                  <Link to={`/gift/card/${g.id}`} className="btn-outline btn-sm">🖨️ Print</Link>
+                  <button className="btn-primary btn-sm" onClick={async () => { await gifts.markCollected(g.id); list.reload(); }}>Collected ✓</button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
       <Section title="Gift cards sold">
         {rows.length ? (
           <Table head={['Bought', 'Gift', 'From', 'For', 'Delivery', 'Code', 'Status']}>
             {rows.map((g) => (
               <tr key={g.id}>
                 <Td>{g.purchased_at ? fmt.date(g.purchased_at) : ''}</Td>
-                <Td className="font-semibold">{g.plan_snapshot.plan_name.replace(' (gift)', '')}</Td>
+                <Td className="font-semibold">{g.plan_snapshot.plan_name.replace(' (gift)', '')}{g.is_bonus && <span className="chip ml-1 bg-accent-50 text-xs">free bonus</span>}{g.friend_free && <span className="block text-xs font-normal text-muted">👯 brings a friend free</span>}</Td>
                 <Td>{g.buyer?.full_name}<span className="block text-xs text-muted">{g.buyer?.email}</span></Td>
                 <Td>{g.recipient_name ?? '—'}<span className="block text-xs text-muted">{g.recipient_email}</span></Td>
-                <Td className="text-xs">{g.recipient_email ? (g.recipient_emailed_at ? `Emailed ${fmt.date(g.recipient_emailed_at)}` : `Email on ${g.send_on}`) : 'In person'}</Td>
+                <Td className="text-xs">{g.recipient_email ? (g.recipient_emailed_at ? `Emailed ${fmt.date(g.recipient_emailed_at)}` : `Email on ${g.send_on}`) : g.collect_at_reception ? (g.collected_at ? `Collected ${fmt.date(g.collected_at)}` : 'Collect at reception') : 'In person'}</Td>
                 <Td className="font-mono text-xs">{g.code}</Td>
                 <Td>{STATUS[g.status] ?? g.status}{g.status === 'redeemed' && <span className="block text-xs text-muted">by {g.redeemer?.full_name ?? 'member'} · {g.redeemed_via === 'reception' ? 'at reception' : 'in the app'}</span>}</Td>
               </tr>

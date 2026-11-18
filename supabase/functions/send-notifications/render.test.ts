@@ -254,3 +254,14 @@ Deno.test('rental confirmation carries the door code and house rules; owner hear
   assertStringIncludes(render({ kind: 'rental_booked', full_name: null, payload: base })!.text, 'DJ for 2 hours');
   assertStringIncludes(render({ kind: 'rental_problem', full_name: null, payload: { class_skipped: 'Heels', starts_at: '2026-12-06T19:00:00Z', renter: 'Zouk team' } })!.text, 'wasn\'t added to the timetable');
 });
+
+Deno.test('Black Friday gift emails: bring a friend, collect at reception, free Intro gift', () => {
+  const bought = render({ kind: 'gift_card_bought', full_name: 'Jorge', payload: { gift_card_id: 'g1', code: 'DROP-AB12-CD34', plan_name: 'Multi-Style · 1 month (gift)', expires_at: '2031-11-27T10:00:00Z', collect: true, friend_free: true } })!;
+  assertStringIncludes(bought.text, 'ready to collect at reception');
+  assertStringIncludes(bought.text, 'bring a friend free');
+  const got = render({ kind: 'gift_card_received', full_name: null, payload: { code: 'DROP-AB12-CD34', plan_name: 'Multi-Style', expires_at: '2031-11-27T10:00:00Z', friend_free: true } })!;
+  assertStringIncludes(got.text, 'bring a friend free to your first class');
+  const bonus = render({ kind: 'gift_card_bonus', full_name: 'Jorge', payload: { gift_card_id: 'g2', code: 'DROP-ZZ12-YY34', plan_name: '3-Class Intro Offer (free gift)', expires_at: '2031-11-27T10:00:00Z' } })!;
+  assertStringIncludes(bonus.subject, 'free Intro gift');
+  assertStringIncludes(bonus.text, 'DROP-ZZ12-YY34');
+});

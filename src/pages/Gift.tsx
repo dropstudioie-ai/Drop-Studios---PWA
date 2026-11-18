@@ -25,7 +25,7 @@ export function GiftCardVisual({ planName, code, to, from, small }: { planName: 
           <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.3em] text-[#d4af37] sm:text-xs">Gift card</p>
         </div>
         <div className="pr-[16%]">
-          <p className={`font-display text-xl font-black uppercase leading-tight sm:text-3xl ${GOLD_TEXT}`}>{planName.replace(' (gift)', '')}</p>
+          <p className={`font-display text-xl font-black uppercase leading-tight sm:text-3xl ${GOLD_TEXT}`}>{planName.replace(' (gift)', '').replace(' (free gift)', '')}</p>
           {(to || from) && <p className="mt-1 text-xs text-[#cdb67a] sm:text-sm">{to ? `For ${to}` : ''}{to && from ? ' · ' : ''}{from ? `from ${from}` : ''}</p>}
           {code && <p className="mt-2 font-mono text-base font-bold tracking-widest text-white sm:text-xl">{code}</p>}
         </div>
@@ -40,7 +40,9 @@ export default function GiftShop() {
   const navigate = useNavigate();
   const plans = useAsync(() => gifts.plans(), []);
   const [planId, setPlanId] = useState<string | null>(null);
-  const [byEmail, setByEmail] = useState(true);
+  const [delivery, setDelivery] = useState<'email' | 'print' | 'reception'>('email');
+  const byEmail = delivery === 'email';
+  const offer = useAsync(() => gifts.offer(), []);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState('');
@@ -62,7 +64,7 @@ export default function GiftShop() {
     setBusy(true); setError(null);
     try {
       const next = await checkout({ plan_id: plan.id, gift: true, idempotency_key: idem, recipient_name: name.trim() || null,
-        recipient_email: byEmail ? email.trim() : null, message: message.trim() || null, send_on: byEmail ? sendOn : null });
+        recipient_email: byEmail ? email.trim() : null, message: message.trim() || null, send_on: byEmail ? sendOn : null, collect: delivery === 'reception' });
       if ('redirect' in next) window.location.href = next.redirect; else navigate(next.navigate);
     } catch (e) { setError(messageFor((e as { code?: string }).code ?? (e as Error).message)); setBusy(false); }
   }
@@ -72,7 +74,16 @@ export default function GiftShop() {
       <section className="container-page py-10 sm:py-14">
         <p className="text-xs font-bold uppercase tracking-[0.35em] text-[#d4af37]">Gift cards</p>
         <h1 className={`mt-2 font-display text-4xl font-black uppercase leading-[0.95] sm:text-6xl ${GOLD_TEXT}`}>Give the gift of dance</h1>
-        <p className="mt-3 max-w-xl text-[#eadcb5]">A unique present for the ones you love who can’t stop dancing. Choose a pack, add a personal message and pick the day it arrives, or print it and give it in person.</p>
+        <p className="mt-3 max-w-xl text-[#eadcb5]">A unique present for the ones you love who can’t stop dancing. Choose a pack and a personal message. We email it on the day you choose, or you collect a printed black-and-gold card at reception.</p>
+        {offer.data && (
+          <div className="mt-6 rounded-2xl border-2 border-[#d4af37] bg-[#d4af37]/10 p-4">
+            <p className="text-xs font-bold uppercase tracking-[0.3em] text-[#d4af37]">Black Friday · until {new Intl.DateTimeFormat('en-IE', { timeZone: 'Europe/Dublin', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(new Date(offer.data.ends_at).getTime() - 1))}</p>
+            <ul className="mt-2 space-y-1 text-[#f3e7c6]">
+              {offer.data.friend && <li>👯 <strong className="text-white">Dance together:</strong> whoever uses the gift brings a friend free to their first class.</li>}
+              {offer.data.buy2 && <li>🎁 <strong className="text-white">Buy 2, get a 3rd free:</strong> every 2 gift cards add a free 3-class Intro gift for someone else.</li>}
+            </ul>
+          </div>
+        )}
         <div className="mt-8 grid gap-8 lg:grid-cols-2">
           <div><GiftCardVisual planName={plan?.gift_name ?? 'Drop Studios'} to={name || null} /></div>
           <div className="space-y-5">
@@ -97,21 +108,28 @@ export default function GiftShop() {
             </fieldset>
             <fieldset className="space-y-3">
               <legend className="text-sm font-bold uppercase tracking-wider text-[#d4af37]">3. How should it get to them?</legend>
-              <label className="flex items-start gap-3"><input type="checkbox" className="mt-1 h-5 w-5 accent-[#d4af37]" checked={byEmail} onChange={(e) => setByEmail(e.target.checked)} />
-                <span><span className="font-semibold text-white">Email it to them on a day I choose</span><span className="block text-sm text-[#cdb67a]">Perfect for birthdays. You’ll also get a printable card to give in person.</span></span></label>
+              {([
+                ['email', 'Email it to them on a day I choose', 'Perfect for birthdays, or Christmas morning. You’ll also get a printable card.'],
+                ['reception', 'Collect a printed card at reception', 'A black-and-gold card, ready for you at 13 Sackville Place. Just show your receipt email.'],
+                ['print', 'I’ll print it or give the code myself', 'You’ll get the code and a printable black-and-gold card straight away.'],
+              ] as const).map(([v, title, hint]) => (
+                <label key={v} className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-3 ${delivery === v ? 'border-[#d4af37] bg-[#d4af37]/10' : 'border-white/15'}`}>
+                  <input type="radio" name="delivery" className="mt-1 h-5 w-5 accent-[#d4af37]" checked={delivery === v} onChange={() => setDelivery(v)} />
+                  <span><span className="font-semibold text-white">{title}</span><span className="block text-sm text-[#cdb67a]">{hint}</span></span>
+                </label>
+              ))}
               {byEmail && (
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field label="Their email"><input className="input text-ink" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@example.com" /></Field>
                   <Field label="Send it on"><input className="input text-ink" type="date" min={today} value={sendOn} onChange={(e) => setSendOn(e.target.value)} /></Field>
                 </div>
               )}
-              {!byEmail && <p className="text-sm text-[#cdb67a]">You’ll get the code and a printable black-and-gold card to give them yourself. They can redeem it in the app or at reception.</p>}
             </fieldset>
             {error && <Notice tone="warn">{error}</Notice>}
             <button className="btn w-full bg-gradient-to-r from-[#a8801f] via-[#f5dc85] to-[#c9a227] text-lg font-black text-[#0b0906]" disabled={busy || !plan} onClick={() => void buy()}>
               {busy ? <Spinner className="h-5 w-5" /> : plan ? `Buy gift card · ${formatPrice(plan.price_cents, plan.currency)}` : 'Choose a gift'}
             </button>
-            <p className="text-center text-xs text-[#a8946a]">Secure payment by Square (card, Apple Pay, Google Pay). Valid for 5 years. Got a gift card? <Link to="/gift/redeem" className="font-semibold text-[#f3d77e] underline">Redeem it here</Link></p>
+            <p className="text-center text-xs text-[#a8946a]">Secure payment by Square (card, Apple Pay, Google Pay). Valid for 5 years. Sent by email or collected at reception. Got a gift card? <Link to="/gift/redeem" className="font-semibold text-[#f3d77e] underline">Redeem it here</Link></p>
           </div>
         </div>
       </section>
@@ -201,6 +219,7 @@ export function GiftCardPrint() {
       <div className="mt-6 rounded-3xl bg-[#070605] p-6 print:bg-white print:p-0">
         <GiftCardVisual planName={g.plan_snapshot.plan_name} code={g.code} to={g.recipient_name} from={g.buyer?.full_name ?? null} />
         {g.message && <p className="mx-auto mt-5 max-w-xl text-center font-display text-lg italic text-[#f3e7c6] print:text-ink">“{g.message}”</p>}
+        {g.friend_free && <p className="mx-auto mt-3 max-w-xl text-center text-sm font-bold text-[#f0d27a] print:text-ink">👯 Bonus: bring a friend free to your first class</p>}
         <p className="mx-auto mt-4 max-w-xl text-center text-sm text-[#cdb67a] print:text-ink-soft">Redeem at dropstudios.ie/gift/redeem or at reception · 13 Sackville Place, Dublin 1 · Valid until {g.expires_at ? fullDate(g.expires_at) : ''}</p>
       </div>
       <div className="mt-6 flex flex-wrap gap-2 print:hidden">

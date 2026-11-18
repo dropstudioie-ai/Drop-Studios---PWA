@@ -397,10 +397,13 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
       const who = p.recipient_name ? ` for ${p.recipient_name}` : '';
       const delivery = p.recipient_email
         ? `We'll email it to ${p.recipient_name ?? 'your friend'} (${p.recipient_email}) on ${longDate(String(p.send_on))}.`
-        : 'Give the code in person: print the card from the link below, or just tell them the code.';
+        : p.collect
+          ? 'Your printed black-and-gold card will be ready to collect at reception (13 Sackville Place). Just show this email.'
+          : 'Give the code in person: print the card from the link below, or just tell them the code.';
+      const bf = p.friend_free ? `\n\nBlack Friday bonus: whoever uses this gift can bring a friend free to their first class. 👯` : '';
       return {
         subject: `🎁 Your Drop gift card${who} is ready`,
-        text: `${hi}\n\nThank you! Your gift card${who} is paid and ready.\n\n${p.plan_name}\nCode: ${p.code}\nValid until ${dateWithYear(p.expires_at)}\n\n${delivery}\n\nPrintable card (black and gold):\n${site()}/gift/card/${p.gift_card_id}\n\nThey can redeem it in the app (${site()}/gift/redeem) or at reception.\n\nDrop Studios`,
+        text: `${hi}\n\nThank you! Your gift card${who} is paid and ready.\n\n${p.plan_name}\nCode: ${p.code}\nValid until ${dateWithYear(p.expires_at)}\n\n${delivery}${bf}\n\nPrintable card (black and gold):\n${site()}/gift/card/${p.gift_card_id}\n\nThey can redeem it in the app (${site()}/gift/redeem) or at reception.\n\nDrop Studios`,
         url: `/gift/card/${p.gift_card_id}`,
       };
     }
@@ -408,10 +411,16 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
       const name = p.recipient_name ? `Hi ${String(p.recipient_name).split(' ')[0]},` : 'Hi,';
       return {
         subject: `🎁 ${p.from_name ?? 'Someone special'} sent you a dance gift from Drop Studios`,
-        text: `${name}\n\n${p.from_name ?? 'Someone special'} has given you ${p.plan_name} at Drop Studios, a dance studio in Dublin city centre (13 Sackville Place).${p.message ? `\n\nTheir message:\n“${p.message}”` : ''}\n\nYour gift card code: ${p.code}\nValid until ${dateWithYear(p.expires_at)}\n\nTo use it, open ${site()}/gift/redeem?code=${encodeURIComponent(String(p.code))} , create your free account (or sign in) and your classes are ready to book. You can also show this email at reception.\n\nHeels, Hip Hop, Reggaeton, Commercial, FitDance and more, for every level. See you on the dance floor! 💃\n\nDrop Studios`,
+        text: `${name}\n\n${p.from_name ?? 'Someone special'} has given you ${p.plan_name} at Drop Studios, a dance studio in Dublin city centre (13 Sackville Place).${p.message ? `\n\nTheir message:\n“${p.message}”` : ''}\n\nYour gift card code: ${p.code}\nValid until ${dateWithYear(p.expires_at)}${p.friend_free ? '\n\nBonus: you can bring a friend free to your first class. Choose “Bring a friend” when you book it. 👯' : ''}\n\nTo use it, open ${site()}/gift/redeem?code=${encodeURIComponent(String(p.code))} , create your free account (or sign in) and your classes are ready to book. You can also show this email at reception.\n\nHeels, Hip Hop, Reggaeton, Commercial, FitDance and more, for every level. See you on the dance floor! 💃\n\nDrop Studios`,
         url: `/gift/redeem?code=${encodeURIComponent(String(p.code))}`,
       };
     }
+    case 'gift_card_bonus':
+      return {
+        subject: '🎁 Black Friday: your free Intro gift is ready to give',
+        text: `${hi}\n\nThank you for buying 2 gift cards! Here's a free gift for a third person: ${p.plan_name}, 3 classes at Drop Studios.\n\nCode: ${p.code}\nValid until ${dateWithYear(p.expires_at)}\n\nSend it by email (choose the day, even Christmas morning) from your account, print the black-and-gold card, or collect a printed card at reception:\n${site()}/account#gifts\n\nDrop Studios`,
+        url: '/account#gifts',
+      };
     case 'gift_card_redeemed':
       return {
         subject: `🎉 ${p.recipient_name ?? 'Your friend'} has started using your gift`,

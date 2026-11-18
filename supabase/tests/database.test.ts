@@ -252,6 +252,50 @@ run('database: plans, booking, allowances, pauses, security', () => {
       expect(await as(db, user(allowed), `select id from membership_plans where code = 'unlimited'`)).toHaveLength(0);
     });
 
+    it('Black Friday: gift cards bring a friend free, and every 2 bought add a free Intro gift', async () => {
+      await db.query(`update app_settings set gift_offer_from = now() - interval '1 hour', gift_offer_to = now() + interval '1 hour'`);
+      const buyer = await createUser(db, 'BFBuyer'), friend = await createUser(db, 'BFFriend');
+      expect((await as<{ o: { friend: boolean; buy2: boolean } }>(db, anon, `select gift_offer() o`))[0].o).toMatchObject({ friend: true, buy2: true });
+      const multi5 = (await db.query(`select id from membership_plans where code = 'multi-5'`)).rows[0].id;
+      const buy = async (collect: boolean) => {
+        const [{ r }] = await as<{ r: { payment_id: string } }>(db, user(buyer), `select create_gift_checkout($1, null, null, null, null, $2, 'square', $3) as r`, [multi5, randomUUID(), collect]);
+        await as(db, service, `select fulfill_payment($1, 'square', $2, $3, 5500, 'eur')`, [r.payment_id, `pi_${randomUUID()}`, `evt_${randomUUID()}`]);
+        return (await db.query(`select * from gift_cards where payment_id = $1`, [r.payment_id])).rows[0];
+      };
+      const g1 = await buy(true);
+      expect(g1).toMatchObject({ friend_free: true, collect_at_reception: true });
+      expect((await db.query(`select count(*)::int n from gift_cards where buyer_id = $1 and is_bonus`, [buyer])).rows[0].n).toBe(0);
+      await buy(false);
+      const { rows: bonus } = await db.query(`select * from gift_cards where buyer_id = $1 and is_bonus`, [buyer]);
+      expect(bonus).toHaveLength(1);
+      expect(bonus[0]).toMatchObject({ status: 'active', friend_free: false });
+      expect(bonus[0].plan_snapshot).toMatchObject({ plan_code: 'intro-3', price_cents: 0 });
+      expect((await db.query(`select count(*)::int n from notification_outbox where kind = 'gift_card_bonus' and user_id = $1`, [buyer])).rows[0].n).toBe(1);
+      await buy(false);   // a 3rd card: still only one bonus until the 4th
+      expect((await db.query(`select count(*)::int n from gift_cards where buyer_id = $1 and is_bonus`, [buyer])).rows[0].n).toBe(1);
+      // The buyer sends the free gift by email.
+      await as(db, user(buyer), `select send_gift_card($1, 'Bea', 'bea@example.com', 'Enjoy!', current_date)`, [bonus[0].id]);
+      expect((await db.query(`select to_email from notification_outbox where kind = 'gift_card_received' and dedupe_key = $1`, [`gift_received:${bonus[0].id}`])).rows[0].to_email).toBe('bea@example.com');
+      await expectError(as(db, user(friend), `select send_gift_card($1, 'X', 'x@example.com', null, current_date)`, [bonus[0].id]), 'gift_card_not_found');
+      // The friend redeems a Black Friday card and brings someone free to their first class.
+      const [{ r: red }] = await as<{ r: { membership_id: string } }>(db, user(friend), `select redeem_gift_card($1) r`, [g1.code]);
+      expect((await as<{ p: string[] }>(db, user(friend), `select my_friend_passes() p`))[0].p).toEqual([red.membership_id]);
+      const s1 = await makeSession({ style: 'hip-hop', startsInMinutes: 2 * 24 * 60, capacity: 10 });
+      await expectError(as(db, user(friend), `select book_class_with_friend($1, $2, '')`, [s1, red.membership_id]), 'guest_name_required');
+      const [{ r: bk }] = await as<{ r: { booking_id: string; guest_name: string } }>(db, user(friend), `select book_class_with_friend($1, $2, 'Lu') r`, [s1, red.membership_id]);
+      expect(bk.guest_name).toBe('Lu');
+      expect((await db.query(`select booked_count from class_sessions where id = $1`, [s1])).rows[0].booked_count).toBe(2);
+      const s2 = await makeSession({ style: 'hip-hop', startsInMinutes: 3 * 24 * 60 });
+      await expectError(as(db, user(friend), `select book_class_with_friend($1, $2, 'Lu')`, [s2, red.membership_id]), 'friend_offer_unavailable'); // once
+      await as(db, user(friend), `select cancel_booking($1)`, [bk.booking_id]);
+      expect((await db.query(`select booked_count from class_sessions where id = $1`, [s1])).rows[0].booked_count).toBe(0);
+      expect((await as<{ p: string[] }>(db, user(friend), `select my_friend_passes() p`))[0].p).toEqual([red.membership_id]); // given back
+      // Outside the window: no bonuses.
+      await db.query(`update app_settings set gift_offer_from = now() + interval '9 days', gift_offer_to = now() + interval '10 days'`);
+      expect((await as<{ o: unknown }>(db, anon, `select gift_offer() o`))[0].o).toBeNull();
+      expect((await buy(false)).friend_free).toBe(false);
+    });
+
     it('gift cards: a member buys a pack for a friend, the friend redeems it (app or reception), once', async () => {
       const buyer = await createUser(db, 'GiftBuyer'), friend = await createUser(db, 'GiftFriend'), walkIn = await createUser(db, 'GiftWalkIn');
       const plans = (await as<{ g: { id: string; code: string; gift_name: string; price_cents: number }[] }>(db, anon, `select giftable_plans() g`))[0].g;

@@ -1,5 +1,6 @@
 import { isUnlimited, leftLabel, classesLabel } from '../domain/plans';
 import { ClassDoorCode } from './ClassDoorCode';
+import { gifts } from '../lib/gifts';
 import { artworkUrl } from '../lib/events';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -45,6 +46,9 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
   const [friendOffer, setFriendOffer] = useState(false);
   const [bringFriend, setBringFriend] = useState(false);
   const [friendName, setFriendName] = useState('');
+  const [passes, setPasses] = useState<string[]>([]);
+  const [giftFriend, setGiftFriend] = useState(false);
+  const [giftFriendName, setGiftFriendName] = useState('');
   const [myGuest, setMyGuest] = useState<string | null>(null);
   const userId = auth.session?.user.id;
   const isStaff = auth.isStaff;
@@ -66,6 +70,7 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
         setFriendOffer(false);
         setMyGuest(null);
         if (userId && !session.is_special && !o.my_booking_id) api.friendOffer(session.id).then((v) => live && setFriendOffer(v)).catch(() => {});
+        if (userId && !session.is_special && !o.my_booking_id) gifts.friendPasses().then((v) => live && setPasses(v)).catch(() => {});
         if (o.my_booking_id) api.myGuest(o.my_booking_id).then((g) => live && setMyGuest(g)).catch(() => {});
         setMembershipId(o.eligible_membership_id ?? null);
         setRenewal(null);
@@ -117,9 +122,11 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
     }
   }
 
+  const withFriend = Boolean(membershipId && passes.includes(membershipId) && giftFriend && giftFriendName.trim());
   const book = () => run(async () => {
-    const res = await api.book(session.id, membershipId);
-    toast(isUnlimited(res.classes_remaining) ? 'Booked! Enjoy the class 💃' : `Booked! ${res.classes_remaining} ${res.classes_remaining === 1 ? 'class' : 'classes'} left.`);
+    const res = withFriend ? await gifts.bookWithFriend(session.id, membershipId!, giftFriendName.trim()) : await api.book(session.id, membershipId);
+    if (withFriend) toast(`Booked for you and ${giftFriendName.trim()}! 👯`);
+    else toast(isUnlimited(res.classes_remaining) ? 'Booked! Enjoy the class 💃' : `Booked! ${res.classes_remaining} ${res.classes_remaining === 1 ? 'class' : 'classes'} left.`);
     onChanged();
     onClose();
   });
@@ -299,7 +306,16 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
             ) : (
               <p className="text-sm text-ink-soft">Uses 1 class from <strong>{eligible[0].plan_name}</strong> ({leftLabel(eligible[0].classes_remaining)}).</p>
             )}
-            <button className="btn-primary w-full text-lg" disabled={busy} onClick={book}>{busy && <Spinner />}Book this class</button>
+            {membershipId && passes.includes(membershipId) && (
+              <div className="rounded-xl border-2 border-dashed border-accent-500 bg-accent-50 p-3">
+                <label className="flex items-start gap-2 text-sm">
+                  <input type="checkbox" className="mt-0.5 h-5 w-5" checked={giftFriend} onChange={(e) => setGiftFriend(e.target.checked)} />
+                  <span><strong>Bring a friend free 👯</strong><br /><span className="text-ink-soft">Your gift card includes one free friend. They take a spot next to you.</span></span>
+                </label>
+                {giftFriend && <input className="input mt-2" value={giftFriendName} onChange={(e) => setGiftFriendName(e.target.value)} placeholder="Your friend’s name" maxLength={80} />}
+              </div>
+            )}
+            <button className="btn-primary w-full text-lg" disabled={busy || (giftFriend && membershipId != null && passes.includes(membershipId) && !giftFriendName.trim())} onClick={book}>{busy && <Spinner />}{withFriend ? 'Book for 2' : 'Book this class'}</button>
             <p className="text-center text-xs text-muted">Cancel at least {cutoffLabel(policy.cancellation_cutoff_minutes)} before to get the class back.</p>
           </div>
         )}

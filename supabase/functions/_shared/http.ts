@@ -41,7 +41,7 @@ export type CheckoutBody =
   | { kind: 'membership'; plan_id: string; selected_style_id: string | null; idempotency_key: string }
   | { kind: 'ticket'; session_id: string; idempotency_key: string; guest_name?: string | null }
   | { kind: 'rental'; booking_ids: string[]; idempotency_key: string }
-  | { kind: 'gift'; plan_id: string; idempotency_key: string; recipient_name: string | null; recipient_email: string | null; message: string | null; send_on: string | null };
+  | { kind: 'gift'; plan_id: string; idempotency_key: string; recipient_name: string | null; recipient_email: string | null; message: string | null; send_on: string | null; collect?: boolean };
 
 export async function readCheckoutBody(req: Request): Promise<CheckoutBody | null> {
   try {
@@ -58,7 +58,7 @@ export async function readCheckoutBody(req: Request): Promise<CheckoutBody | nul
     if (b.gift === true) {
       const str = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null);
       return { kind: 'gift', plan_id: b.plan_id, idempotency_key: b.idempotency_key, recipient_name: str(b.recipient_name, 80),
-        recipient_email: str(b.recipient_email, 200), message: str(b.message, 500), send_on: str(b.send_on, 10) };
+        recipient_email: str(b.recipient_email, 200), message: str(b.message, 500), send_on: str(b.send_on, 10), collect: b.collect === true };
     }
     return {
       kind: 'membership',
@@ -80,6 +80,7 @@ export function startCheckout(supa: SupabaseClient, body: CheckoutBody, provider
     return supa.rpc('create_gift_checkout', {
       p_plan_id: body.plan_id, p_recipient_name: body.recipient_name, p_recipient_email: body.recipient_email,
       p_message: body.message, p_send_on: body.send_on, p_idempotency_key: body.idempotency_key, p_provider: provider,
+      p_collect: body.collect ?? false,
     });
   }
   return body.kind === 'ticket'
