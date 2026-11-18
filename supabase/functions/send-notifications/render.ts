@@ -566,6 +566,9 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
         url: '/account',
       };
     }
+    case 'studio_message':
+      // A personal message from the studio to one person (written by an admin).
+      return { subject: String(p.subject), text: `${hi}\n\n${p.body}\n\n${p.signoff ?? 'Drop Studios'}`, url: String(p.url ?? '/') };
     case 'test_message':
       return {
         subject: 'Drop Studios: notifications are working ✅',

@@ -282,3 +282,9 @@ Deno.test('instructor holiday emails', () => {
   const d = render({ kind: 'time_off_decided', full_name: 'Ana', payload: { approved: true, from: '2026-12-22', to: '2026-12-22', note: null } })!;
   assertStringIncludes(d.subject, 'approved');
 });
+
+Deno.test('a personal message from the studio', () => {
+  const m = render({ kind: 'studio_message', full_name: 'Alex Oliveira', payload: { subject: 'Your holiday dates', body: 'When are you off?', url: '/teach/profile' } })!;
+  assertStringIncludes(m.text, 'Hi Alex,');
+  assertStringIncludes(m.text, 'When are you off?');
+});
