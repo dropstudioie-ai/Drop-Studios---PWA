@@ -9,6 +9,8 @@ import { ErrorNotice, Field, PageSpinner, Sheet, Spinner, useToast } from '../..
 import { Section, Table, Td, WEEKDAYS } from './shared';
 import { StaffRoster } from '../../components/StaffRoster';
 import { CancelSessionSheet, EditSessionSheet } from '../../components/SessionAdminSheets';
+import { holidays, range, type CoverNeeded } from '../../lib/holidays';
+import { messageFor } from '../../domain/messages';
 
 type TemplateForm = Omit<ClassTemplate, 'id'> & { id?: string };
 
@@ -72,6 +74,7 @@ export default function AdminTimetable() {
 
   return (
     <>
+      <InstructorHolidays instructors={refs.data?.instructors ?? []} onChanged={() => void sessions.reload()} />
       <Section title="Weekly timetable" actions={<>
         <button className="btn-sm btn-outline" onClick={() => setEditing(blankTemplate(styles[0]?.id ?? ''))} disabled={!styles.length}>Add recurring class</button>
         <button className="btn-sm btn-primary" onClick={generate} disabled={busy}>{busy && <Spinner />}Publish next 5 weeks</button>
@@ -226,5 +229,69 @@ function TicketPriceField({ value, onChange }: { value: string; onChange: (v: st
     <Field label="Ticket price (€)" hint="Leave empty if tickets aren’t sold in the app.">
       <input className="input" inputMode="decimal" placeholder="e.g. 25" value={value} onChange={(e) => onChange(e.target.value)} />
     </Field>
+  );
+}
+
+/** Holiday requests from instructors, and the classes that need cover while they're away. */
+function InstructorHolidays({ instructors, onChanged }: { instructors: Instructor[]; onChanged: () => void }) {
+  const toast = useToast();
+  const pending = useAsync(() => holidays.pending(), []);
+  const cover = useAsync(() => holidays.needingCover(), []);
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [pick, setPick] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const reload = () => { pending.reload(); cover.reload(); onChanged(); };
+  const run = async (key: string, fn: () => Promise<unknown>, ok: string) => {
+    setBusy(key);
+    try { await fn(); toast(ok); reload(); } catch (e) { toast(messageFor((e as Error).message), 'error'); } finally { setBusy(null); }
+  };
+  const p = pending.data ?? [], c = cover.data ?? [];
+  if (!p.length && !c.length) return null;
+  const active = instructors.filter((i) => i.is_active);
+  const replace = (x: CoverNeeded) => run(x.session_id, async () => unwrap(await supabase.rpc('admin_update_session', {
+    p_session_id: x.session_id, p_starts_at: x.starts_at, p_ends_at: x.ends_at, p_instructor_id: pick[x.session_id], p_title: x.title, p_note: `${x.instructor} is on holiday`,
+  })), 'Cover instructor set. Booked members have been told.');
+  const cancel = (x: CoverNeeded) => {
+    if (!confirm(`Cancel ${x.title} on ${fmt.dateTime(x.starts_at)}? ${x.booked_count ? `${x.booked_count} booked member(s) will be told and get their class back.` : 'Nobody is booked yet.'}`)) return;
+    void run(x.session_id, async () => unwrap(await supabase.rpc('admin_cancel_session', { p_session_id: x.session_id, p_reason: `${x.instructor} is on holiday` })), 'Class cancelled');
+  };
+  return (
+    <Section title="🌴 Instructor holidays">
+      {p.length > 0 && (
+        <ul className="space-y-3">
+          {p.map((t) => (
+            <li key={t.id} className="rounded-2xl border-2 border-accent-500 p-3">
+              <p className="font-bold">{t.instructor?.full_name} asks for time off: {range(t.starts_on, t.ends_on)}</p>
+              {t.note && <p className="text-sm text-muted">“{t.note}”</p>}
+              <input className="input mt-2" placeholder="Optional note for them" value={notes[t.id] ?? ''} onChange={(e) => setNotes({ ...notes, [t.id]: e.target.value })} />
+              <div className="mt-2 flex gap-2">
+                <button className="btn-primary btn-sm" disabled={busy === t.id} onClick={() => void run(t.id, () => holidays.decide(t.id, true, notes[t.id] ?? ''), 'Approved. Now choose cover for their classes below.')}>Approve</button>
+                <button className="btn-ghost btn-sm" disabled={busy === t.id} onClick={() => void run(t.id, () => holidays.decide(t.id, false, notes[t.id] ?? ''), 'Declined: they’ve been told')}>Decline</button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {c.length > 0 && (
+        <>
+          <p className="mt-4 text-sm font-semibold">Classes during approved holidays: choose a cover instructor or cancel</p>
+          <ul className="mt-2 divide-y divide-line">
+            {c.map((x) => (
+              <li key={x.session_id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                <span><strong>{x.title}</strong> · {fmt.dateTime(x.starts_at)} · {x.instructor} away · {x.booked_count} booked</span>
+                <span className="flex flex-wrap items-center gap-2">
+                  <select className="input w-44" value={pick[x.session_id] ?? ''} onChange={(e) => setPick({ ...pick, [x.session_id]: e.target.value })}>
+                    <option value="">Cover instructor…</option>
+                    {active.filter((i) => i.id !== x.instructor_id).map((i) => <option key={i.id} value={i.id}>{i.full_name}</option>)}
+                  </select>
+                  <button className="btn-primary btn-sm" disabled={!pick[x.session_id] || busy === x.session_id} onClick={() => void replace(x)}>Replace</button>
+                  <button className="btn-ghost btn-sm text-danger" disabled={busy === x.session_id} onClick={() => cancel(x)}>Cancel class</button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </Section>
   );
 }

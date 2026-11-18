@@ -989,6 +989,38 @@ run('database: plans, booking, allowances, pauses, security', () => {
       expect(await as(db, user(b), `select name from storage.objects where bucket_id = 'avatars' and name like $1 || '/%'`, [a])).toHaveLength(0);
     });
 
+    it('instructors request holidays; admins approve, then cover or cancel each class', async () => {
+      const tp = await createUser(db, 'HolidayTeacher', 'instructor');
+      const { rows: [inst] } = await db.query(`insert into instructors (full_name, profile_id) values ('Holiday Teacher', $1) returning id`, [tp]);
+      const { rows: [cover] } = await db.query(`insert into instructors (full_name) values ('Cover Teacher') returning id`);
+      const mk = async (days: number) => {
+        const sid = await makeSession({ style: 'hip-hop', startsInMinutes: days * 24 * 60 });
+        await db.query(`update class_sessions set instructor_id = $1 where id = $2`, [inst.id, sid]);
+        return sid;
+      };
+      const s1 = await mk(3), s2 = await mk(4), outside = await mk(20);
+      const day = async (n: number) => (await db.query(`select (current_date + $1::int)::text d`, [n])).rows[0].d as string;
+      const member = await createUser(db, 'HolidayMember');
+      await expectError(as(db, user(member), `select request_time_off($1::date, $2::date, 'x')`, [await day(2), await day(5)]), 'not_an_instructor');
+      await expectError(as(db, user(tp), `select request_time_off($1::date, $2::date, 'x')`, [await day(-1), await day(5)]), 'time_off_in_past');
+      const [{ r }] = await as<{ r: { id: string; classes: number } }>(db, user(tp), `select request_time_off($1::date, $2::date, 'Family wedding') r`, [await day(2), await day(5)]);
+      expect(r.classes).toBe(2);
+      await expectError(as(db, user(tp), `select request_time_off($1::date, $2::date, null)`, [await day(4), await day(8)]), 'time_off_overlaps');
+      expect((await db.query(`select count(*)::int n from notification_outbox where kind = 'time_off_requested' and user_id = $1`, [admin])).rows[0].n).toBe(1);
+      expect(await as(db, user(member), `select * from instructor_time_off`)).toHaveLength(0);   // private
+      expect(await as(db, user(tp), `select * from instructor_time_off`)).toHaveLength(1);
+      await expectError(as(db, user(tp), `select admin_decide_time_off($1, true, null)`, [r.id]), 'forbidden');
+      await as(db, user(admin), `select admin_decide_time_off($1, true, 'Enjoy!')`, [r.id]);
+      expect((await db.query(`select payload ->> 'approved' a from notification_outbox where kind = 'time_off_decided' and user_id = $1`, [tp])).rows[0].a).toBe('true');
+      const need = async () => (await as<{ c: { session_id: string }[] }>(db, user(admin), `select admin_classes_needing_cover() c`))[0].c.map((x) => x.session_id);
+      expect((await need()).sort()).toEqual([s1, s2].sort());
+      expect(await need()).not.toContain(outside);
+      const { rows: [ss] } = await db.query(`select starts_at, ends_at, title from class_sessions where id = $1`, [s1]);
+      await as(db, user(admin), `select admin_update_session($1, $2, $3, $4, $5, null)`, [s1, ss.starts_at, ss.ends_at, cover.id, ss.title]);
+      await as(db, user(admin), `select admin_cancel_session($1, 'Instructor on holiday')`, [s2]);
+      expect(await need()).toEqual([]);
+    });
+
     it('admins and instructors can add a member’s photo; members can’t set someone else’s', async () => {
       const m = await createUser(db, 'PhotoByStaff', 'customer', { photo: false });
       const teacher = await createUser(db, 'PhotoTeacher', 'instructor');

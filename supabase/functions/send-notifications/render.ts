@@ -433,6 +433,22 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
         text: `${hi}\n\n${p.member} chose a refund (not a class credit) for the cancelled ${p.title} class on ${slot(p.starts_at, null)}.\n\nRefund ${eur(p.amount_cents)} in Admin → Members → ${p.member} → Payments → Refund, then tap “Refunded” in Admin → Overview.\n${site()}/admin/customers?user=${p.user_id}\n\nDrop Studios`,
         url: `/admin/customers?user=${p.user_id}`,
       };
+    case 'time_off_requested': {
+      const range = (a: unknown, b: unknown) => a === b ? dateWithYear(`${a}T12:00:00Z`) : `${dateWithYear(`${a}T12:00:00Z`)} to ${dateWithYear(`${b}T12:00:00Z`)}`;
+      return {
+        subject: `🌴 Holiday request: ${p.instructor}, ${range(p.from, p.to)}`,
+        text: `${hi}\n\n${p.instructor} has asked for time off: ${range(p.from, p.to)}.${p.note ? `\nTheir note: “${p.note}”` : ''}\n\n${Number(p.classes) ? `${p.classes} of their classes fall in these dates. If you approve, choose a cover instructor or cancel each class.` : 'None of their classes are on the timetable in these dates yet.'}\n\nApprove or decline in Admin → Timetable:\n${site()}/admin/timetable\n\nDrop Studios`,
+        url: '/admin/timetable',
+      };
+    }
+    case 'time_off_decided': {
+      const range = p.from === p.to ? dateWithYear(`${p.from}T12:00:00Z`) : `${dateWithYear(`${p.from}T12:00:00Z`)} to ${dateWithYear(`${p.to}T12:00:00Z`)}`;
+      return {
+        subject: p.approved ? `✅ Your time off is approved: ${range}` : `Your time off request (${range})`,
+        text: `${hi}\n\n${p.approved ? `Your time off from ${range} is approved. We'll arrange cover for your classes. Enjoy the break!` : `Sorry, we can't approve your time off from ${range}.`}${p.note ? `\n\nNote from the studio: “${p.note}”` : ''}\n\n${site()}/teach/profile\n\nDrop Studios`,
+        url: '/teach/profile',
+      };
+    }
     case 'gift_card_redeemed':
       return {
         subject: `🎉 ${p.recipient_name ?? 'Your friend'} has started using your gift`,

@@ -274,3 +274,11 @@ Deno.test('cancelled paid class: member chooses a credit or a refund; the owner 
   const o = render({ kind: 'ticket_refund_requested', full_name: 'Jorge', payload: { member: 'Magdalena', user_id: 'u1', title: 'Hip Hop', starts_at: '2026-11-18T19:30:00Z', amount_cents: 1500 } })!;
   assertStringIncludes(o.subject, 'Magdalena');
 });
+
+Deno.test('instructor holiday emails', () => {
+  const r = render({ kind: 'time_off_requested', full_name: 'Jorge', payload: { instructor: 'Ana Souto', from: '2026-12-22', to: '2026-12-29', note: 'Going home', classes: 2 } })!;
+  assertStringIncludes(r.subject, 'Ana Souto');
+  assertStringIncludes(r.text, '2 of their classes');
+  const d = render({ kind: 'time_off_decided', full_name: 'Ana', payload: { approved: true, from: '2026-12-22', to: '2026-12-22', note: null } })!;
+  assertStringIncludes(d.subject, 'approved');
+});

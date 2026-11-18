@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAsync } from '../lib/useAsync';
 import { classPages, type StyleDetails, type TeachingProfile } from '../lib/classPages';
+import { holidays, range, STATUS_LABEL } from '../lib/holidays';
+import { messageFor } from '../domain/messages';
+import { localDateKey } from '../domain/time';
 import { ErrorNotice, Field, PageSpinner, Spinner, useToast } from '../components/ui';
 
 /** Instructors write their own bio and describe the classes they teach (shown on the public class pages). */
@@ -34,9 +37,51 @@ function Editor({ profile, onSaved }: { profile: TeachingProfile; onSaved: () =>
         ? <p className="mt-3 rounded-xl bg-accent-50 p-3 text-sm font-semibold text-accent-600">Still to do: {[!profile.instructor.bio_confirmed && 'your bio', ...profile.styles.filter((s) => !s.details_confirmed).map((s) => s.name)].filter(Boolean).join(', ')}</p>
         : <p className="mt-3 rounded-xl bg-success/10 p-3 text-sm font-semibold text-success">All done, thank you! You can come back and update it any time.</p>}
 
+      <Holidays />
       <BioForm profile={profile} onSaved={onSaved} />
       {profile.styles.map((s) => <StyleForm key={s.id} style={s} onSaved={onSaved} />)}
     </div>
+  );
+}
+
+/** Ask the studio for time off. Admins approve it and arrange cover for the classes. */
+function Holidays() {
+  const toast = useToast();
+  const list = useAsync(() => holidays.mine(), []);
+  const today = localDateKey(new Date());
+  const [from, setFrom] = useState(today);
+  const [to, setTo] = useState(today);
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  async function send() {
+    setBusy(true);
+    try {
+      const r = await holidays.request(from, to < from ? from : to, note);
+      toast(r.classes ? `Request sent. ${r.classes} of your classes fall in those dates; the studio will arrange cover.` : 'Request sent to the studio.');
+      setNote(''); list.reload();
+    } catch (e) { toast(messageFor((e as Error).message), 'error'); } finally { setBusy(false); }
+  }
+  return (
+    <section className="card mt-6 p-5" aria-labelledby="hol-h">
+      <h2 id="hol-h" className="text-xl font-black">🌴 Holidays and time off</h2>
+      <p className="mt-1 text-sm text-ink-soft">Ask as early as you can. The studio approves it and finds cover for your classes (or cancels them), and members are told.</p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <Field label="From"><input className="input" type="date" min={today} value={from} onChange={(e) => { setFrom(e.target.value); if (to < e.target.value) setTo(e.target.value); }} /></Field>
+        <Field label="To (last day off)"><input className="input" type="date" min={from} value={to} onChange={(e) => setTo(e.target.value)} /></Field>
+      </div>
+      <Field label="Note for the studio (optional)"><input className="input" value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Family wedding in Brazil. Ana could cover my Tuesday class." /></Field>
+      <button className="btn-primary mt-3 w-full sm:w-auto" disabled={busy} onClick={() => void send()}>{busy ? <Spinner /> : 'Request time off'}</button>
+      {!!list.data?.length && (
+        <ul className="mt-4 divide-y divide-line text-sm">
+          {list.data.map((t) => (
+            <li key={t.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+              <span><strong>{range(t.starts_on, t.ends_on)}</strong> · {STATUS_LABEL[t.status]}{t.note ? <span className="block text-xs text-muted">{t.note}</span> : null}{t.admin_note ? <span className="block text-xs text-muted">Studio: {t.admin_note}</span> : null}</span>
+              {t.status === 'pending' && <button className="btn-ghost btn-sm" onClick={async () => { try { await holidays.cancel(t.id); list.reload(); } catch (e) { toast(messageFor((e as Error).message), 'error'); } }}>Withdraw</button>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
