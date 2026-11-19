@@ -1,4 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import QRCode from 'qrcode';
+import { checkin } from '../../lib/checkin';
+import { Celebration } from '../../components/Celebration';
 import { supabase } from '../../lib/supabase';
 import { api, unwrap } from '../../api';
 import type { ClassTemplate, DanceStyle, Instructor, StaffSession } from '../../api/types';
@@ -40,6 +43,7 @@ export default function AdminTimetable() {
   const [roster, setRoster] = useState<StaffSession | null>(null);
   const [cancelling, setCancelling] = useState<StaffSession | null>(null);
   const [editingSession, setEditingSession] = useState<string | null>(null);
+  const [reception, setReception] = useState(false);
   const [newSession, setNewSession] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -74,6 +78,8 @@ export default function AdminTimetable() {
 
   return (
     <>
+      <button className="btn-accent mb-4 w-full text-lg sm:w-auto" onClick={() => setReception(true)}>📲 Reception check-in QR (all classes)</button>
+      {reception && <ReceptionCheckIn onClose={() => { setReception(false); void sessions.reload(); }} />}
       <InstructorHolidays instructors={refs.data?.instructors ?? []} onChanged={() => void sessions.reload()} />
       <Section title="Weekly timetable" actions={<>
         <button className="btn-sm btn-outline" onClick={() => setEditing(blankTemplate(styles[0]?.id ?? ''))} disabled={!styles.length}>Add recurring class</button>
@@ -293,5 +299,69 @@ function InstructorHolidays({ instructors, onChanged }: { instructors: Instructo
         </>
       )}
     </Section>
+  );
+}
+
+type Arrival = { booking_id: string; full_name: string; title: string; is_new: boolean; is_birthday: boolean };
+
+/** One QR at reception for every class on now (new code every 30 seconds), with arrivals as they check in. */
+function ReceptionCheckIn({ onClose }: { onClose: () => void }) {
+  const [img, setImg] = useState<string | null>(null);
+  const [left, setLeft] = useState(30);
+  const [arrived, setArrived] = useState<Arrival[]>([]);
+  const [shout, setShout] = useState<Arrival | null>(null);
+  useEffect(() => {
+    let live = true; let timer: ReturnType<typeof setTimeout>;
+    const refresh = async () => {
+      try {
+        const c = await checkin.studioCode();
+        if (!live) return;
+        setImg(await QRCode.toDataURL(checkin.studioUrl(c.code), { width: 720, margin: 1, errorCorrectionLevel: 'M' }));
+        setLeft(c.valid_for);
+        timer = setTimeout(refresh, Math.max(2, c.valid_for) * 1000);
+      } catch { if (live) timer = setTimeout(refresh, 5000); }
+    };
+    void refresh();
+    return () => { live = false; clearTimeout(timer); };
+  }, []);
+  useEffect(() => { const t = setInterval(() => setLeft((n) => Math.max(0, n - 1)), 1000); return () => clearInterval(t); }, []);
+  useEffect(() => {
+    let seen: Set<string> | null = null;
+    const poll = async () => {
+      try {
+        const here = await checkin.now();
+        if (seen) { const fresh = here.find((b) => !seen!.has(b.booking_id)); if (fresh) { setShout(fresh); setTimeout(() => setShout((x) => (x === fresh ? null : x)), 6000); } }
+        seen = new Set(here.map((b) => b.booking_id));
+        setArrived(here);
+      } catch { /* keep showing the code */ }
+    };
+    void poll();
+    const t = setInterval(() => void poll(), 4000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col items-center overflow-y-auto bg-ink p-4 text-white">
+      {shout?.is_birthday && <Celebration emojis={['🎂', '🎉', '🎈']} count={40} />}
+      <div className="flex w-full max-w-md items-center justify-between">
+        <p className="font-bold">Drop check-in · all classes</p>
+        <button className="btn-ghost btn-sm text-white" onClick={onClose}>Close</button>
+      </div>
+      <div className="mt-4 w-full max-w-md rounded-3xl bg-white p-4">
+        {img ? <img src={img} alt="Check-in QR code" className="w-full" /> : <div className="aspect-square w-full animate-pulse rounded-2xl bg-white/50" />}
+      </div>
+      <p className="mt-3 text-center text-white/80">Scan with your phone camera to check in to your class.<br /><span className="text-xs">New code in {left}s</span></p>
+      {shout && (
+        <div className={`mt-4 w-full max-w-md rounded-2xl p-4 text-center ${shout.is_birthday ? 'bg-accent-500 text-ink' : shout.is_new ? 'bg-brand-600' : 'bg-success'}`}>
+          <p className="text-2xl font-black">{shout.is_birthday ? '🎂 ' : shout.is_new ? '✨ ' : '✅ '}{shout.full_name}</p>
+          <p className="font-semibold">{shout.title} · {shout.is_birthday ? 'It’s their birthday! 🎉' : shout.is_new ? 'FIRST CLASS: give them a warm welcome!' : 'Checked in'}</p>
+        </div>
+      )}
+      <div className="mt-4 w-full max-w-md">
+        <p className="text-sm font-semibold text-white/70">Checked in now ({arrived.length})</p>
+        <ul className="mt-2 flex flex-wrap gap-2">
+          {arrived.map((b) => <li key={b.booking_id} className="chip bg-white/10 text-white">{b.is_birthday ? '🎂 ' : b.is_new ? '✨ ' : ''}{b.full_name} · {b.title}</li>)}
+        </ul>
+      </div>
+    </div>
   );
 }

@@ -12,8 +12,8 @@ export default function CheckInPage() {
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     const s = params.get('s'), t = params.get('t');
-    if (!s || !t) { setError('checkin_code_expired'); return; }
-    checkin.checkIn(s, t).then(setRes).catch((e) => setError((e as Error).message));
+    if (!t || (!s && !params.get('studio'))) { setError('checkin_code_expired'); return; }
+    (s ? checkin.checkIn(s, t) : checkin.checkInStudio(t)).then(setRes).catch((e) => setError((e as Error).message));
   }, [params]);
 
   if (error) {

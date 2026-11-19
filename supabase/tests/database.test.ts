@@ -1039,6 +1039,17 @@ run('database: plans, booking, allowances, pauses, security', () => {
       expect((await db.query(`select status from bookings where session_id = $1 and user_id = $2`, [sid, m])).rows[0].status).toBe('attended');
       const other = await createUser(db, 'QrNotBooked');
       await expectError(as(db, user(other), `select check_in($1, $2)`, [sid, c.code]), 'checkin_not_booked');
+      // The reception code (admin) checks people in to whichever booked class is on now.
+      const m2 = await createUser(db, 'QrReception');
+      await buy(m2, 'multi-5');
+      await book(m2, sid);
+      await expectError(as(db, user(m2), `select studio_checkin_code()`), 'forbidden');
+      const [{ sc }] = await as<{ sc: { code: string } }>(db, user(admin), `select studio_checkin_code() sc`);
+      const [{ r2 }] = await as<{ r2: { title: string } }>(db, user(m2), `select check_in_studio($1) r2`, [sc.code]);
+      expect(r2.title).toBe('hip-hop class');
+      await expectError(as(db, user(other), `select check_in_studio($1)`, [sc.code]), 'checkin_not_booked');
+      const now = (await as<{ c: { full_name: string }[] }>(db, user(admin), `select admin_checkins_now() c`))[0].c.map((x) => x.full_name);
+      expect(now).toEqual(expect.arrayContaining(['QrMember', 'QrReception']));
       // Reminders: a class that ended 6 minutes ago with someone unmarked.
       const late = await createUser(db, 'QrLate');
       await buy(late, 'multi-5');
