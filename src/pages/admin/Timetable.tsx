@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useBackToClose } from '../../lib/useBackToClose';
 import QRCode from 'qrcode';
 import { checkin } from '../../lib/checkin';
 import { Celebration } from '../../components/Celebration';
@@ -306,6 +307,7 @@ type Arrival = { booking_id: string; full_name: string; title: string; is_new: b
 
 /** One QR at reception for every class on now (new code every 30 seconds), with arrivals as they check in. */
 function ReceptionCheckIn({ onClose }: { onClose: () => void }) {
+  useBackToClose(onClose);
   const [img, setImg] = useState<string | null>(null);
   const [left, setLeft] = useState(30);
   const [arrived, setArrived] = useState<Arrival[]>([]);
@@ -343,8 +345,8 @@ function ReceptionCheckIn({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 z-50 flex flex-col items-center overflow-y-auto bg-ink p-4 text-white">
       {shout?.is_birthday && <Celebration emojis={['🎂', '🎉', '🎈']} count={40} />}
       <div className="flex w-full max-w-md items-center justify-between">
-        <p className="font-bold">Drop check-in · all classes</p>
-        <button className="btn-ghost btn-sm text-white" onClick={onClose}>Close</button>
+        <button className="flex items-center gap-1 rounded-full bg-white/15 px-4 py-2 font-semibold text-white hover:bg-white/25" onClick={onClose}>← Back</button>
+        <p className="font-bold text-right">Drop check-in · all classes</p>
       </div>
       <div className="mt-4 w-full max-w-md rounded-3xl bg-white p-4">
         {img ? <img src={img} alt="Check-in QR code" className="w-full" /> : <div className="aspect-square w-full animate-pulse rounded-2xl bg-white/50" />}
@@ -362,6 +364,7 @@ function ReceptionCheckIn({ onClose }: { onClose: () => void }) {
           {arrived.map((b) => <li key={b.booking_id} className="chip bg-white/10 text-white">{b.is_birthday ? '🎂 ' : b.is_new ? '✨ ' : ''}{b.full_name} · {b.title}</li>)}
         </ul>
       </div>
+      <button className="btn mt-6 w-full max-w-md border-2 border-white/30 text-white hover:bg-white/10" onClick={onClose}>← Back to timetable</button>
     </div>
   );
 }
