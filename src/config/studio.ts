@@ -1,5 +1,8 @@
 // Studio contact details for the header, footer and home page.
 // Empty values are simply hidden.
+// Opens Drop Studio on Google Maps at the reviews ("Write a review" button).
+export const GOOGLE_REVIEW_URL = 'https://www.google.com/maps/place/Drop+Studio/@53.3489436,-6.2613626,17z/data=!4m8!3m7!1s0x48670fcbbf4ec893:0x48e488ca98f2aa44!8m2!3d53.3489404!4d-6.2587823!9m1!1b1';
+
 export const STUDIO = {
   name: 'Drop Studios',
   // Registered business name (and CRO number, if a company) for the legal pages.

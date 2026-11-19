@@ -4,6 +4,7 @@ import { useAsync } from '../lib/useAsync';
 import { feedback, type FeedbackItem, type FeedbackRequest, average } from '../lib/feedback';
 import { fmt } from '../domain/time';
 import { ErrorNotice, PageSpinner, Spinner, useToast } from '../components/ui';
+import { GOOGLE_REVIEW_URL } from '../config/studio';
 
 const WHY: Record<FeedbackRequest['reason'], string> = {
   first_in_style: 'Your first class in this style',
@@ -35,6 +36,18 @@ export default function FeedbackPage() {
   const [share, setShare] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loved, setLoved] = useState(false);
+  if (loved) {
+    return (
+      <div className="container-page max-w-lg py-12 text-center">
+        <p className="text-6xl">💛</p>
+        <h1 className="mt-3 text-3xl font-black">Thank you!</h1>
+        <p className="mt-2 text-ink-soft">So glad you loved it. Would you tell others on Google? It takes 30 seconds and it’s the biggest help for a small studio like ours.</p>
+        <a href={GOOGLE_REVIEW_URL} target="_blank" rel="noreferrer" className="btn-accent mt-6 w-full text-lg">⭐ Review Drop on Google</a>
+        <Link to="/timetable" className="btn-ghost mt-2 w-full">Maybe later · book my next class</Link>
+      </div>
+    );
+  }
   if (reqs.loading && !reqs.data) return <PageSpinner />;
   const r = reqs.data?.find((x) => x.id === id);
   if (!r) {
@@ -69,6 +82,7 @@ export default function FeedbackPage() {
           setError(null);
           try {
             await feedback.submit(r.id, rating, comment, share);
+            if (rating === 5) { setLoved(true); return; }
             toast('Thank you! Your feedback helps us improve.');
             navigate('/');
           } catch (e) {

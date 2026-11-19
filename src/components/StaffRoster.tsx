@@ -7,6 +7,9 @@ import { supabase, AppError } from '../lib/supabase';
 import { unwrap } from '../api';
 import { fmt, ordinal } from '../domain/time';
 import { Avatar } from './Avatar';
+import QRCode from 'qrcode';
+import { checkin } from '../lib/checkin';
+import { Celebration } from './Celebration';
 import { MemberPhotoButton } from './MemberPhotoButton';
 import { CancelSessionSheet, EditSessionSheet } from './SessionAdminSheets';
 import { ErrorNotice, Notice, PageSpinner, Sheet, Spinner, useToast } from './ui';
@@ -30,6 +33,7 @@ export function StaffRoster({ sessionId, onClose, onChanged, isAdmin = false }: 
   const roster = useAsync(() => api.roster(sessionId), [sessionId]);
   const [editing, setEditing] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [qr, setQr] = useState(false);
   const r = roster.data;
   const started = r ? new Date(r.starts_at).getTime() - 3_600_000 <= Date.now() : false;
 
@@ -74,6 +78,9 @@ export function StaffRoster({ sessionId, onClose, onChanged, isAdmin = false }: 
             </div>
           </div>
 
+          {r.status === 'scheduled' && started && new Date(r.ends_at) > new Date() && (
+            <button className="btn-accent w-full text-lg" onClick={() => setQr(true)}>📲 Show check-in QR</button>
+          )}
           {isAdmin && r.status === 'scheduled' && new Date(r.ends_at) > new Date() && (
             <div className="flex gap-2">
               <button className="btn-outline btn-sm flex-1" onClick={() => setEditing(true)}>Edit class</button>
@@ -130,6 +137,7 @@ export function StaffRoster({ sessionId, onClose, onChanged, isAdmin = false }: 
           )}
         </div>
       )}
+      {qr && r && <CheckInScreen sessionId={sessionId} title={r.title} onClose={() => { setQr(false); void roster.reload(); onChanged?.(); }} />}
       {editing && <EditSessionSheet sessionId={sessionId} onClose={() => setEditing(false)}
         onDone={(n) => { toast(n ? `Class updated. ${n} member(s) notified.` : 'Class updated.'); void roster.reload(); onChanged?.(); }} />}
       {cancelling && r && <CancelSessionSheet session={{ id: sessionId, title: r.title, starts_at: r.starts_at, booked_count: r.booked_count }} onClose={() => setCancelling(false)}
@@ -199,5 +207,70 @@ function AddMember({ sessionId, onAdded }: { sessionId: string; onAdded: () => v
         ))}
       </ul>
     </section>
+  );
+}
+
+/** Full-screen QR for members to scan (new code every 30 seconds), with arrivals as they check in. */
+function CheckInScreen({ sessionId, title, onClose }: { sessionId: string; title: string; onClose: () => void }) {
+  const [img, setImg] = useState<string | null>(null);
+  const [left, setLeft] = useState(30);
+  const [arrived, setArrived] = useState<RosterEntry[]>([]);
+  const [shout, setShout] = useState<RosterEntry | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true; let timer: ReturnType<typeof setTimeout>;
+    const refresh = async () => {
+      try {
+        const c = await checkin.code(sessionId);
+        if (!live) return;
+        setImg(await QRCode.toDataURL(checkin.url(sessionId, c.code), { width: 720, margin: 1, errorCorrectionLevel: 'M' }));
+        setLeft(c.valid_for); setError(null);
+        timer = setTimeout(refresh, Math.max(2, c.valid_for) * 1000);
+      } catch (e) { if (live) { setError((e as Error).message); timer = setTimeout(refresh, 5000); } }
+    };
+    void refresh();
+    return () => { live = false; clearTimeout(timer); };
+  }, [sessionId]);
+  useEffect(() => { const t = setInterval(() => setLeft((n) => Math.max(0, n - 1)), 1000); return () => clearInterval(t); }, []);
+  // Who has checked in (polled every 4 seconds); the newest arrival gets a moment on screen.
+  useEffect(() => {
+    let seen: Set<string> | null = null;
+    const poll = async () => {
+      try {
+        const r = await api.roster(sessionId);
+        const here = r.bookings.filter((b) => b.status === 'attended');
+        if (seen) { const fresh = here.find((b) => !seen!.has(b.booking_id)); if (fresh) { setShout(fresh); setTimeout(() => setShout((x) => (x === fresh ? null : x)), 6000); } }
+        seen = new Set(here.map((b) => b.booking_id));
+        setArrived(here);
+      } catch { /* keep showing the code */ }
+    };
+    void poll();
+    const t = setInterval(() => void poll(), 4000);
+    return () => clearInterval(t);
+  }, [sessionId]);
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col items-center overflow-y-auto bg-ink p-4 text-white">
+      {shout?.is_birthday && <Celebration emojis={['🎂', '🎉', '🎈']} count={40} />}
+      <div className="flex w-full max-w-md items-center justify-between">
+        <p className="font-bold">{title} · check-in</p>
+        <button className="btn-ghost btn-sm text-white" onClick={onClose}>Close</button>
+      </div>
+      <div className="mt-4 w-full max-w-md rounded-3xl bg-white p-4">
+        {img ? <img src={img} alt="Check-in QR code" className="w-full" /> : <div className="aspect-square w-full animate-pulse rounded-2xl bg-canvas" />}
+      </div>
+      <p className="mt-3 text-center text-white/80">Members: open your phone camera and scan to check in.<br /><span className="text-xs">New code in {left}s{error ? ' · reconnecting…' : ''}</span></p>
+      {shout && (
+        <div className={`mt-4 w-full max-w-md rounded-2xl p-4 text-center ${shout.is_birthday ? 'bg-accent-500 text-ink' : shout.is_new ? 'bg-brand-600' : 'bg-success'}`}>
+          <p className="text-2xl font-black">{shout.is_birthday ? '🎂 ' : shout.is_new ? '✨ ' : '✅ '}{shout.full_name}</p>
+          <p className="font-semibold">{shout.is_birthday ? `It’s their birthday${shout.turning ? ` (${shout.turning})` : ''}! Sing it! 🎉` : shout.is_new ? 'FIRST CLASS: say hi and make them welcome!' : 'Checked in'}</p>
+        </div>
+      )}
+      <div className="mt-4 w-full max-w-md">
+        <p className="text-sm font-semibold text-white/70">Here ({arrived.length})</p>
+        <ul className="mt-2 flex flex-wrap gap-2">
+          {arrived.map((b) => <li key={b.booking_id} className="chip bg-white/10 text-white">{b.is_birthday ? '🎂 ' : b.is_new ? '✨ ' : ''}{b.full_name}</li>)}
+        </ul>
+      </div>
+    </div>
   );
 }

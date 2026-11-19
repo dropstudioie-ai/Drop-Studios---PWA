@@ -566,6 +566,12 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
         url: '/account',
       };
     }
+    case 'attendance_reminder':
+      return {
+        subject: `${p.stage === '15' ? '⏰ Reminder: ' : ''}Mark today’s ${p.title} attendance`,
+        text: `${hi}\n\n${p.unmarked} ${Number(p.unmarked) === 1 ? 'person is' : 'people are'} still unmarked for today’s ${p.title}. It takes 10 seconds: open the class list and tap Here or No-show.\n\n${site()}/\n\nThanks!\nDrop Studios`,
+        url: '/',
+      };
     case 'studio_message':
       // A personal message from the studio to one person (written by an admin).
       return { subject: String(p.subject), text: `${hi}\n\n${p.body}\n\n${p.signoff ?? 'Drop Studios'}`, url: String(p.url ?? '/') };

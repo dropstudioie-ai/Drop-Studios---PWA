@@ -288,3 +288,9 @@ Deno.test('a personal message from the studio', () => {
   assertStringIncludes(m.text, 'Hi Alex,');
   assertStringIncludes(m.text, 'When are you off?');
 });
+
+Deno.test('attendance reminder to the instructor', () => {
+  const r = render({ kind: 'attendance_reminder', full_name: 'Ana Souto', payload: { title: 'Hip Hop', unmarked: 3, stage: '15' } })!;
+  assertStringIncludes(r.subject, 'Mark today’s Hip Hop attendance');
+  assertStringIncludes(r.text, '3 people are still unmarked');
+});

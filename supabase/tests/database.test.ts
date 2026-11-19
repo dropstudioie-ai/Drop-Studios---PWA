@@ -1022,6 +1022,36 @@ run('database: plans, booking, allowances, pauses, security', () => {
       await db.query(`update class_sessions set status = 'cancelled' where id = any($1)`, [[s1, outside]]);   // don't collide with later tests
     });
 
+    it('QR check-in: the teacher’s code marks members attended; first class and birthday are flagged', async () => {
+      const tp = await createUser(db, 'QrTeacher', 'instructor');
+      const { rows: [inst] } = await db.query(`insert into instructors (full_name, profile_id) values ('Qr Teacher', $1) returning id`, [tp]);
+      const m = await createUser(db, 'QrMember');
+      await buy(m, 'multi-5');
+      const sid = await makeSession({ style: 'hip-hop', startsInMinutes: 20 });
+      await db.query(`update class_sessions set instructor_id = $1 where id = $2`, [inst.id, sid]);
+      await book(m, sid);
+      await db.query(`update profiles set date_of_birth = (now() at time zone 'Europe/Dublin')::date - interval '30 years' where id = $1`, [m]);
+      await expectError(as(db, user(m), `select checkin_code($1)`, [sid]), 'forbidden');   // members can't see the code
+      const [{ c }] = await as<{ c: { code: string } }>(db, user(tp), `select checkin_code($1) c`, [sid]);
+      await expectError(as(db, user(m), `select check_in($1, 'wrong')`, [sid]), 'checkin_code_expired');
+      const [{ r }] = await as<{ r: { first_class: boolean; birthday: boolean; turning: number } }>(db, user(m), `select check_in($1, $2) r`, [sid, c.code]);
+      expect(r).toMatchObject({ first_class: true, birthday: true, turning: 30 });
+      expect((await db.query(`select status from bookings where session_id = $1 and user_id = $2`, [sid, m])).rows[0].status).toBe('attended');
+      const other = await createUser(db, 'QrNotBooked');
+      await expectError(as(db, user(other), `select check_in($1, $2)`, [sid, c.code]), 'checkin_not_booked');
+      // Reminders: a class that ended 6 minutes ago with someone unmarked.
+      const late = await createUser(db, 'QrLate');
+      await buy(late, 'multi-5');
+      const s2 = await makeSession({ style: 'hip-hop', startsInMinutes: 30 });
+      await db.query(`update class_sessions set instructor_id = $1 where id = $2`, [inst.id, s2]);
+      await book(late, s2);
+      await db.query(`update class_sessions set starts_at = now() - interval '66 minutes', ends_at = now() - interval '6 minutes' where id = $1`, [s2]);
+      await db.query(`select attendance_reminders()`);
+      await db.query(`select attendance_reminders()`);
+      expect((await db.query(`select payload ->> 'stage' s from notification_outbox where kind = 'attendance_reminder' and user_id = $1`, [tp])).rows.map((x) => x.s)).toEqual(['5']);
+      await db.query(`update class_sessions set status = 'cancelled' where id = any($1)`, [[sid, s2]]);
+    });
+
     it('records when a member agrees to marketing emails, and clears it when they stop', async () => {
       const c = await createUser(db, 'MarketingYes');
       await as(db, user(c), `update profiles set marketing_opt_in = true where id = $1`, [c]);

@@ -25,6 +25,7 @@ const AdminCalendar = lazy(() => import('./pages/admin/Calendar'));
 const GetApp = lazy(() => import('./pages/GetApp'));
 const Teach = lazy(() => import('./pages/Teach'));
 const TeachProfile = lazy(() => import('./pages/TeachProfile'));
+const CheckInPage = lazy(() => import('./pages/CheckIn'));
 const ClassPage = lazy(() => import('./pages/ClassPage'));
 const ClassesIndex = lazy(() => import('./pages/ClassPage').then((m) => ({ default: m.ClassesIndex })));
 const Events = lazy(() => import('./pages/Events'));
@@ -92,6 +93,7 @@ export default function App() {
                 <Route path="checkout/:code" element={<RequireAuth><Checkout /></RequireAuth>} />
                 <Route path="account" element={<RequireAuth><Account /></RequireAuth>} />
                 <Route path="feedback/:id" element={<RequireAuth><FeedbackPage /></RequireAuth>} />
+                <Route path="checkin" element={<RequireAuth><CheckInPage /></RequireAuth>} />
                 <Route path="teach" element={<RequireStaff><Teach /></RequireStaff>} />
                 <Route path="teach/profile" element={<RequireStaff><TeachProfile /></RequireStaff>} />
                 <Route path="teach/events" element={<RequireStaff><Events /></RequireStaff>} />
