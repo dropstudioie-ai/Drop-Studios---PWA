@@ -64,6 +64,7 @@ export function Register() {
   const navigate = useNavigate();
   const [form, setForm] = useState({ full_name: '', email: '', phone: '', password: '', date_of_birth: '' });
   const [notifications, setNotifications] = useState(true);
+  const [marketing, setMarketing] = useState(false);
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,7 +91,7 @@ export function Register() {
       email: form.email.trim(),
       password: form.password,
       options: {
-        data: { full_name: form.full_name.trim(), phone: form.phone.trim() || null, date_of_birth: form.date_of_birth, notifications },
+        data: { full_name: form.full_name.trim(), phone: form.phone.trim() || null, date_of_birth: form.date_of_birth, notifications, marketing },
         emailRedirectTo: `${window.location.origin}${next}`,
       },
     });
@@ -120,6 +121,10 @@ export function Register() {
         <label className="flex items-start gap-3 text-sm">
           <input type="checkbox" className="mt-0.5 h-5 w-5 accent-brand-600" checked={notifications} onChange={(e) => setNotifications(e.target.checked)} />
           <span>Send me class reminders and updates by email and phone notification. You can change this any time in My Membership.</span>
+        </label>
+        <label className="flex items-start gap-3 rounded-xl bg-accent-50 p-3 text-sm">
+          <input type="checkbox" className="mt-0.5 h-5 w-5 accent-brand-600" checked={marketing} onChange={(e) => setMarketing(e.target.checked)} />
+          <span>🎁 Yes, send me Drop news, offers and events: 1–2 emails a month. I can unsubscribe any time.</span>
         </label>
         <label className="flex items-start gap-3 text-sm">
           <input type="checkbox" required className="mt-0.5 h-5 w-5 accent-brand-600" checked={consent} onChange={(e) => setConsent(e.target.checked)} />

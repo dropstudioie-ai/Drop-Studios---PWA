@@ -469,7 +469,7 @@ function ProfileSection({ uid, onSaved }: { uid: string; onSaved: () => Promise<
         <Field label="Email"><input className="input bg-canvas" value={profile?.email ?? ''} disabled /></Field>
         <label className="flex items-center gap-3 self-end text-sm sm:pb-3">
           <input type="checkbox" className="h-5 w-5 accent-brand-600" checked={form.marketing_opt_in} onChange={(e) => setForm({ ...form, marketing_opt_in: e.target.checked })} />
-          Email me about new classes and events
+          News, offers and events by email (1–2 a month)
         </label>
         <div className="flex flex-wrap gap-2 sm:col-span-2">
           <button className="btn-primary" disabled={busy}>{busy && <Spinner />}Save details</button>

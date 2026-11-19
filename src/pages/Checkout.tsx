@@ -37,6 +37,7 @@ export default function Checkout() {
   // Renewing a single-style plan keeps the same style (it can still be changed here).
   const [styleId, setStyleId] = useState<string | null>(search.get('style'));
   const [agreed, setAgreed] = useState(false);
+  const [marketing, setMarketing] = useState(false);
   const [agreedRecurring, setAgreedRecurring] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,6 +74,7 @@ export default function Checkout() {
   async function pay() {
     setBusy(true);
     setError(null);
+    if (marketing && profile && !profile.marketing_opt_in) await api.updateProfile(profile.id, { marketing_opt_in: true }).catch(() => {});
     const req = { plan_id: plan!.id, selected_style_id: needsStyle ? styleId : null, idempotency_key: idempotencyKey };
     try {
       const next = await checkout(req);
@@ -156,6 +158,12 @@ export default function Checkout() {
               charged to my card today and then once a month, <strong>{plan.commitment_months ?? 3} payments in total</strong>, after which it stops.
               I can cancel at any time with no penalty, at least 72 hours before a payment.
             </span>
+          </label>
+        )}
+        {profile && !profile.marketing_opt_in && (
+          <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl bg-accent-50 p-3 text-sm">
+            <input type="checkbox" className="mt-0.5 h-5 w-5 accent-brand-600" checked={marketing} onChange={(e) => setMarketing(e.target.checked)} />
+            <span>🎁 Yes, send me Drop news, offers and events: 1–2 emails a month. I can unsubscribe any time.</span>
           </label>
         )}
         <label className="mt-4 flex cursor-pointer items-start gap-3 text-sm">

@@ -1019,6 +1019,15 @@ run('database: plans, booking, allowances, pauses, security', () => {
       await as(db, user(admin), `select admin_update_session($1, $2, $3, $4, $5, null)`, [s1, ss.starts_at, ss.ends_at, cover.id, ss.title]);
       await as(db, user(admin), `select admin_cancel_session($1, 'Instructor on holiday')`, [s2]);
       expect(await need()).toEqual([]);
+      await db.query(`update class_sessions set status = 'cancelled' where id = any($1)`, [[s1, outside]]);   // don't collide with later tests
+    });
+
+    it('records when a member agrees to marketing emails, and clears it when they stop', async () => {
+      const c = await createUser(db, 'MarketingYes');
+      await as(db, user(c), `update profiles set marketing_opt_in = true where id = $1`, [c]);
+      expect((await db.query(`select marketing_consent_at is not null x from profiles where id = $1`, [c])).rows[0].x).toBe(true);
+      await as(db, user(c), `update profiles set marketing_opt_in = false where id = $1`, [c]);
+      expect((await db.query(`select marketing_consent_at from profiles where id = $1`, [c])).rows[0].marketing_consent_at).toBeNull();
     });
 
     it('admins and instructors can add a member’s photo; members can’t set someone else’s', async () => {
@@ -2168,6 +2177,8 @@ run('database: plans, booking, allowances, pauses, security', () => {
     it('never during a Drop class, never double-booked, 30-minute steps, minimum 1 hour', async () => {
       const a = await confirmedRenter('RentA'), b = await confirmedRenter('RentB');
       const s = await at(3, 3, '09:00');
+      // Other tests create classes relative to "now"; keep this morning free of them whatever time the tests run.
+      await db.query(`update class_sessions set status = 'cancelled' where starts_at < $2 and ends_at > $1`, [s, plus(s, 240)]);
       await expectError(as(db, user(a), `select request_rental($1, $2, false, 'x', null, 5, false, true)`, [s, plus(s, 30)]), 'rental_min_hour');
       await expectError(as(db, user(a), `select request_rental($1, $2, false, 'x', null, 5, false, true)`, [plus(s, 15), plus(s, 90)]), 'rental_half_hours');
       const [{ r }] = await as<{ r: { needs_approval: boolean; booking_ids: string[] } }>(db, user(a), `select request_rental($1, $2, false, 'Rehearsal', 'Zouk team', 10, false, true) r`, [s, plus(s, 120)]);
