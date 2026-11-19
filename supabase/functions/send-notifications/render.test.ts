@@ -294,3 +294,11 @@ Deno.test('attendance reminder to the instructor', () => {
   assertStringIncludes(r.subject, 'Mark today’s Hip Hop attendance');
   assertStringIncludes(r.text, '3 people are still unmarked');
 });
+
+Deno.test('pack ending and win-back emails', () => {
+  const used = render({ kind: 'pack_ending', full_name: 'Ana', payload: { plan_name: '3-Class Intro Offer', expires_at: '2026-12-01T10:00:00Z', classes_remaining: 0 } })!;
+  assertStringIncludes(used.subject, 'keep the rhythm going');
+  const soon = render({ kind: 'pack_ending', full_name: 'Ana', payload: { plan_name: '3-Class Intro Offer', expires_at: '2026-12-01T10:00:00Z', classes_remaining: 2 } })!;
+  assertStringIncludes(soon.text, '2 classes to use');
+  assertStringIncludes(render({ kind: 'winback', full_name: 'Ana', payload: {} })!.subject, 'We miss you');
+});

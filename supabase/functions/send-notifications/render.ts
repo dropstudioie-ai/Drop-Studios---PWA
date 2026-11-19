@@ -572,6 +572,20 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
         text: `${hi}\n\n${p.unmarked} ${Number(p.unmarked) === 1 ? 'person is' : 'people are'} still unmarked for today’s ${p.title}. It takes 10 seconds: open the class list and tap Here or No-show.\n\n${site()}/\n\nThanks!\nDrop Studios`,
         url: '/',
       };
+    case 'pack_ending': {
+      const left = Number(p.classes_remaining);
+      return {
+        subject: left === 0 ? `You’ve used your ${p.plan_name}: keep the rhythm going 💃` : `Your ${p.plan_name} ends on ${day(p.expires_at)}`,
+        text: `${hi}\n\n${left === 0 ? `You’ve danced all the classes on your ${p.plan_name}. We loved having you!` : `Your ${p.plan_name} ends on ${day(p.expires_at)}${left ? ` and you still have ${left} ${left === 1 ? 'class' : 'classes'} to use, so book them in time` : ''}.`}\n\nWant to keep dancing? A monthly plan keeps your spot in class every week, from 4 classes a month:\n${site()}/memberships\n\nAny questions, just reply or ask us at reception.\n\nSee you on the floor!\nDrop Studios`,
+        url: '/memberships',
+      };
+    }
+    case 'winback':
+      return {
+        subject: 'We miss you at Drop 💛',
+        text: `${hi}\n\nIt’s been a little while since your last class and we miss seeing you on the dance floor!\n\nHere’s what’s on this week, in case something catches your eye:\n${site()}/timetable\n\nIf anything’s stopping you from coming (times, styles, anything at all), just reply and tell us. We read every message.\n\nDrop Studios\n\nDon’t want these emails? Turn off email updates in My Membership.`,
+        url: '/timetable',
+      };
     case 'studio_message':
       // A personal message from the studio to one person (written by an admin).
       return { subject: String(p.subject), text: `${hi}\n\n${p.body}\n\n${p.signoff ?? 'Drop Studios'}`, url: String(p.url ?? '/') };

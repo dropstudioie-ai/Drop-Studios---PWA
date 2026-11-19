@@ -1063,6 +1063,35 @@ run('database: plans, booking, allowances, pauses, security', () => {
       await db.query(`update class_sessions set status = 'cancelled' where id = any($1)`, [[sid, s2]]);
     });
 
+    it('old-app invites unlock private plans by email; pack-ending and win-back emails', async () => {
+      const { rows: [plan] } = await db.query(`select id, price_cents, visibility from membership_plans where code = 'member-price-2026'`);
+      expect(plan).toMatchObject({ price_cents: 5000, visibility: 'private' });
+      await db.query(`insert into plan_invites (email, plan_id) values ('old.fit.member@example.com', $1)`, [plan.id]);
+      const u = await createUser(db, 'OldFit');
+      expect(await as(db, user(u), `select id from membership_plans where code = 'member-price-2026'`)).toHaveLength(0);
+      await db.query(`update profiles set email = 'old.fit.member@example.com' where id = $1`, [u]);   // same email as in the old app
+      expect(await as(db, user(u), `select id from membership_plans where code = 'member-price-2026'`)).toHaveLength(1);
+      // Pack ending: an Intro with no classes left.
+      const c = await createUser(db, 'PackEnder');
+      const { membershipId } = await buy(c, 'intro-3');
+      await db.query(`update memberships set classes_remaining = 0 where id = $1`, [membershipId]);
+      await db.query(`update app_settings set winback_from = current_date`);
+      const [{ r }] = (await db.query(`select retention_jobs() r`)).rows;
+      expect(r.pack_ending).toBeGreaterThanOrEqual(1);
+      expect((await db.query(`select count(*)::int n from notification_outbox where kind = 'pack_ending' and user_id = $1`, [c])).rows[0].n).toBe(1);
+      // Win-back: booked a class 20 days ago, nothing since.
+      const w = await createUser(db, 'WinBack');
+      await buy(w, 'multi-5');
+      const s = await makeSession({ style: 'hip-hop', startsInMinutes: 60 });
+      await book(w, s);
+      await db.query(`update class_sessions set starts_at = now() - interval '20 days', ends_at = now() - interval '20 days' + interval '1 hour' where id = $1`, [s]);
+      await db.query(`select retention_jobs()`); await db.query(`select retention_jobs()`);
+      expect((await db.query(`select count(*)::int n from notification_outbox where kind = 'winback' and user_id = $1`, [w])).rows[0].n).toBe(1);
+      await db.query(`update app_settings set winback_from = '2026-12-15'`);
+      await db.query(`update notification_outbox set sent_at = now() where sent_at is null`);   // keep the delivery test's queue clean
+      await db.query(`update class_sessions set status = 'cancelled' where id = $1`, [s]);
+    });
+
     it('records when a member agrees to marketing emails, and clears it when they stop', async () => {
       const c = await createUser(db, 'MarketingYes');
       await as(db, user(c), `update profiles set marketing_opt_in = true where id = $1`, [c]);
