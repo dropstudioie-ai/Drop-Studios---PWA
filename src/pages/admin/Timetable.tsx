@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useBackToClose } from '../../lib/useBackToClose';
 import QRCode from 'qrcode';
-import { checkin } from '../../lib/checkin';
+import { ALERT_REASON, checkin, type CheckInAlert } from '../../lib/checkin';
 import { Celebration } from '../../components/Celebration';
 import { supabase } from '../../lib/supabase';
 import { api, unwrap } from '../../api';
@@ -310,6 +310,8 @@ function ReceptionCheckIn({ onClose }: { onClose: () => void }) {
   useBackToClose(onClose);
   const [img, setImg] = useState<string | null>(null);
   const [left, setLeft] = useState(30);
+  const [alerts, setAlerts] = useState<CheckInAlert[]>([]);
+  const [alarm, setAlarm] = useState<CheckInAlert | null>(null);
   const [arrived, setArrived] = useState<Arrival[]>([]);
   const [shout, setShout] = useState<Arrival | null>(null);
   useEffect(() => {
@@ -327,6 +329,21 @@ function ReceptionCheckIn({ onClose }: { onClose: () => void }) {
     return () => { live = false; clearTimeout(timer); };
   }, []);
   useEffect(() => { const t = setInterval(() => setLeft((n) => Math.max(0, n - 1)), 1000); return () => clearInterval(t); }, []);
+  // Scans that didn't go through: shown in red until that person is checked in.
+  useEffect(() => {
+    let seen: Set<number> | null = null;
+    const poll = async () => {
+      try {
+        const list = await checkin.adminAlerts();
+        if (seen) { const fresh = list.find((a) => !seen!.has(a.id)); if (fresh) { setAlarm(fresh); setTimeout(() => setAlarm((x) => (x === fresh ? null : x)), 8000); } }
+        seen = new Set(list.map((a) => a.id));
+        setAlerts(list);
+      } catch { /* keep showing the code */ }
+    };
+    void poll();
+    const t = setInterval(() => void poll(), 4000);
+    return () => clearInterval(t);
+  }, []);
   useEffect(() => {
     let seen: Set<string> | null = null;
     const poll = async () => {
@@ -356,6 +373,20 @@ function ReceptionCheckIn({ onClose }: { onClose: () => void }) {
         <div className={`mt-4 w-full max-w-md rounded-2xl p-4 text-center ${shout.is_birthday ? 'bg-accent-500 text-ink' : shout.is_new ? 'bg-brand-600' : 'bg-success'}`}>
           <p className="text-2xl font-black">{shout.is_birthday ? '🎂 ' : shout.is_new ? '✨ ' : '✅ '}{shout.full_name}</p>
           <p className="font-semibold">{shout.title} · {shout.is_birthday ? 'It’s their birthday! 🎉' : shout.is_new ? 'FIRST CLASS: give them a warm welcome!' : 'Checked in'}</p>
+        </div>
+      )}
+      {alarm && (
+        <div className="mt-4 w-full max-w-md rounded-2xl bg-danger p-4 text-center">
+          <p className="text-2xl font-black">⚠️ {alarm.full_name}</p>
+          <p className="font-semibold">{ALERT_REASON[alarm.reason] ?? 'couldn’t check in'}{alarm.reason === 'checkin_not_booked' ? '. Their phone offers to book now.' : ''}</p>
+        </div>
+      )}
+      {alerts.length > 0 && (
+        <div className="mt-4 w-full max-w-md rounded-2xl border-2 border-danger/70 bg-danger/15 p-3">
+          <p className="text-sm font-bold">⚠️ Scanned but not checked in ({alerts.length})</p>
+          <ul className="mt-1 space-y-1 text-sm">
+            {alerts.map((a) => <li key={a.id}><strong>{a.full_name}</strong> {ALERT_REASON[a.reason] ?? 'couldn’t check in'}{a.title ? ` (${a.title})` : ''}</li>)}
+          </ul>
         </div>
       )}
       <div className="mt-4 w-full max-w-md">

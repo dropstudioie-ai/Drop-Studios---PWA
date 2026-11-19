@@ -1033,12 +1033,24 @@ run('database: plans, booking, allowances, pauses, security', () => {
       await db.query(`update profiles set date_of_birth = (now() at time zone 'Europe/Dublin')::date - interval '30 years' where id = $1`, [m]);
       await expectError(as(db, user(m), `select checkin_code($1)`, [sid]), 'forbidden');   // members can't see the code
       const [{ c }] = await as<{ c: { code: string } }>(db, user(tp), `select checkin_code($1) c`, [sid]);
-      await expectError(as(db, user(m), `select check_in($1, 'wrong')`, [sid]), 'checkin_code_expired');
+      expect((await as<{ r: { ok: boolean; reason: string } }>(db, user(m), `select check_in($1, 'wrong') r`, [sid]))[0].r).toMatchObject({ ok: false, reason: 'checkin_code_expired' });
       const [{ r }] = await as<{ r: { first_class: boolean; birthday: boolean; turning: number } }>(db, user(m), `select check_in($1, $2) r`, [sid, c.code]);
       expect(r).toMatchObject({ first_class: true, birthday: true, turning: 30 });
       expect((await db.query(`select status from bookings where session_id = $1 and user_id = $2`, [sid, m])).rows[0].status).toBe('attended');
       const other = await createUser(db, 'QrNotBooked');
-      await expectError(as(db, user(other), `select check_in($1, $2)`, [sid, c.code]), 'checkin_not_booked');
+      await buy(other, 'multi-5');
+      const [{ nb }] = await as<{ nb: { ok: boolean; reason: string; options: { session_id: string; membership: string | null }[] } }>(db, user(other), `select check_in($1, $2) nb`, [sid, c.code]);
+      expect(nb).toMatchObject({ ok: false, reason: 'checkin_not_booked' });
+      expect(nb.options[0]).toMatchObject({ session_id: sid, membership: 'Multi-Style' });
+      // The teacher sees the failed scan…
+      const alerts = async () => (await as<{ a: { full_name: string; reason: string }[] }>(db, user(tp), `select checkin_alerts($1) a`, [sid]))[0].a;
+      expect((await alerts()).map((x) => [x.full_name, x.reason])).toEqual([['QrNotBooked', 'checkin_not_booked']]);
+      await expectError(as(db, user(other), `select checkin_alerts($1)`, [sid]), 'forbidden');
+      // …until they book and check in at the door.
+      const [{ bd }] = await as<{ bd: { booked_at_door: boolean } }>(db, user(other), `select book_and_check_in($1, $2) bd`, [sid, c.code]);
+      expect(bd.booked_at_door).toBe(true);
+      expect((await db.query(`select status from bookings where session_id = $1 and user_id = $2`, [sid, other])).rows[0].status).toBe('attended');
+      expect(await alerts()).toEqual([]);
       // The reception code (admin) checks people in to whichever booked class is on now.
       const m2 = await createUser(db, 'QrReception');
       await buy(m2, 'multi-5');
@@ -1047,7 +1059,9 @@ run('database: plans, booking, allowances, pauses, security', () => {
       const [{ sc }] = await as<{ sc: { code: string } }>(db, user(admin), `select studio_checkin_code() sc`);
       const [{ r2 }] = await as<{ r2: { title: string } }>(db, user(m2), `select check_in_studio($1) r2`, [sc.code]);
       expect(r2.title).toBe('hip-hop class');
-      await expectError(as(db, user(other), `select check_in_studio($1)`, [sc.code]), 'checkin_not_booked');
+      const stranger = await createUser(db, 'QrStranger');
+      expect((await as<{ r: { ok: boolean; reason: string } }>(db, user(stranger), `select check_in_studio($1) r`, [sc.code]))[0].r).toMatchObject({ ok: false, reason: 'checkin_not_booked' });
+      expect((await as<{ a: { full_name: string }[] }>(db, user(admin), `select admin_checkin_alerts() a`))[0].a.map((x) => x.full_name)).toContain('QrStranger');
       const now = (await as<{ c: { full_name: string }[] }>(db, user(admin), `select admin_checkins_now() c`))[0].c.map((x) => x.full_name);
       expect(now).toEqual(expect.arrayContaining(['QrMember', 'QrReception']));
       // Reminders: a class that ended 6 minutes ago with someone unmarked.
