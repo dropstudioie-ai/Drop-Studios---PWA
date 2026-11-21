@@ -29,6 +29,7 @@ function TeachClasses() {
   const range = useMemo(() => ({ from: zonedTime(today).toISOString(), to: zonedTime(addDaysToKey(today, 14)).toISOString() }), [today]);
   const sessions = useAsync(() => api.staffSessions(range.from, range.to), [range.from]);
   const [open, setOpen] = useState<string | null>(null);
+  const [qrFor, setQrFor] = useState<string | null>(null);
 
   const byDay = new Map<string, StaffSession[]>();
   for (const s of sessions.data ?? []) {
@@ -40,7 +41,7 @@ function TeachClasses() {
     <div className="container-page max-w-3xl py-8">
       <p className="text-sm font-semibold text-muted">Hi {profile?.full_name?.split(' ')[0] || 'there'}</p>
       <h1 className="text-3xl font-black">{isAdmin ? 'All classes' : 'My classes'}</h1>
-      <p className="mt-1 text-ink-soft">The next two weeks. Tap a class for the list of who’s coming.</p>
+      <p className="mt-1 text-ink-soft">The next two weeks. Tap a class for who’s coming, to add someone at the door or to mark attendance. The check-in QR button appears 1 hour before class.</p>
 
       <div className="mt-6 space-y-6">
         {sessions.loading && !sessions.data ? <PageSpinner /> : sessions.error ? <ErrorNotice error={sessions.error} onRetry={sessions.reload} /> :
@@ -76,6 +77,9 @@ function TeachClasses() {
                           {s.new_members > 0 && <span className="chip bg-brand-50 text-brand-700">{s.new_members} new</span>}
                         </div>
                       </button>
+                      {s.status === 'scheduled' && Date.now() >= new Date(s.starts_at).getTime() - 3_600_000 && Date.now() < new Date(s.ends_at).getTime() && (
+                        <button className="btn-accent mt-2 w-full" onClick={() => { setQrFor(s.id); setOpen(s.id); }}>📲 Show check-in QR</button>
+                      )}
                     </li>
                   );
                 })}
@@ -84,7 +88,7 @@ function TeachClasses() {
           ))}
       </div>
 
-      {open && <StaffRoster sessionId={open} isAdmin={isAdmin} onClose={() => setOpen(null)} onChanged={() => void sessions.reload()} />}
+      {open && <StaffRoster key={`${open}-${qrFor === open}`} sessionId={open} isAdmin={isAdmin} startWithQr={qrFor === open} onClose={() => { setOpen(null); setQrFor(null); }} onChanged={() => void sessions.reload()} />}
     </div>
   );
 }

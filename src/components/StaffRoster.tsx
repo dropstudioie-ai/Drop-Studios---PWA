@@ -24,8 +24,9 @@ const STATUS_LABEL: Record<string, string> = {
  * Class list for instructors and admins: who's coming (with photo), who is new,
  * whose birthday it is, attendance, and adding a member who's at the door.
  */
-export function StaffRoster({ sessionId, onClose, onChanged, isAdmin = false }: {
+export function StaffRoster({ sessionId, onClose, onChanged, isAdmin = false, startWithQr = false }: {
   sessionId: string;
+  startWithQr?: boolean;
   onClose: () => void;
   onChanged?: () => void;
   isAdmin?: boolean;
@@ -34,7 +35,7 @@ export function StaffRoster({ sessionId, onClose, onChanged, isAdmin = false }: 
   const roster = useAsync(() => api.roster(sessionId), [sessionId]);
   const [editing, setEditing] = useState(false);
   const [cancelling, setCancelling] = useState(false);
-  const [qr, setQr] = useState(false);
+  const [qr, setQr] = useState(startWithQr);
   const r = roster.data;
   const started = r ? new Date(r.starts_at).getTime() - 3_600_000 <= Date.now() : false;
 

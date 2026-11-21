@@ -62,7 +62,7 @@ function Holidays() {
     } catch (e) { toast(messageFor((e as Error).message), 'error'); } finally { setBusy(false); }
   }
   return (
-    <section className="card mt-6 p-5" aria-labelledby="hol-h">
+    <section id="holidays" className="card mt-6 scroll-mt-20 p-5" aria-labelledby="hol-h">
       <h2 id="hol-h" className="text-xl font-black">🌴 Holidays and time off</h2>
       <p className="mt-1 text-sm text-ink-soft">Ask as early as you can. The studio approves it and finds cover for your classes (or cancels them), and members are told.</p>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
