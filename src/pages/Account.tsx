@@ -27,6 +27,7 @@ import { renewalLink, renewalOffer } from '../domain/renewal';
 import { formatPrice } from '../domain/money';
 import { ProfilePhotoCard } from '../components/ProfilePhotoCard';
 import { PauseSheet } from '../components/PauseSheet';
+import { BusinessDetails } from '../components/BusinessDetails';
 import { FeedbackPrompt } from './Feedback';
 import { EmptyState, ErrorNotice, Field, Notice, PageSpinner, Sheet, Spinner, useToast } from '../components/ui';
 
@@ -280,6 +281,7 @@ function StudioBookings({ uid }: { uid: string }) {
           );
         })}
       </ul>
+      <BusinessDetails userId={uid} />
     </section>
   );
 }
@@ -309,7 +311,7 @@ function Receipts() {
                   setBusy(r.id);
                   try { await downloadReceipt(r, { full_name: profile?.full_name ?? null, email: profile?.email ?? session?.user.email ?? null }); }
                   catch (e) { toast((e as Error).message, 'error'); } finally { setBusy(null); }
-                }}>{busy === r.id ? <Spinner className="h-4 w-4" /> : '⬇ Receipt'}</button>
+                }}>{busy === r.id ? <Spinner className="h-4 w-4" /> : r.kind === 'rental' ? '⬇ Invoice' : '⬇ Receipt'}</button>
               </li>
             ))}
           </ul>

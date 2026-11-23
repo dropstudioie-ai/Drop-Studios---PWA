@@ -7,6 +7,7 @@
 import webpush from 'npm:web-push@3.6.7';
 import { adminClient } from '../_shared/http.ts';
 import { type Claimed, render } from './render.ts';
+import { invoiceAttachment } from './attachments.ts';
 
 Deno.serve(async (req) => {
   const secret = Deno.env.get('CRON_SECRET');
@@ -41,11 +42,14 @@ Deno.serve(async (req) => {
     let delivered = false;
 
     if (emailOn && n.email) {
+      // Studio hire: the invoice goes with the confirmation as a PDF (the email still goes out if the PDF can't be made).
+      const attachments = await invoiceAttachment(n).catch((e) => { console.error('invoice pdf', e); return null; });
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json', 'Idempotency-Key': `outbox-${n.id}` },
         body: JSON.stringify({
           from: emailFrom, to: n.email, subject: msg.subject, text: msg.text,
+          ...(attachments ? { attachments } : {}),
           // Replies go to the studio's inbox (the sending domain doesn't receive mail).
           ...(Deno.env.get('SUPPORT_EMAIL') ? { reply_to: Deno.env.get('SUPPORT_EMAIL') } : {}),
         }),

@@ -2497,4 +2497,24 @@ run('database: plans, booking, allowances, pauses, security', () => {
       expect((await as<{ n: unknown }>(db, user(m), `select my_nudge() n`))[0].n).toBeNull();
     });
   });
+  describe('studio hire invoice', () => {
+    it('lists each booked date, uses the renter’s business details, and keeps them private', async () => {
+      const r = await createUser(db, 'InvoiceRenter'), other = await createUser(db, 'InvoiceOther');
+      const s = new Date(Date.now() + 70 * 864e5); s.setUTCHours(9, 0, 0, 0);
+      const pay = (await db.query(`insert into payments (user_id, plan_snapshot, amount_cents, currency, provider, status, idempotency_key, kind, completed_at)
+        values ($1, '{"plan_name":"Studio rental"}', 7500, 'EUR', 'square', 'succeeded', gen_random_uuid()::text, 'rental', now()) returning id`, [r])).rows[0].id;
+      await db.query(`insert into rental_bookings (user_id, starts_at, ends_at, status, rent_cents, total_cents, payment_id, group_name) values ($1, $2, $3, 'confirmed', 7500, 7500, $4, 'Crew')`, [r, s, new Date(s.getTime() + 3 * 3600e3), pay]);
+      await as(db, user(r), `insert into billing_details (user_id, business_name, tax_number) values ($1, 'Crew Ltd', 'IE1234567X')`, [r]);
+      await expect(as(db, user(other), `insert into billing_details (user_id, business_name) values ($1, 'Not mine')`, [r])).rejects.toThrow();
+      expect(await as(db, user(other), `select * from billing_details where user_id = $1`, [r])).toHaveLength(0);
+      const [{ list }] = await as<{ list: { kind: string; description: string; invoice: { company: string; tax_number: string; lines: { hours: number }[] } }[] }>(db, user(r), `select my_receipts() list`);
+      const inv = list.find((x) => x.kind === 'rental')!;
+      expect(inv.description).toBe('Studio hire');
+      expect(inv.invoice.company).toBe('Crew Ltd');
+      expect(inv.invoice.tax_number).toBe('IE1234567X');
+      expect(inv.invoice.lines).toHaveLength(1);
+      expect(Number(inv.invoice.lines[0].hours)).toBe(3);
+      await expect(as(db, user(r), `select _rental_invoice($1)`, [pay])).rejects.toThrow();
+    });
+  });
 });

@@ -1,9 +1,12 @@
 import { supabase } from './supabase';
 import { unwrap } from '../api';
 import { STUDIO } from '../config/studio';
+import { buildInvoicePdf, invoiceFileName, type RentalInvoice } from '../../supabase/functions/_shared/invoicePdf';
 
 export interface Receipt {
-  id: string; receipt_no: string; paid_at: string; kind: 'membership' | 'ticket' | 'drop_in' | 'gift'; description: string;
+  id: string; receipt_no: string; paid_at: string; kind: 'membership' | 'ticket' | 'drop_in' | 'gift' | 'rental'; description: string;
+  /** Studio hire payments: the full invoice (dates, hours, extras, business details). */
+  invoice?: RentalInvoice | null;
   class_date: string | null; month: number | null; of: number | null; classes: number | null;
   amount_cents: number; currency: string; method: string; status: 'succeeded' | 'refunded'; gift_code: string | null;
 }
@@ -30,6 +33,7 @@ async function logoPng(): Promise<string | null> {
 /** Builds and downloads a one-page PDF receipt. */
 export async function downloadReceipt(r: Receipt, member: { full_name: string | null; email: string | null }) {
   const { jsPDF } = await import('jspdf');
+  if (r.kind === 'rental' && r.invoice) { buildInvoicePdf(jsPDF as never, r.invoice).save(invoiceFileName(r.invoice)); return; }
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const ink = [11, 11, 13] as const, soft = [113, 113, 122] as const, orange = [255, 122, 0] as const;
   const logo = await logoPng();
