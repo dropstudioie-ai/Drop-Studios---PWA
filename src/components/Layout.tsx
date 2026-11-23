@@ -11,8 +11,12 @@ import { STUDIO } from '../config/studio';
 
 /** Look of the instructor app (see "Instructor themes" in index.css). */
 export const STAFF_THEME = 'night';
-function staffTheme() {
-  try { return localStorage.getItem('drop.staffTheme') || STAFF_THEME; } catch { return STAFF_THEME; }
+export const ADMIN_THEME = 'black';
+function staffTheme(admin: boolean) {
+  const fallback = admin ? ADMIN_THEME : STAFF_THEME;
+  let t = fallback;
+  try { t = localStorage.getItem(admin ? 'drop.adminTheme' : 'drop.staffTheme') || fallback; } catch { /* storage unavailable */ }
+  return t === 'black' ? 'night' : t; // black = the Night theme on a black background (see data-black)
 }
 
 const navCls = ({ isActive }: { isActive: boolean }) =>
@@ -22,7 +26,7 @@ export function Layout() {
   const { session, isAdmin, isStaff } = useAuth();
   const installed = isStandalone();
   return (
-    <div className="flex min-h-dvh flex-col" data-staff-theme={isStaff && !isAdmin ? staffTheme() : undefined}>
+    <div className="flex min-h-dvh flex-col" data-staff-theme={isStaff ? staffTheme(isAdmin) : undefined} data-black={isAdmin && ADMIN_THEME === 'black' ? '' : undefined}>
       <UpdatePrompt />
       {!isStaff && <OutOfClassesPrompt />}
       <NotificationsPrompt />
