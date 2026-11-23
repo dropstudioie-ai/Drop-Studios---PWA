@@ -2470,4 +2470,15 @@ run('database: plans, booking, allowances, pauses, security', () => {
       expect(r.days.find((x) => x.day === d(13))?.away).toBe(0);
     });
   });
+  describe('admin approvals pop-up', () => {
+    it('counts what waits for an admin, and only admins can ask', async () => {
+      const adm = await createUser(db, 'ApprovalsAdmin', 'admin'), m = await createUser(db, 'ApprovalsMember');
+      await expectError(as(db, user(m), `select admin_approvals()`), 'forbidden');
+      const before = (await as<{ r: { rentals: number; time_off: number } }>(db, user(adm), `select admin_approvals() r`))[0].r;
+      const s = new Date(Date.now() + 40 * 864e5);
+      await db.query(`insert into rental_bookings (user_id, starts_at, ends_at, status, rent_cents, total_cents) values ($1, $2, $3, 'pending_approval', 2500, 2500)`, [m, s, new Date(s.getTime() + 3600e3)]);
+      const after = (await as<{ r: { rentals: number } }>(db, user(adm), `select admin_approvals() r`))[0].r;
+      expect(after.rentals).toBe(before.rentals + 1);
+    });
+  });
 });

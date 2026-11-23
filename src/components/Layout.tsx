@@ -7,6 +7,7 @@ import { OutOfClassesPrompt } from './OutOfClasses';
 import { NotificationsPrompt } from './NotificationsPrompt';
 import { ProfileRequestPrompt } from './ProfileRequestPrompt';
 import { SurveyPrompt } from './SurveyPrompt';
+import { AdminApprovalsPrompt } from './AdminApprovalsPrompt';
 import { STUDIO } from '../config/studio';
 
 /** Look of the instructor app (see "Instructor themes" in index.css). */
@@ -32,6 +33,7 @@ export function Layout() {
       <NotificationsPrompt />
       <ProfileRequestPrompt />
       {!isStaff && <SurveyPrompt />}
+      {isAdmin && <AdminApprovalsPrompt />}
       <OfflineBanner />
       <header className="sticky top-0 z-30 border-b border-line bg-white/90 pt-[env(safe-area-inset-top)] backdrop-blur">
         <div className="container-page flex h-14 items-center justify-between md:h-16">
