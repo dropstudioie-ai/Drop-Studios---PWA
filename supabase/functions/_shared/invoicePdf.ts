@@ -14,6 +14,8 @@ export interface RentalInvoice {
   company: string | null; address: string | null; tax_number: string | null;
   total_cents: number; refund_cents: number; lines: InvoiceLine[];
 }
+/** Drop's VAT rate; studio hire prices include it. */
+export const VAT_RATE = 0.23;
 export const STUDIO_LINES = ['Drop Studios', '13 Sackville Place, Dublin 1, D01', 'dropstudioie@gmail.com', 'www.dropstudios.ie', 'VAT no. 4165063LH'];
 
 const TZ = 'Europe/Dublin';
@@ -66,7 +68,7 @@ export function buildInvoicePdf(JsPDF: PdfCtor, inv: RentalInvoice) {
   // Lines: one per booked date, with its extras underneath.
   doc.setFillColor(244, 244, 245); doc.rect(20, y, 170, 9, 'F');
   doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...ink);
-  doc.text('Studio hire', 24, y + 6); doc.text('Hours', 140, y + 6, { align: 'right' }); doc.text('Amount', 186, y + 6, { align: 'right' });
+  doc.text('Studio hire', 24, y + 6); doc.text('Hours', 140, y + 6, { align: 'right' }); doc.text('Amount (incl. VAT)', 186, y + 6, { align: 'right' });
   y += 16;
   const row = (label: string, hours: string, cents: number, sub = false) => {
     if (y > 265) { doc.addPage(); y = 25; }
@@ -87,8 +89,12 @@ export function buildInvoicePdf(JsPDF: PdfCtor, inv: RentalInvoice) {
   y += 2; doc.setDrawColor(228, 228, 231); doc.setLineWidth(0.3); doc.line(20, y, 190, y); y += 8;
   doc.setFontSize(10.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(...soft);
   if (discount > 0) { doc.text('Discount', 125, y); doc.text(`-${eur(discount)}`, 186, y, { align: 'right' }); y += 7; }
+  // Prices include VAT at 23%: show the split.
+  const net = Math.round(inv.total_cents / (1 + VAT_RATE));
+  doc.text('Subtotal (excl. VAT)', 125, y); doc.text(eur(net), 186, y, { align: 'right' }); y += 6;
+  doc.text(`VAT ${Math.round(VAT_RATE * 100)}%`, 125, y); doc.text(eur(inv.total_cents - net), 186, y, { align: 'right' }); y += 8;
   doc.setFontSize(12); doc.setTextColor(...ink); doc.setFont('helvetica', 'bold');
-  doc.text('Total paid', 125, y); doc.text(eur(inv.total_cents), 186, y, { align: 'right' }); y += 7;
+  doc.text('Total paid (incl. VAT)', 125, y); doc.text(eur(inv.total_cents), 186, y, { align: 'right' }); y += 7;
   if (inv.refund_cents > 0) {
     doc.setFontSize(10.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(...soft);
     doc.text('Refunded', 125, y); doc.text(`-${eur(inv.refund_cents)}`, 186, y, { align: 'right' }); y += 7;
