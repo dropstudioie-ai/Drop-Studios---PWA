@@ -27,7 +27,7 @@ alter table public.survey_responses enable row level security;
 revoke all on public.member_surveys, public.survey_responses from anon, authenticated;
 
 insert into public.member_surveys (key, title, starts_on, ends_on)
-values ('december-2026', 'December plans', date '2026-11-23', date '2026-12-06')
+values ('december-2026', 'December plans', date '2026-11-23', date '2026-12-02')
 on conflict (key) do nothing;
 
 /** The survey this member should be asked now, or null. */
