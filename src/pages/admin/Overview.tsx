@@ -9,6 +9,7 @@ import { formatPrice } from '../../domain/money';
 import { addDaysToKey, fmt, localDateKey } from '../../domain/time';
 import { ErrorNotice, Notice, PageSpinner, useToast } from '../../components/ui';
 import { Section, Table, Td } from './shared';
+import { SurveyResults } from './SurveyResults';
 
 interface Analytics {
   revenue_cents: number;
@@ -48,6 +49,7 @@ function ManagerOverview() {
     ['Instructors', '/admin/instructors'], ['Styles', '/admin/styles'], ['Audit log', '/admin/audit'], ['Settings', '/admin/settings']];
   return (
     <div>
+      <SurveyResults />
       <p className="max-w-2xl text-sm text-ink-soft">You’re a <strong>Manager</strong>: you can run classes, members, bookings and events. Sales, payments, refunds and earnings are only visible to full admins.</p>
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {links.map(([label, to]) => <Link key={to} to={to} className="card p-4 text-center font-semibold hover:shadow-md">{label}</Link>)}
@@ -71,6 +73,7 @@ function SalesOverview() {
 
   return (
     <>
+      <SurveyResults />
       <div className="mb-6 flex flex-wrap items-end gap-3">
         <label className="text-sm"><span className="label">From</span><input type="date" className="input" value={from} max={to} onChange={(e) => setFrom(e.target.value)} /></label>
         <label className="text-sm"><span className="label">To</span><input type="date" className="input" value={to} min={from} onChange={(e) => setTo(e.target.value)} /></label>

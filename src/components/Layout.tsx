@@ -6,6 +6,7 @@ import { InstallPrompt, OfflineBanner, UpdatePrompt, isStandalone } from './pwa'
 import { OutOfClassesPrompt } from './OutOfClasses';
 import { NotificationsPrompt } from './NotificationsPrompt';
 import { ProfileRequestPrompt } from './ProfileRequestPrompt';
+import { SurveyPrompt } from './SurveyPrompt';
 import { STUDIO } from '../config/studio';
 
 const navCls = ({ isActive }: { isActive: boolean }) =>
@@ -20,6 +21,7 @@ export function Layout() {
       {!isStaff && <OutOfClassesPrompt />}
       <NotificationsPrompt />
       <ProfileRequestPrompt />
+      {!isStaff && <SurveyPrompt />}
       <OfflineBanner />
       <header className="sticky top-0 z-30 border-b border-line bg-white/90 pt-[env(safe-area-inset-top)] backdrop-blur">
         <div className="container-page flex h-14 items-center justify-between md:h-16">

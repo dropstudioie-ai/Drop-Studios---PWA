@@ -7,8 +7,12 @@ import { validatePause } from '../domain/membership';
 import { addDaysToKey, daysInclusive, formatKey, localDateKey } from '../domain/time';
 import { ErrorNotice, Field, Notice, Sheet, Spinner } from './ui';
 
-export function PauseSheet({ membership, allowance, onClose, onDone, adminOverride = false }: {
+export function PauseSheet({ membership, allowance, onClose, onDone, adminOverride = false, initialStart, initialEnd, initialReason }: {
   membership: Membership;
+  /** Prefilled dates (e.g. from the December survey). */
+  initialStart?: string;
+  initialEnd?: string;
+  initialReason?: string;
   allowance: PauseAllowance | null;
   onClose: () => void;
   onDone: () => void;
@@ -19,9 +23,10 @@ export function PauseSheet({ membership, allowance, onClose, onDone, adminOverri
   // After a pause ends, members wait 10 days before the next one can start (admins aren't limited).
   const lastEnd = (membership.pauses ?? []).filter((p) => !p.is_cancelled && p.starts_on <= today).map((p) => p.ends_on).sort().pop();
   const earliest = !adminOverride && lastEnd && addDaysToKey(lastEnd, 11) > today ? addDaysToKey(lastEnd, 11) : today;
-  const [start, setStart] = useState(earliest);
-  const [end, setEnd] = useState(addDaysToKey(earliest, minDays - 1));
-  const [reason, setReason] = useState('');
+  const firstStart = initialStart && initialStart > earliest ? initialStart : earliest;
+  const [start, setStart] = useState(firstStart);
+  const [end, setEnd] = useState(initialEnd && initialEnd >= firstStart ? initialEnd : addDaysToKey(firstStart, minDays - 1));
+  const [reason, setReason] = useState(initialReason ?? '');
   const [override, setOverride] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -2438,4 +2438,36 @@ run('database: plans, booking, allowances, pauses, security', () => {
       expect(rep).toHaveProperty('upcoming');
     });
   });
+  describe('member survey', () => {
+    it('asks members at most twice, records answers, and shows admins who is away each day', async () => {
+      await db.query(`insert into member_surveys (key, title, starts_on, ends_on) values ('t-survey', 'Test', current_date - 1, current_date + 5) on conflict do nothing`);
+      await db.query(`update member_surveys set ends_on = current_date - 10 where key <> 't-survey'`);
+      const m = await createUser(db, 'SurveyMember'), m2 = await createUser(db, 'SurveyAway'), adm = await createUser(db, 'SurveyAdmin', 'admin');
+      const inst = await createUser(db, 'SurveyTeacher', 'instructor');
+      const mine = async (u: string) => (await as<{ s: { key: string } | null }>(db, user(u), `select my_survey() s`))[0].s;
+
+      expect(await mine(inst)).toBeNull();                         // staff are never asked
+      expect((await mine(m))?.key).toBe('t-survey');
+      await as(db, user(m), `select survey_decline('t-survey')`);
+      expect((await mine(m))?.key).toBe('t-survey');                // asked again next visit
+      await as(db, user(m), `select survey_decline('t-survey')`);
+      expect(await mine(m)).toBeNull();                             // second "not now": never again
+
+      const month = (await db.query(`select date_trunc('month', current_date + 30)::date::text d`)).rows[0].d as string;
+      const d = (n: number) => `${month.slice(0, 8)}${String(n).padStart(2, '0')}`;
+      await expectError(as(db, user(m2), `select survey_answer('t-survey', 'some_days', $1::date, $2::date)`, [d(20), d(10)]), 'invalid_pause_dates');
+      await as(db, user(m2), `select survey_answer('t-survey', 'some_days', $1::date, $2::date)`, [d(10), d(12)]);
+      expect(await mine(m2)).toBeNull();
+
+      await expectError(as(db, user(m2), `select admin_survey_results('t-survey')`), 'forbidden');
+      await expect(as(db, user(m2), `select * from survey_responses`)).rejects.toThrow();
+      const [{ r }] = await as<{ r: { answered: number; declined: number; counts: Record<string, number>; rows: { name: string; away_from: string }[]; days: { day: string; away: number }[] } }>(
+        db, user(adm), `select admin_survey_results('t-survey') r`);
+      expect(r.answered).toBe(1);
+      expect(r.declined).toBe(1);
+      expect(r.counts.some_days).toBe(1);
+      expect(r.days.find((x) => x.day === d(11))?.away).toBe(1);
+      expect(r.days.find((x) => x.day === d(13))?.away).toBe(0);
+    });
+  });
 });
