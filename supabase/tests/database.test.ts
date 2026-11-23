@@ -2481,4 +2481,20 @@ run('database: plans, booking, allowances, pauses, security', () => {
       expect(after.rentals).toBe(before.rentals + 1);
     });
   });
+  describe('studio asks a member to schedule a pause', () => {
+    it('asks until a pause from the agreed date exists, and blocks an earlier start', async () => {
+      const adm = await createUser(db, 'NudgeAdmin', 'admin'), m = await createUser(db, 'NudgeMember');
+      const plan = (await db.query(`select id from membership_plans where class_count = 8 and billing_interval = 'monthly' limit 1`)).rows[0]?.id
+        ?? (await db.query(`select id from membership_plans where is_active limit 1`)).rows[0].id;
+      await as(db, user(adm), `select admin_record_manual_sale($1, $2, null, 0, 'test')`, [m, plan]);
+      const from = (await db.query(`select (current_date + 5)::text d`)).rows[0].d as string;
+      await expectError(as(db, user(m), `select admin_request_pause($1, $2::date)`, [m, from]), 'forbidden');
+      await as(db, user(adm), `select admin_request_pause($1, $2::date, 'Away for Christmas')`, [m, from]);
+      const [{ n }] = await as<{ n: { pause_from: string; membership_id: string } }>(db, user(m), `select my_nudge() n`);
+      expect(n.pause_from).toBe(from);
+      await expectError(as(db, user(m), `select pause_membership($1, ($2::date - 1), ($2::date + 7))`, [n.membership_id, from]), 'pause_before_agreed_date');
+      await as(db, user(m), `select pause_membership($1, $2::date, ($2::date + 7))`, [n.membership_id, from]);
+      expect((await as<{ n: unknown }>(db, user(m), `select my_nudge() n`))[0].n).toBeNull();
+    });
+  });
 });

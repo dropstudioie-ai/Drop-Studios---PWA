@@ -7,12 +7,14 @@ import { validatePause } from '../domain/membership';
 import { addDaysToKey, daysInclusive, formatKey, localDateKey } from '../domain/time';
 import { ErrorNotice, Field, Notice, Sheet, Spinner } from './ui';
 
-export function PauseSheet({ membership, allowance, onClose, onDone, adminOverride = false, initialStart, initialEnd, initialReason }: {
+export function PauseSheet({ membership, allowance, onClose, onDone, adminOverride = false, initialStart, initialEnd, initialReason, minStart }: {
   membership: Membership;
   /** Prefilled dates (e.g. from the December survey). */
   initialStart?: string;
   initialEnd?: string;
   initialReason?: string;
+  /** Earliest first paused day allowed (e.g. agreed with the studio). */
+  minStart?: string;
   allowance: PauseAllowance | null;
   onClose: () => void;
   onDone: () => void;
@@ -22,7 +24,8 @@ export function PauseSheet({ membership, allowance, onClose, onDone, adminOverri
   const minDays = allowance?.min_days ?? 7;
   // After a pause ends, members wait 10 days before the next one can start (admins aren't limited).
   const lastEnd = (membership.pauses ?? []).filter((p) => !p.is_cancelled && p.starts_on <= today).map((p) => p.ends_on).sort().pop();
-  const earliest = !adminOverride && lastEnd && addDaysToKey(lastEnd, 11) > today ? addDaysToKey(lastEnd, 11) : today;
+  const earliestByRules = !adminOverride && lastEnd && addDaysToKey(lastEnd, 11) > today ? addDaysToKey(lastEnd, 11) : today;
+  const earliest = minStart && minStart > earliestByRules ? minStart : earliestByRules;
   const firstStart = initialStart && initialStart > earliest ? initialStart : earliest;
   const [start, setStart] = useState(firstStart);
   const [end, setEnd] = useState(initialEnd && initialEnd >= firstStart ? initialEnd : addDaysToKey(firstStart, minDays - 1));
@@ -33,7 +36,8 @@ export function PauseSheet({ membership, allowance, onClose, onDone, adminOverri
 
   const expiresOnKey = membership.expires_at ? localDateKey(new Date(membership.expires_at)) : today;
   const days = start && end && end >= start ? daysInclusive(start, end) : 0;
-  const clientError = start < earliest ? `You can pause again from ${formatKey(earliest, { weekday: 'short', day: 'numeric', month: 'short' })} (10 days after your last pause ended).` : override ? null : validatePause(start, end, {
+  const agreed = Boolean(minStart && earliest === minStart);
+  const clientError = start < earliest ? (agreed ? `Your pause starts from ${formatKey(earliest, { weekday: 'short', day: 'numeric', month: 'short' })}, as agreed with the studio.` : `You can pause again from ${formatKey(earliest, { weekday: 'short', day: 'numeric', month: 'short' })} (10 days after your last pause ended).`) : override ? null : validatePause(start, end, {
     todayKey: today, expiresOnKey, minDays, remainingAllowance: allowance?.remaining_days ?? 90,
   });
 
@@ -59,7 +63,10 @@ export function PauseSheet({ membership, allowance, onClose, onDone, adminOverri
         <p className="text-sm text-ink-soft">
           While paused you can’t book classes. Your expiry date moves back by the number of paused days.
         </p>
-        {earliest > today && (
+        {agreed && (
+          <Notice tone="info">As agreed with the studio, your pause starts from <strong>{formatKey(earliest, { weekday: 'long', day: 'numeric', month: 'long' })}</strong> or later, so you can still use your classes before then.</Notice>
+        )}
+        {!agreed && earliest > today && (
           <Notice tone="info">Your last pause ended recently. You can start a new pause from <strong>{formatKey(earliest, { weekday: 'long', day: 'numeric', month: 'long' })}</strong>.</Notice>
         )}
         {allowance && (
