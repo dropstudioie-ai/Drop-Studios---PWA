@@ -9,6 +9,12 @@ import { ProfileRequestPrompt } from './ProfileRequestPrompt';
 import { SurveyPrompt } from './SurveyPrompt';
 import { STUDIO } from '../config/studio';
 
+/** Look of the instructor app (see "Instructor themes" in index.css). */
+export const STAFF_THEME = 'sunrise';
+function staffTheme() {
+  try { return localStorage.getItem('drop.staffTheme') || STAFF_THEME; } catch { return STAFF_THEME; }
+}
+
 const navCls = ({ isActive }: { isActive: boolean }) =>
   `rounded-lg px-3 py-2 text-sm font-semibold transition ${isActive ? 'bg-brand-50 text-brand-700' : 'text-ink-soft hover:text-ink'}`;
 
@@ -16,7 +22,7 @@ export function Layout() {
   const { session, isAdmin, isStaff } = useAuth();
   const installed = isStandalone();
   return (
-    <div className="flex min-h-dvh flex-col">
+    <div className="flex min-h-dvh flex-col" data-staff-theme={isStaff && !isAdmin ? staffTheme() : undefined}>
       <UpdatePrompt />
       {!isStaff && <OutOfClassesPrompt />}
       <NotificationsPrompt />

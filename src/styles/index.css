@@ -88,3 +88,58 @@
 @utility container-page {
   @apply mx-auto w-full max-w-6xl px-4 sm:px-6;
 }
+
+/* ───────── Instructor themes (instructors only, set on the layout with data-staff-theme) ───────── */
+
+/* Shared: clickable things look clickable. */
+[data-staff-theme] .card { box-shadow: 0 6px 18px rgba(11, 16, 32, 0.08); }
+[data-staff-theme] .staff-tile { box-shadow: 0 6px 16px rgba(11, 16, 32, 0.1); }
+[data-staff-theme] main a.card, [data-staff-theme] main button.card, [data-staff-theme] main li > button { transition: transform .15s; }
+[data-staff-theme] .btn-outline { background: var(--color-brand-600); color: #fff; border-color: var(--color-brand-600); box-shadow: 0 4px 12px rgba(31, 67, 230, .25); }
+
+/* 1. Sunrise: warm peach background, white cards with orange edges, colourful tiles. */
+[data-staff-theme='sunrise'] { background: linear-gradient(180deg, #ffe3cc 0%, #fff1e3 380px, #fff7ef 100%); }
+[data-staff-theme='sunrise'] > header { background: rgba(255, 241, 227, .92); border-color: #ffd2ad; }
+[data-staff-theme='sunrise'] .card { border-color: #ffd2ad; border-left: 5px solid var(--color-accent-500); }
+[data-staff-theme='sunrise'] .staff-tile { background: #fff; border: 2px solid #ffd2ad; }
+[data-staff-theme='sunrise'] .staff-tile:nth-child(6n+1) { border-color: var(--color-brand-400); }
+[data-staff-theme='sunrise'] .staff-tile:nth-child(6n+2) { border-color: #12b5a2; }
+[data-staff-theme='sunrise'] .staff-tile:nth-child(6n+3) { border-color: var(--color-accent-500); }
+[data-staff-theme='sunrise'] .staff-tile:nth-child(6n+4) { border-color: #f5b400; }
+[data-staff-theme='sunrise'] .staff-tile:nth-child(6n+5) { border-color: #8b5cf6; }
+[data-staff-theme='sunrise'] .staff-tile:nth-child(6n+6) { border-color: #e8287a; }
+[data-staff-theme='sunrise'] > footer { background: #fff1e3; }
+
+/* 2. Ocean: Drop blue background, bold solid-colour tiles, blue-edged cards. */
+[data-staff-theme='ocean'] { background: linear-gradient(180deg, #bfd0ff 0%, #dbe5ff 360px, #eef3ff 100%); }
+[data-staff-theme='ocean'] > header { background: rgba(219, 229, 255, .92); border-color: var(--color-brand-200); }
+[data-staff-theme='ocean'] .card { border: 2px solid var(--color-brand-200); }
+[data-staff-theme='ocean'] .staff-tile { color: #fff; border: 0; }
+[data-staff-theme='ocean'] .staff-tile .text-ink-soft { color: rgba(255, 255, 255, .88); }
+[data-staff-theme='ocean'] .staff-tile:nth-child(6n+1) { background: var(--color-brand-600); }
+[data-staff-theme='ocean'] .staff-tile:nth-child(6n+2) { background: #0f9f8e; }
+[data-staff-theme='ocean'] .staff-tile:nth-child(6n+3) { background: var(--color-accent-500); }
+[data-staff-theme='ocean'] .staff-tile:nth-child(6n+4) { background: #8b5cf6; }
+[data-staff-theme='ocean'] .staff-tile:nth-child(6n+5) { background: #e8287a; }
+[data-staff-theme='ocean'] .staff-tile:nth-child(6n+6) { background: var(--color-brand-900); }
+[data-staff-theme='ocean'] > footer { background: #eef3ff; }
+
+/* 3. Night: dark navy page, white cards that pop, glowing orange buttons. */
+[data-staff-theme='night'] { background: linear-gradient(180deg, #0d1b5e 0%, #0b1230 420px, #070b1c 100%); --color-ink: #ffffff; --color-ink-soft: #d3daf3; --color-muted: #a9b3d3; --color-line: #2a3566; --color-brand-700: #a9bcff; }
+[data-staff-theme='night'] :is(.card, .input, .staff-tile, [role='dialog'] > div, [class*='bg-white'], [class*='bg-canvas'], [class*='bg-brand-50'], [class*='bg-brand-100'],
+  [class*='bg-accent-50'], [class*='bg-accent-100'], [class*='bg-success/10'], [class*='bg-red-50'], [class*='bg-amber-50'], [class*='bg-orange-50'], [class*='bg-green-50'], [class*='bg-yellow-50']) {
+  --color-ink: #0b1020; --color-ink-soft: #3b4256; --color-muted: #646b80; --color-line: #e3e7f0; --color-brand-700: #1733b8;
+}
+[data-staff-theme='night'] { color: var(--color-ink); }
+[data-staff-theme='night'] :is(.card, .staff-tile, [role='dialog'] > div) { color: var(--color-ink); }
+[data-staff-theme='night'] :is(.card, .input, .staff-tile, [role='dialog'] > div, [class*='bg-white'], [class*='bg-canvas'], [class*='bg-brand-50'], [class*='bg-brand-100'],
+  [class*='bg-accent-50'], [class*='bg-accent-100'], [class*='bg-success/10'], [class*='bg-red-50'], [class*='bg-amber-50'], [class*='bg-orange-50'], [class*='bg-green-50'], [class*='bg-yellow-50']):not([class*='text-']) { color: var(--color-ink); }
+[data-staff-theme='night'] .staff-tile { background-color: #fff; }
+[data-staff-theme='night'] .staff-tile[class*='bg-success/10'] { background-color: #dff5ea; }
+[data-staff-theme='night'] .card { border-color: transparent; box-shadow: 0 10px 28px rgba(0, 0, 0, .45); }
+[data-staff-theme='night'] .staff-tile { border: 0; box-shadow: 0 10px 24px rgba(0, 0, 0, .4); }
+[data-staff-theme='night'] .staff-tile.ring-1 { background: #fff; }
+[data-staff-theme='night'] .btn-accent { box-shadow: 0 0 0 3px rgba(255, 122, 0, .25), 0 8px 20px rgba(255, 122, 0, .35); }
+[data-staff-theme='night'] .btn-ghost { color: #fff; }
+[data-staff-theme='night'] > :is(header, nav, footer)[class] { background: #0b1230; border-color: #2a3566; --color-ink: #fff; --color-ink-soft: #d3daf3; --color-muted: #a9b3d3; }
+[data-staff-theme='night'] > :is(header, footer)[class] a[aria-label] svg, [data-staff-theme='night'] > footer[class] svg { filter: invert(1) hue-rotate(180deg); }

@@ -235,7 +235,7 @@ export function InstructorToday({ upcoming, today, onOpen, onQr }: { upcoming: S
 }
 
 function Tile({ to, icon, title, hint, tone }: { to: string; icon: string; title: string; hint: string; tone: string }) {
-  const cls = `flex h-full flex-col gap-1 rounded-2xl p-4 transition hover:-translate-y-0.5 hover:shadow-md ${tone}`;
+  const cls = `staff-tile flex h-full flex-col gap-1 rounded-2xl p-4 transition hover:-translate-y-0.5 hover:shadow-md ${tone}`;
   const body = <><span className="text-3xl" aria-hidden>{icon}</span><span className="font-extrabold">{title}</span><span className="text-xs text-ink-soft">{hint}</span></>;
   return to.startsWith('#')
     ? <a href={to} className={cls}>{body}</a>
