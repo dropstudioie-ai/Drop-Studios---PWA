@@ -10,7 +10,7 @@ import { SurveyPrompt } from './SurveyPrompt';
 import { STUDIO } from '../config/studio';
 
 /** Look of the instructor app (see "Instructor themes" in index.css). */
-export const STAFF_THEME = 'sunrise';
+export const STAFF_THEME = 'night';
 function staffTheme() {
   try { return localStorage.getItem('drop.staffTheme') || STAFF_THEME; } catch { return STAFF_THEME; }
 }

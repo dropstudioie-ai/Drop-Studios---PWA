@@ -124,22 +124,27 @@
 [data-staff-theme='ocean'] .staff-tile:nth-child(6n+6) { background: var(--color-brand-900); }
 [data-staff-theme='ocean'] > footer { background: #eef3ff; }
 
-/* 3. Night: dark navy page, white cards that pop, glowing orange buttons. */
-[data-staff-theme='night'] { background: linear-gradient(180deg, #0d1b5e 0%, #0b1230 420px, #070b1c 100%); --color-ink: #ffffff; --color-ink-soft: #d3daf3; --color-muted: #a9b3d3; --color-line: #2a3566; --color-brand-700: #a9bcff; }
-[data-staff-theme='night'] :is(.card, .input, .staff-tile, [role='dialog'] > div, [class*='bg-white'], [class*='bg-canvas'], [class*='bg-brand-50'], [class*='bg-brand-100'],
+/* 3. Night: dark navy page, white cards that pop, glowing orange buttons.
+   The page's text colours are flipped to light; anything on a light surface (cards, tiles, chips, sheets) flips back. */
+[data-staff-theme='night'] { background: linear-gradient(180deg, #0d1b5e 0%, #0b1230 420px, #070b1c 100%); color: var(--color-ink);
+  --color-ink: #ffffff; --color-ink-soft: #d3daf3; --color-muted: #a9b3d3; --color-line: #2a3566; }
+[data-staff-theme='night'] :is(.card, .input, .staff-tile, [role='dialog'] > div, [class*='bg-white']:not([class*='bg-white/1'], [class*='bg-white/2'], [class*='bg-white/5']), [class*='bg-canvas'], [class*='bg-brand-50'], [class*='bg-brand-100'],
   [class*='bg-accent-50'], [class*='bg-accent-100'], [class*='bg-success/10'], [class*='bg-red-50'], [class*='bg-amber-50'], [class*='bg-orange-50'], [class*='bg-green-50'], [class*='bg-yellow-50']) {
-  --color-ink: #0b1020; --color-ink-soft: #3b4256; --color-muted: #646b80; --color-line: #e3e7f0; --color-brand-700: #1733b8;
+  --color-ink: #0b1020; --color-ink-soft: #3b4256; --color-muted: #646b80; --color-line: #e3e7f0;
 }
-[data-staff-theme='night'] { color: var(--color-ink); }
-[data-staff-theme='night'] :is(.card, .staff-tile, [role='dialog'] > div) { color: var(--color-ink); }
-[data-staff-theme='night'] :is(.card, .input, .staff-tile, [role='dialog'] > div, [class*='bg-white'], [class*='bg-canvas'], [class*='bg-brand-50'], [class*='bg-brand-100'],
-  [class*='bg-accent-50'], [class*='bg-accent-100'], [class*='bg-success/10'], [class*='bg-red-50'], [class*='bg-amber-50'], [class*='bg-orange-50'], [class*='bg-green-50'], [class*='bg-yellow-50']):not([class*='text-']) { color: var(--color-ink); }
-[data-staff-theme='night'] .staff-tile { background-color: #fff; }
-[data-staff-theme='night'] .staff-tile[class*='bg-success/10'] { background-color: #dff5ea; }
+/* Zero specificity, so the app's own text-colour classes still win. */
+:where([data-staff-theme='night']) :where(.card, .input, .staff-tile, [role='dialog'] > div, [class*='bg-white']:not([class*='bg-white/1'], [class*='bg-white/2'], [class*='bg-white/5']), [class*='bg-canvas'], [class*='bg-brand-50'], [class*='bg-brand-100'],
+  [class*='bg-accent-50'], [class*='bg-accent-100'], [class*='bg-success/10'], [class*='bg-red-50'], [class*='bg-amber-50'], [class*='bg-orange-50'], [class*='bg-green-50'], [class*='bg-yellow-50']) { color: var(--color-ink); }
+/* Blue links sitting directly on the dark page get a lighter blue. */
+[data-staff-theme='night'] .text-brand-700:not(:is(.card, .staff-tile, [role='dialog'], [class*='bg-']) *):not([class*='bg-']) { color: #a9bcff; }
+:where([data-staff-theme='night']) .bg-ink { background-color: #0b1020; }
+:where([data-staff-theme='night']) .border-ink { border-color: #0b1020; }
+[data-staff-theme='night'] .staff-tile { background-color: #fff; border: 0; box-shadow: 0 10px 24px rgba(0, 0, 0, .4); }
+/* See-through tints look muddy on navy: make them solid light tints. */
+[data-staff-theme='night'] :is([class*='bg-success/10'], [class*='bg-green-50/']) { background-color: #dff5ea; }
+[data-staff-theme='night'] [class*='bg-danger/15'] { background-color: #fde2e2; --color-ink: #0b1020; }
 [data-staff-theme='night'] .card { border-color: transparent; box-shadow: 0 10px 28px rgba(0, 0, 0, .45); }
-[data-staff-theme='night'] .staff-tile { border: 0; box-shadow: 0 10px 24px rgba(0, 0, 0, .4); }
-[data-staff-theme='night'] .staff-tile.ring-1 { background: #fff; }
 [data-staff-theme='night'] .btn-accent { box-shadow: 0 0 0 3px rgba(255, 122, 0, .25), 0 8px 20px rgba(255, 122, 0, .35); }
 [data-staff-theme='night'] .btn-ghost { color: #fff; }
-[data-staff-theme='night'] > :is(header, nav, footer)[class] { background: #0b1230; border-color: #2a3566; --color-ink: #fff; --color-ink-soft: #d3daf3; --color-muted: #a9b3d3; }
-[data-staff-theme='night'] > :is(header, footer)[class] a[aria-label] svg, [data-staff-theme='night'] > footer[class] svg { filter: invert(1) hue-rotate(180deg); }
+[data-staff-theme='night'] > :is(header, nav, footer)[class] { background: #0b1230; border-color: #2a3566; color: #fff; --color-ink: #fff; --color-ink-soft: #d3daf3; --color-muted: #a9b3d3; }
+[data-staff-theme='night'] > :is(header, footer)[class] svg { filter: invert(1) hue-rotate(180deg); }
