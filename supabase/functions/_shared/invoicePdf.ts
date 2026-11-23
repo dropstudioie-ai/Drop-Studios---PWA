@@ -14,7 +14,7 @@ export interface RentalInvoice {
   company: string | null; address: string | null; tax_number: string | null;
   total_cents: number; refund_cents: number; lines: InvoiceLine[];
 }
-export const STUDIO_LINES = ['Drop Studios', '13 Sackville Place, Dublin 1, D01', 'dropstudioie@gmail.com', 'www.dropstudios.ie'];
+export const STUDIO_LINES = ['Drop Studios', '13 Sackville Place, Dublin 1, D01', 'dropstudioie@gmail.com', 'www.dropstudios.ie', 'VAT no. 4165063LH'];
 
 const TZ = 'Europe/Dublin';
 const eur = (c: number) => new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR' }).format(c / 100);
