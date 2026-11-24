@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { checkinPathFromQr } from '../lib/checkin';
 
 /** /scan: scan the check-in QR from inside the app (already logged in), instead of the phone camera opening the browser. */
 export default function ScanPage() {
@@ -16,10 +17,8 @@ export default function ScanPage() {
     let jsQR: ((d: Uint8ClampedArray, w: number, h: number) => { data: string } | null) | null = null;
 
     const handle = (text: string) => {
-      try {
-        const u = new URL(text);
-        if (u.origin === window.location.origin && u.pathname === '/checkin') { stop = true; navigate(u.pathname + u.search, { replace: true }); return true; }
-      } catch { /* not a URL */ }
+      const path = checkinPathFromQr(text);
+      if (path) { stop = true; navigate(path, { replace: true }); return true; }
       setError('That’s not a Drop check-in code. Point at the QR on the teacher’s phone or the reception screen.');
       return false;
     };
