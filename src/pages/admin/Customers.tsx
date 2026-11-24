@@ -33,10 +33,21 @@ export default function AdminCustomers() {
 
   const shared = useAsync(async () => new Set((unwrap(await supabase.rpc('admin_shared_phone_users')) as string[]) ?? []), []);
   const [queueing, setQueueing] = useState(false);
+  const counts = useAsync(async () => unwrap(await supabase.rpc('admin_member_counts')) as { active: number; paused: number; monthly: number; ending: number; cancel_requests: number; total: number }, []);
   if (selected) return <CustomerDetail userId={selected} onBack={() => setSelected(null)} />;
 
   return (
     <Section title="Members" actions={<button className="btn-accent btn-sm" onClick={() => setQueueing(true)}>📦 Move from old app</button>}>
+      {counts.data && (
+        <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
+          {[['✅', 'Active', counts.data.active, 'bg-[#dff5ea] text-success'], ['⏸️', 'Paused', counts.data.paused, 'bg-accent-50 text-accent-600'],
+            ['🔁', 'Monthly', counts.data.monthly, 'bg-brand-50 text-brand-700'], ['🗓', 'Ending', counts.data.ending, 'bg-canvas text-ink-soft'],
+            ['🚪', 'Asked to cancel', counts.data.cancel_requests, counts.data.cancel_requests ? 'bg-red-50 text-danger' : 'bg-canvas text-ink-soft']].map(([e, l, n, c]) => (
+            <div key={l as string} className={`rounded-2xl p-3 ${c}`}><p className="text-xs font-bold uppercase tracking-wide">{e} {l}</p><p className="font-display text-3xl font-black">{n as number}</p></div>
+          ))}
+          <p className="col-span-2 text-xs text-muted sm:col-span-5">Active = can book now (classes left, not paused). {counts.data.total} accounts in total.</p>
+        </div>
+      )}
       {queueing && <QueueMoveSheet onClose={() => setQueueing(false)} onDone={() => { setQueueing(false); list.reload(); }} />}
       <input className="input mb-3 w-full md:max-w-md" type="search" placeholder="Search name, email or phone" value={q} onChange={(e) => setQ(e.target.value)} />
       {list.loading && !list.data ? <PageSpinner /> : list.error ? <ErrorNotice error={list.error} /> : (
@@ -111,8 +122,9 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
     ]);
     const sharedPhone = (unwrap(await supabase.rpc('admin_shared_phone', { p_user_id: userId })) ?? []) as { id: string; full_name: string; email: string | null }[];
     const oldApp = profile?.email ? ((unwrap(await supabase.from('old_app_members').select('plan, status, next_payment_on, end_on, price_cents, moved_at').ilike('email', profile.email).limit(1)) as OldAppRecord[])[0] ?? null) : null;
+    const cancelReq = ((unwrap(await supabase.from('cancel_requests').select('id, subscription_id, reason, created_at').eq('user_id', userId).eq('status', 'pending').limit(1)) as CancelReq[])[0] ?? null);
     const held = profile?.email ? ((unwrap(await supabase.from('old_app_pending_moves').select('email, classes, renew_on, old_plan, held_at, applied_at, declined_at').ilike('email', profile.email).not('held_at', 'is', null).is('applied_at', null).is('declined_at', null).limit(1)) as HeldMove[])[0] ?? null) : null;
-    return { profile, memberships, bookings, styles, ledger, payments, allowance, plans, subscriptions, sharedPhone, oldApp, held };
+    return { profile, memberships, bookings, styles, ledger, payments, allowance, plans, subscriptions, sharedPhone, oldApp, held, cancelReq };
   }, [userId]);
 
   const [adjusting, setAdjusting] = useState<Membership | null>(null);
@@ -350,6 +362,7 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
         </Section>
       )}
 
+      {d.cancelReq && <CancelRequestCard req={d.cancelReq} onDone={() => void data.reload()} />}
       {d.held && <HeldMoveCard held={d.held} onDone={() => void data.reload()} />}
       {d.oldApp && !d.held && (
         <div className={`mb-6 rounded-2xl border-2 p-4 ${d.oldApp.moved_at ? 'border-success/40 bg-[#dff5ea]' : 'border-accent-500 bg-accent-50'}`}>
@@ -747,6 +760,36 @@ function HeldMoveCard({ held, onDone }: { held: HeldMove; onDone: () => void }) 
         <Field label="Valid until"><input className="input" type="date" value={renew} onChange={(e) => setRenew(e.target.value)} /></Field>
         <button className="btn-primary" disabled={busy || !(Number(classes) >= 1) || !renew} onClick={() => void decide(true)}>{busy ? <Spinner /> : 'Approve'}</button>
         <button className="btn-outline" disabled={busy} onClick={() => void decide(false)}>Decline</button>
+      </div>
+    </div>
+  );
+}
+
+interface CancelReq { id: string; subscription_id: string; reason: string | null; created_at: string }
+
+/** A member asked to cancel their monthly membership: approve (stops future payments, Square too) or decline. */
+function CancelRequestCard({ req, onDone }: { req: CancelReq; onDone: () => void }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const decide = async (approve: boolean) => {
+    const note = prompt(approve ? 'Note for them (optional)' : 'Why are you declining? (they’ll see this)');
+    if (note === null) return;
+    setBusy(true);
+    try {
+      if (approve) await manageSubscription('cancel', req.subscription_id);
+      unwrap(await supabase.rpc('admin_decide_cancel_request', { p_id: req.id, p_approve: approve, p_note: note || null }));
+      toast(approve ? 'Cancelled: no more payments. They’ve been emailed.' : 'Declined. They’ve been emailed.');
+      onDone();
+    } catch (e) { toast(messageFor((e as { code?: string }).code ?? (e as Error).message), 'error'); setBusy(false); }
+  };
+  return (
+    <div className="mb-6 rounded-2xl border-2 border-danger bg-red-50 p-4">
+      <p className="font-bold">🚪 Asked to cancel their monthly membership · {fmt.date(req.created_at)}</p>
+      {req.reason && <p className="mt-1 text-sm text-ink-soft">“{req.reason}”</p>}
+      <p className="mt-1 text-xs text-muted">Approving cancels it the usual way: no more payments, and they keep their classes until the end of the month they’ve paid for. Cancellations need 72 hours’ notice before a payment, so decide soon.</p>
+      <div className="mt-3 flex gap-2">
+        <button className="btn-danger btn-sm" disabled={busy} onClick={() => void decide(true)}>{busy ? <Spinner className="h-4 w-4" /> : 'Approve cancellation'}</button>
+        <button className="btn-outline btn-sm" disabled={busy} onClick={() => void decide(false)}>Decline</button>
       </div>
     </div>
   );

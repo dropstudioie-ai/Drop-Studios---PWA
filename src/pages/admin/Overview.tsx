@@ -81,6 +81,7 @@ function SalesOverview() {
       </div>
       {a.loading && !d ? <PageSpinner /> : a.error ? <ErrorNotice error={a.error} onRetry={a.reload} /> : d && (
         <>
+          <CancelRequests />
           <PaymentsToReview />
           <CancelledPaidClasses />
           {d.test_payments_excluded > 0 && <div className="mb-4"><Notice tone="test">{d.test_payments_excluded} TEST payment(s) in this period are excluded from all revenue figures.</Notice></div>}
@@ -224,4 +225,26 @@ function useScrollToHash(id: string, ready: boolean) {
   useEffect(() => {
     if (ready && hash === `#${id}`) document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [ready, hash, id]);
+}
+
+/** Members asking to cancel: open their page to approve or decline. */
+function CancelRequests() {
+  const list = useAsync(async () => unwrap(await supabase.from('cancel_requests').select('id, user_id, reason, created_at, member:profiles!cancel_requests_user_id_fkey(full_name)').eq('status', 'pending').order('created_at')) as unknown as
+    { id: string; user_id: string; reason: string | null; created_at: string; member: { full_name: string | null } | null }[], []);
+  const rows = list.data ?? [];
+  useScrollToHash('cancels', rows.length > 0);
+  if (!rows.length) return null;
+  return (
+    <div id="cancels" className="mb-6 scroll-mt-20 rounded-2xl border-2 border-danger bg-red-50 p-4">
+      <p className="font-bold">🚪 Members asking to cancel</p>
+      <ul className="mt-2 divide-y divide-danger/20 text-sm">
+        {rows.map((r) => (
+          <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+            <span><strong>{r.member?.full_name ?? 'Member'}</strong> · asked {fmt.date(r.created_at)}{r.reason && <span className="block text-xs text-muted">“{r.reason}”</span>}</span>
+            <Link className="btn-primary btn-sm" to={`/admin/customers?user=${r.user_id}`}>Review</Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }

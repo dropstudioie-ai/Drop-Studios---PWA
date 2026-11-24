@@ -427,6 +427,20 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
         text: `${hi}\n\nYour ${p.title} class on ${slot(p.starts_at, null)} has been cancelled${p.reason ? ` (${p.reason})` : ''}.\n\nYou paid ${eur(p.amount_cents)}. What would you prefer?\n\n• A class credit: book a class up to ${eur(p.amount_cents)} in the next ${p.credit_days} days, nothing to pay\n• A refund of ${eur(p.amount_cents)} to your card\n\nChoose in the app:\n${site()}/account#choices\n\nDrop Studios`,
         url: '/account#choices',
       };
+    case 'cancel_requested':
+      return {
+        subject: `🚪 ${p.member} asked to cancel their membership`,
+        text: `${hi}\n\n${p.member} has asked to cancel their ${p.plan ?? 'monthly'} membership.${p.reason ? `\n\nTheir reason: “${p.reason}”` : ''}\n\nApprove or decline it on their page (approving stops their future payments):\n${site()}/admin/customers?user=${p.user_id}\n\nDrop Studios`,
+        url: `/admin/customers?user=${p.user_id}`,
+      };
+    case 'cancel_decided':
+      return {
+        subject: p.approved ? 'Your membership cancellation is confirmed' : 'About your cancellation request',
+        text: p.approved
+          ? `${hi}\n\nYour cancellation is confirmed: there will be no more payments.${p.ends_on ? ` You can keep using your classes until ${dateWithYear(`${p.ends_on}T12:00:00Z`)}.` : ''}${p.note ? `\n\nA note from the studio: ${p.note}` : ''}\n\nThank you for dancing with us, and you're always welcome back 💛\n\nDrop Studios`
+          : `${hi}\n\nWe've looked at your request to cancel your membership${p.note ? `: ${p.note}` : '.'}\n\nIf you have any questions, just reply to this email or talk to us at reception.\n\nDrop Studios`,
+        url: '/account',
+      };
     case 'old_app_move_held':
       return {
         subject: `⏸ ${p.member} signed up: their Glofox credits need your OK`,

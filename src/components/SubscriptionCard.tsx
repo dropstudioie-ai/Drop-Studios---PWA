@@ -7,6 +7,9 @@ import { messageFor } from '../domain/messages';
 import { formatKey } from '../domain/time';
 import { CANCEL_NOTICE_HOURS, cancelPreview, endsOn, type Subscription } from '../domain/subscription';
 import { manageSubscription } from '../lib/payments';
+import { supabase } from '../lib/supabase';
+import { unwrap } from '../api';
+import { useAsync } from '../lib/useAsync';
 import { Notice, Sheet, Spinner, useToast } from './ui';
 
 const day = (d: string) => formatKey(d, { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
@@ -21,6 +24,18 @@ export function SubscriptionCard({ sub, onChanged }: { sub: Subscription; onChan
   const cancelling = sub.status === 'cancel_scheduled';
   const ends = endsOn(sub);
   const preview = cancelPreview(sub);
+  const req = useAsync(async () => unwrap(await supabase.from('cancel_requests').select('id, created_at').eq('subscription_id', sub.id).eq('status', 'pending').maybeSingle()) as { id: string; created_at: string } | null, [sub.id]);
+  const pending = req.data;
+  const [reason, setReason] = useState('');
+  async function requestCancel() {
+    setBusy(true);
+    try {
+      unwrap(await supabase.rpc('request_membership_cancel', { p_subscription_id: sub.id, p_reason: reason || null }));
+      toast('Request sent. The studio will review it and email you.');
+      setConfirming(false); req.reload();
+    } catch (e) { toast(messageFor((e as Error).message, 'Something went wrong. Please try again.'), 'error'); }
+    finally { setBusy(false); }
+  }
 
   async function run(action: 'cancel' | 'undo_cancel') {
     setBusy(true);
@@ -68,8 +83,9 @@ export function SubscriptionCard({ sub, onChanged }: { sub: Subscription; onChan
         )}
         {sub.status !== 'ended' && <p className="text-xs text-muted">Pausing your membership moves your next payment back by the paused days.</p>}
 
-        {sub.status !== 'ended' && !cancelling && (
-          <button className="btn-ghost btn-sm text-danger" onClick={() => setConfirming(true)}>Cancel membership</button>
+        {pending && <p className="rounded-xl bg-accent-50 p-3 text-sm">Cancellation requested on {day(pending.created_at.slice(0, 10))}. The studio will review it and email you.</p>}
+        {sub.status !== 'ended' && !cancelling && !pending && (
+          <button className="text-xs text-muted underline underline-offset-2 hover:text-ink" onClick={() => setConfirming(true)}>Request to cancel</button>
         )}
         {cancelling && !sub.provider_cancel_sent_at && (
           <button className="btn-outline btn-sm" disabled={busy} onClick={() => void run('undo_cancel')}>{busy && <Spinner />}Keep my membership</button>
@@ -79,7 +95,7 @@ export function SubscriptionCard({ sub, onChanged }: { sub: Subscription; onChan
       {confirming && (
         <Sheet open onClose={() => setConfirming(false)} title="Cancel your membership?">
           <div className="space-y-4">
-            <p className="text-ink-soft">You can cancel any time, with no penalty. You keep your classes until the end of the month you’ve paid for.</p>
+            <p className="text-ink-soft">Send us a request and the studio will review it and confirm by email. You keep your classes until the end of the month you’ve paid for.</p>
             <ul className="space-y-1 rounded-xl bg-canvas p-4 text-sm">
               {preview.endsOn && <li>Ends on <strong>{day(preview.endsOn)}</strong></li>}
               <li>{preview.paymentsLeft === 0
@@ -89,9 +105,10 @@ export function SubscriptionCard({ sub, onChanged }: { sub: Subscription; onChan
             <p className="text-xs text-muted">
               Just joined? You can cancel within 14 days for a refund if you haven’t used any classes. Contact us at {STUDIO.email} or at reception.
             </p>
+            <textarea className="input min-h-20 py-3" maxLength={1000} placeholder="Why are you leaving? (optional, it helps us improve)" value={reason} onChange={(e) => setReason(e.target.value)} />
             <div className="flex gap-2">
               <button className="btn-ghost flex-1" onClick={() => setConfirming(false)}>Keep membership</button>
-              <button className="btn-danger flex-1" disabled={busy} onClick={() => void run('cancel')}>{busy && <Spinner />}Yes, cancel</button>
+              <button className="btn-danger flex-1" disabled={busy} onClick={() => void requestCancel()}>{busy && <Spinner />}Send request</button>
             </div>
           </div>
         </Sheet>

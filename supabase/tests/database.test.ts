@@ -1838,6 +1838,27 @@ run('database: plans, booking, allowances, pauses, security', () => {
     }
     const open = async (subId: string) =>
       (await db.query(`select id, classes_remaining, classes_total from memberships where subscription_id = $1 and expires_at > now() order by created_at`, [subId])).rows;
+
+    it('members ask to cancel and an admin approves or declines; the overview counts members', async () => {
+      const adm = await createUser(db, 'CancelAdmin', 'admin');
+      const { c, subId } = await subscribe('multi-8');
+      await expectError(as(db, user(adm), `select request_membership_cancel($1, 'x')`, [subId]), 'not_found');   // only their own
+      const [{ id }] = await as<{ id: string }>(db, user(c), `select request_membership_cancel($1, 'Moving abroad') id`, [subId]);
+      await expectError(as(db, user(c), `select request_membership_cancel($1, null)`, [subId]), 'cancel_already_requested');
+      expect((await db.query(`select count(*)::int n from notification_outbox where kind = 'cancel_requested' and payload ->> 'user_id' = $1`, [c])).rows[0].n).toBeGreaterThan(0);
+      expect((await as<{ r: { cancel_requests: number } }>(db, user(adm), `select admin_approvals() r`))[0].r.cancel_requests).toBeGreaterThan(0);
+      const [{ r: counts }] = await as<{ r: { active: number; paused: number; cancel_requests: number } }>(db, user(adm), `select admin_member_counts() r`);
+      expect(counts.active).toBeGreaterThan(0); expect(counts.cancel_requests).toBeGreaterThan(0);
+      await expectError(as(db, user(c), `select admin_member_counts()`), 'forbidden');
+      await expectError(as(db, user(c), `select admin_decide_cancel_request($1, true)`, [id]), 'forbidden');
+      await as(db, user(adm), `select admin_decide_cancel_request($1, false, 'Please talk to us first')`, [id]);
+      expect((await db.query(`select status from cancel_requests where id = $1`, [id])).rows[0].status).toBe('declined');
+      expect((await db.query(`select count(*)::int n from notification_outbox where kind = 'cancel_decided' and user_id = $1`, [c])).rows[0].n).toBe(1);
+      const [{ id: id2 }] = await as<{ id: string }>(db, user(c), `select request_membership_cancel($1, null) id`, [subId]);   // can ask again
+      await as(db, user(adm), `select admin_decide_cancel_request($1, true)`, [id2]);
+      expect((await db.query(`select status from cancel_requests where id = $1`, [id2])).rows[0].status).toBe('approved');
+      await db.query(`update profiles set role = 'customer', finance_access = false where id = $1`, [adm]);
+    });
     const use = (membershipId: string, n: number) =>
       db.query(`update memberships set classes_remaining = classes_remaining - $2 where id = $1`, [membershipId, n]);
 

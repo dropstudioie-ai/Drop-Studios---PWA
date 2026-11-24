@@ -62,6 +62,8 @@ const MESSAGES: Record<string, string> = {
   dob_required: 'Please add your date of birth to see your classes.',
   user_not_found: 'We couldn’t find that person.',
   instructor_not_found: 'Instructor not found.',
+  cancel_already_requested: 'You’ve already asked to cancel. The studio will be in touch.',
+  cancel_not_possible: 'This membership can’t be cancelled any more.',
   invalid_renew_date: 'Choose a renew date from today on.',
   already_moved: 'This member has already been moved from the old app.',
   invalid_classes: 'Enter the classes left (1 to 50).',
