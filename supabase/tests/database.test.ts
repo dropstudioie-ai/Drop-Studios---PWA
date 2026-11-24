@@ -2597,5 +2597,23 @@ run('database: plans, booking, allowances, pauses, security', () => {
       expect((await db.query(`select count(*)::int n from notification_outbox where kind = 'moved_welcome' and user_id = $1`, [m])).rows[0].n).toBe(1);
       expect((await as<{ w: { classes: number } }>(db, user(m), `select my_welcome() w`))[0].w.classes).toBe(3);   // welcome pop-up too
     });
+
+    it('puts manually added credits on hold at sign-up until an admin approves or declines', async () => {
+      const adm = await createUser(db, 'HeldAdmin', 'admin');
+      await as(db, user(adm), `select admin_queue_held_move('HeldSignup@example.com', 5, 'Manually added', null)`);
+      const m = await createUser(db, 'HeldSignup');
+      expect((await db.query(`select count(*)::int n from memberships where user_id = $1`, [m])).rows[0].n).toBe(0);   // nothing added yet
+      expect((await db.query(`select held_at is not null h from old_app_pending_moves where email = 'heldsignup@example.com'`)).rows[0].h).toBe(true);
+      expect((await db.query(`select count(*)::int n from notification_outbox where kind = 'old_app_move_held' and payload ->> 'user_id' = $1`, [m])).rows[0].n).toBeGreaterThan(0);   // every admin is told
+      expect((await as<{ r: { held_moves: number } }>(db, user(adm), `select admin_approvals() r`))[0].r.held_moves).toBeGreaterThan(0);
+      await expectError(as(db, user(m), `select admin_decide_held_move('heldsignup@example.com', true, 5, current_date + 30)`), 'forbidden');
+      await as(db, user(adm), `select admin_decide_held_move('heldsignup@example.com', true, 4, current_date + 30)`);
+      expect((await db.query(`select classes_remaining n from memberships where user_id = $1`, [m])).rows[0].n).toBe(4);
+      // Declined: nothing is added.
+      await as(db, user(adm), `select admin_queue_held_move('HeldNo@example.com', 2)`);
+      const n = await createUser(db, 'HeldNo');
+      await as(db, user(adm), `select admin_decide_held_move('heldno@example.com', false)`);
+      expect((await db.query(`select count(*)::int n from memberships where user_id = $1`, [n])).rows[0].n).toBe(0);
+    });
   });
 });

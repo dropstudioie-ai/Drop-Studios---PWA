@@ -111,7 +111,8 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
     ]);
     const sharedPhone = (unwrap(await supabase.rpc('admin_shared_phone', { p_user_id: userId })) ?? []) as { id: string; full_name: string; email: string | null }[];
     const oldApp = profile?.email ? ((unwrap(await supabase.from('old_app_members').select('plan, status, next_payment_on, end_on, price_cents, moved_at').ilike('email', profile.email).limit(1)) as OldAppRecord[])[0] ?? null) : null;
-    return { profile, memberships, bookings, styles, ledger, payments, allowance, plans, subscriptions, sharedPhone, oldApp };
+    const held = profile?.email ? ((unwrap(await supabase.from('old_app_pending_moves').select('email, classes, renew_on, old_plan, held_at, applied_at, declined_at').ilike('email', profile.email).not('held_at', 'is', null).is('applied_at', null).is('declined_at', null).limit(1)) as HeldMove[])[0] ?? null) : null;
+    return { profile, memberships, bookings, styles, ledger, payments, allowance, plans, subscriptions, sharedPhone, oldApp, held };
   }, [userId]);
 
   const [adjusting, setAdjusting] = useState<Membership | null>(null);
@@ -349,7 +350,8 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
         </Section>
       )}
 
-      {d.oldApp && (
+      {d.held && <HeldMoveCard held={d.held} onDone={() => void data.reload()} />}
+      {d.oldApp && !d.held && (
         <div className={`mb-6 rounded-2xl border-2 p-4 ${d.oldApp.moved_at ? 'border-success/40 bg-[#dff5ea]' : 'border-accent-500 bg-accent-50'}`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
@@ -716,5 +718,36 @@ function QueueMoveSheet({ onClose, onDone }: { onClose: () => void; onDone: () =
         <button className="btn-primary w-full" disabled={busy || !email.includes('@') || !renew || (!unlimited && !(Number(classes) >= 1))} onClick={() => void go()}>{busy ? <Spinner /> : 'Move'}</button>
       </div>
     </Sheet>
+  );
+}
+
+interface HeldMove { email: string; classes: number | null; renew_on: string | null; old_plan: string | null; held_at: string }
+
+/** "Manually added" Glofox credits: nothing moves until an admin approves (with classes and a date) or declines. */
+function HeldMoveCard({ held, onDone }: { held: HeldMove; onDone: () => void }) {
+  const toast = useToast();
+  const [classes, setClasses] = useState(String(held.classes ?? ''));
+  const [renew, setRenew] = useState(held.renew_on && held.renew_on >= new Date().toISOString().slice(0, 10) ? held.renew_on : new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10));
+  const [busy, setBusy] = useState(false);
+  const decide = async (approve: boolean) => {
+    if (!approve && !confirm('Decline? Nothing is added to their account.')) return;
+    setBusy(true);
+    try {
+      unwrap(await supabase.rpc('admin_decide_held_move', { p_email: held.email, p_approve: approve, p_classes: approve ? Number(classes) : null, p_renew_on: approve ? renew : null }));
+      toast(approve ? 'Approved: classes added and welcome email sent.' : 'Declined.');
+      onDone();
+    } catch (e) { toast(messageFor((e as Error).message), 'error'); setBusy(false); }
+  };
+  return (
+    <div className="mb-6 rounded-2xl border-2 border-accent-500 bg-accent-50 p-4">
+      <p className="font-bold">⏸ On hold: Glofox credits waiting for your OK</p>
+      <p className="mt-1 text-sm text-ink-soft">In Glofox: <strong>{held.classes ?? '?'} manually added credit{held.classes === 1 ? '' : 's'}</strong>{held.renew_on ? `, expiring ${fmt.date(held.renew_on)}` : ', no expiry date'}{held.old_plan ? ` (${held.old_plan})` : ''}. Signed up {fmt.date(held.held_at)}. Nothing has been added yet.</p>
+      <div className="mt-3 flex flex-wrap items-end gap-2">
+        <Field label="Classes"><input className="input w-24" type="number" min={1} max={100} value={classes} onChange={(e) => setClasses(e.target.value)} /></Field>
+        <Field label="Valid until"><input className="input" type="date" value={renew} onChange={(e) => setRenew(e.target.value)} /></Field>
+        <button className="btn-primary" disabled={busy || !(Number(classes) >= 1) || !renew} onClick={() => void decide(true)}>{busy ? <Spinner /> : 'Approve'}</button>
+        <button className="btn-outline" disabled={busy} onClick={() => void decide(false)}>Decline</button>
+      </div>
+    </div>
   );
 }
