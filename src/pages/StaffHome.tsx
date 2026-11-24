@@ -115,12 +115,12 @@ function AdminToday({ todays, onOpen }: { todays: StaffSession[]; onOpen: (id: s
       </section>
 
       {attention.length > 0 && (
-        <section aria-labelledby="att-h">
-          <h2 id="att-h" className="text-xl font-black">Needs your attention</h2>
-          <ul className="card mt-3 divide-y divide-line">
+        <section aria-labelledby="att-h" className="attention rounded-3xl bg-[#dc2626] p-4 text-white shadow-lg shadow-red-600/30">
+          <h2 id="att-h" className="text-xl font-black text-white">🚨 Needs your attention</h2>
+          <ul className="mt-3 divide-y divide-white/25 overflow-hidden rounded-2xl bg-white/10">
             {attention.map((a) => (
               <li key={a.label[1]}>
-                <Link to={a.to} className="flex items-center justify-between gap-3 p-4 hover:bg-canvas">
+                <Link to={a.to} className="flex items-center justify-between gap-3 p-4 font-semibold text-white hover:bg-white/15">
                   <span><strong className="font-display text-lg">{a.n}</strong> {a.label[a.n === 1 ? 0 : 1]}</span><span aria-hidden="true">→</span>
                 </Link>
               </li>
