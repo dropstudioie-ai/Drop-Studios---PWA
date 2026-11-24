@@ -2584,5 +2584,18 @@ run('database: plans, booking, allowances, pauses, security', () => {
       await as(db, user(m), `select welcome_done()`);
       expect((await as<{ w: unknown }>(db, user(m), `select my_welcome() w`))[0].w).toBeNull();
     });
+
+    it('queues a move for someone who hasn’t signed up yet and applies it when they do', async () => {
+      const adm = await createUser(db, 'QueueAdmin', 'admin');
+      const renew = (await db.query(`select (current_date + 7)::text d`)).rows[0].d as string;
+      const [{ r }] = await as<{ r: { queued: boolean } }>(db, user(adm), `select admin_queue_move('LaterSignup@example.com', 3, $1::date) r`, [renew]);
+      expect(r.queued).toBe(true);
+      const m = await createUser(db, 'LaterSignup');
+      const mem = (await db.query(`select classes_remaining n, ((expires_at at time zone 'Europe/Dublin')::date - 1) = $2::date on_renew from memberships where user_id = $1`, [m, renew])).rows;
+      expect(mem).toEqual([{ n: 3, on_renew: true }]);
+      expect((await db.query(`select applied_user_id from old_app_pending_moves where email = 'latersignup@example.com'`)).rows[0].applied_user_id).toBe(m);
+      expect((await db.query(`select count(*)::int n from notification_outbox where kind = 'moved_welcome' and user_id = $1`, [m])).rows[0].n).toBe(1);
+      expect((await as<{ w: { classes: number } }>(db, user(m), `select my_welcome() w`))[0].w.classes).toBe(3);   // welcome pop-up too
+    });
   });
 });

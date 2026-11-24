@@ -32,10 +32,12 @@ export default function AdminCustomers() {
   }, [q]);
 
   const shared = useAsync(async () => new Set((unwrap(await supabase.rpc('admin_shared_phone_users')) as string[]) ?? []), []);
+  const [queueing, setQueueing] = useState(false);
   if (selected) return <CustomerDetail userId={selected} onBack={() => setSelected(null)} />;
 
   return (
-    <Section title="Members">
+    <Section title="Members" actions={<button className="btn-accent btn-sm" onClick={() => setQueueing(true)}>📦 Move from old app</button>}>
+      {queueing && <QueueMoveSheet onClose={() => setQueueing(false)} onDone={() => { setQueueing(false); list.reload(); }} />}
       <input className="input mb-3 w-full md:max-w-md" type="search" placeholder="Search name, email or phone" value={q} onChange={(e) => setQ(e.target.value)} />
       {list.loading && !list.data ? <PageSpinner /> : list.error ? <ErrorNotice error={list.error} /> : (
         <>
@@ -682,6 +684,36 @@ function MoveSheet({ userId, name, old, onClose, onDone }: { userId: string; nam
         <Field label="Valid until (their old-app renew date)" hint="Their classes work for any class until the end of this day. Nothing renews automatically."><input className="input" type="date" value={renew} onChange={(e) => setRenew(e.target.value)} /></Field>
         <Notice tone="info">They get a welcome email, and a pop-up in the app asking them to add their photo, answer the survey and rate the new app. Then cancel their plan in Glofox before {renew ? fmt.date(renew) : 'the renew date'} (the email tells them the studio does it).</Notice>
         <button className="btn-primary w-full" disabled={busy || !renew || (!unlimited && !(Number(classes) >= 1))} onClick={() => void go()}>{busy ? <Spinner /> : `Move ${unlimited ? 'Unlimited' : `${classes || '…'} classes`}`}</button>
+      </div>
+    </Sheet>
+  );
+}
+
+/** Move someone from the old app by email: now if they have an account, otherwise automatically when they sign up. */
+function QueueMoveSheet({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const toast = useToast();
+  const [email, setEmail] = useState('');
+  const [unlimited, setUnlimited] = useState(false);
+  const [classes, setClasses] = useState('');
+  const [renew, setRenew] = useState('');
+  const [busy, setBusy] = useState(false);
+  async function go() {
+    setBusy(true);
+    try {
+      const r = unwrap(await supabase.rpc('admin_queue_move', { p_email: email.trim(), p_classes: unlimited ? null : Number(classes), p_renew_on: renew, p_plan_code: unlimited ? 'unlimited' : null, p_old_plan: null })) as { moved: boolean };
+      toast(r.moved ? 'Moved now: they already had an account. Welcome email sent.' : 'Saved: it happens automatically when they sign up with this email.');
+      onDone();
+    } catch (e) { toast(messageFor((e as Error).message), 'error'); setBusy(false); }
+  }
+  return (
+    <Sheet open onClose={onClose} title="Move a member from the old app">
+      <div className="space-y-4">
+        <p className="text-sm text-ink-soft">Use the email they have in the old app. If they haven’t signed up yet, it’s applied the moment they do.</p>
+        <Field label="Their email"><input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+        <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" className="h-5 w-5" checked={unlimited} onChange={(e) => setUnlimited(e.target.checked)} />Unlimited plan</label>
+        {!unlimited && <Field label="Classes left in the old app"><input className="input" type="number" min={1} max={50} value={classes} onChange={(e) => setClasses(e.target.value)} /></Field>}
+        <Field label="Valid until (their old-app renew or expiry date)"><input className="input" type="date" value={renew} onChange={(e) => setRenew(e.target.value)} /></Field>
+        <button className="btn-primary w-full" disabled={busy || !email.includes('@') || !renew || (!unlimited && !(Number(classes) >= 1))} onClick={() => void go()}>{busy ? <Spinner /> : 'Move'}</button>
       </div>
     </Sheet>
   );
