@@ -9,6 +9,7 @@ import { ProfileRequestPrompt } from './ProfileRequestPrompt';
 import { SurveyPrompt } from './SurveyPrompt';
 import { AdminApprovalsPrompt } from './AdminApprovalsPrompt';
 import { PauseNudge } from './PauseNudge';
+import { WelcomePrompt } from './WelcomePrompt';
 import { STUDIO } from '../config/studio';
 
 /** Look of the instructor app (see "Instructor themes" in index.css). */
@@ -33,6 +34,7 @@ export function Layout() {
       {!isStaff && <OutOfClassesPrompt />}
       <NotificationsPrompt />
       <ProfileRequestPrompt />
+      {!isStaff && <WelcomePrompt />}
       {!isStaff && <PauseNudge />}
       {!isStaff && <SurveyPrompt />}
       {isAdmin && <AdminApprovalsPrompt />}

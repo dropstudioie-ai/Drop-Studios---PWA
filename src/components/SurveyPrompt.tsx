@@ -30,7 +30,7 @@ export function SurveyPrompt() {
     const t = setTimeout(() => {
       survey.mine().then((r) => {
         if (!live || !r) return;
-        try { if (sessionStorage.getItem(LATER(r.key)) === '1') return; } catch { /* storage unavailable */ }
+        try { if (sessionStorage.getItem(LATER(r.key)) === '1' || sessionStorage.getItem('drop.welcome.pending') === '1') return; } catch { /* storage unavailable */ }
         setS(r);
       }).catch(() => {});
     }, 1200);

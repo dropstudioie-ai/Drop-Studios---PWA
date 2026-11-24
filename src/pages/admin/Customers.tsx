@@ -108,7 +108,8 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
       api.mySubscriptions(userId),
     ]);
     const sharedPhone = (unwrap(await supabase.rpc('admin_shared_phone', { p_user_id: userId })) ?? []) as { id: string; full_name: string; email: string | null }[];
-    return { profile, memberships, bookings, styles, ledger, payments, allowance, plans, subscriptions, sharedPhone };
+    const oldApp = profile?.email ? ((unwrap(await supabase.from('old_app_members').select('plan, status, next_payment_on, end_on, price_cents, moved_at').ilike('email', profile.email).limit(1)) as OldAppRecord[])[0] ?? null) : null;
+    return { profile, memberships, bookings, styles, ledger, payments, allowance, plans, subscriptions, sharedPhone, oldApp };
   }, [userId]);
 
   const [adjusting, setAdjusting] = useState<Membership | null>(null);
@@ -116,6 +117,7 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
   const [selling, setSelling] = useState(false);
   const [editing, setEditing] = useState(false);
   const [cancelling, setCancelling] = useState<Membership | null>(null);
+  const [moving, setMoving] = useState(false);
 
   if (data.loading && !data.data) return <PageSpinner />;
   if (data.error) return <ErrorNotice error={data.error} />;
@@ -344,6 +346,19 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
           <p className="mt-2 text-xs text-muted">Members can cancel themselves in the app (at least 72 hours before a payment). “Cancel” does the same for them (the 72-hour rule applies). “Stop payments now” cancels from the next payment date whatever the notice, e.g. when they ask by email or at reception. To pause, use Pause on the membership below; the payment date moves back by the paused days.</p>
         </Section>
       )}
+
+      {d.oldApp && (
+        <div className={`mb-6 rounded-2xl border-2 p-4 ${d.oldApp.moved_at ? 'border-success/40 bg-[#dff5ea]' : 'border-accent-500 bg-accent-50'}`}>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="font-bold">{d.oldApp.moved_at ? '✅ Moved from the old app' : '📦 In the old app'}: {d.oldApp.plan}</p>
+              <p className="text-sm text-ink-soft">{d.oldApp.status}{d.oldApp.next_payment_on ? ` · renews ${fmt.date(d.oldApp.next_payment_on)}` : d.oldApp.end_on ? ` · ends ${fmt.date(d.oldApp.end_on)}` : ''}{d.oldApp.moved_at ? ` · moved ${fmt.date(d.oldApp.moved_at)}` : ''}</p>
+            </div>
+            {!d.oldApp.moved_at && <button className="btn-accent btn-sm" onClick={() => setMoving(true)}>Move to the new app</button>}
+          </div>
+        </div>
+      )}
+      {moving && d.oldApp && <MoveSheet userId={userId} name={d.profile?.full_name ?? 'this member'} old={d.oldApp} onClose={() => setMoving(false)} onDone={() => { setMoving(false); void data.reload(); }} />}
 
       <Section title="Memberships">
         <div className="grid gap-4 lg:grid-cols-2">
@@ -637,6 +652,36 @@ function CancelMembershipSheet({ m, onClose, onDone }: { m: Membership; onClose:
             setBusy(false);
           }
         }}>{busy && <Spinner />}Cancel membership</button>
+      </div>
+    </Sheet>
+  );
+}
+
+interface OldAppRecord { plan: string | null; status: string | null; next_payment_on: string | null; end_on: string | null; price_cents: number | null; moved_at: string | null }
+
+/** Move a member from the old app: classes left, for any class, valid until their old-app renew date. Sends the welcome email. */
+function MoveSheet({ userId, name, old, onClose, onDone }: { userId: string; name: string; old: OldAppRecord; onClose: () => void; onDone: () => void }) {
+  const toast = useToast();
+  const unlimited = /unlimited/i.test(old.plan ?? '');
+  const [classes, setClasses] = useState('');
+  const [renew, setRenew] = useState(old.next_payment_on ?? old.end_on ?? '');
+  const [busy, setBusy] = useState(false);
+  async function go() {
+    setBusy(true);
+    try {
+      const r = unwrap(await supabase.rpc('admin_move_old_member', { p_user_id: userId, p_classes: unlimited ? null : Number(classes), p_renew_on: renew, p_plan_code: null })) as { plan: string; expires_at: string };
+      toast(`Moved: ${r.plan}, valid until ${fmt.date(new Date(new Date(r.expires_at).getTime() - 1).toISOString())}. Welcome email sent.`);
+      onDone();
+    } catch (e) { toast(messageFor((e as Error).message), 'error'); setBusy(false); }
+  }
+  return (
+    <Sheet open onClose={onClose} title={`Move ${name} to the new app`}>
+      <div className="space-y-4">
+        <p className="text-sm text-ink-soft">Old app: <strong>{old.plan}</strong>. Check their <strong>Credits</strong> tab in the old app for the classes left.</p>
+        {!unlimited && <Field label="Classes left in the old app"><input className="input" type="number" min={1} max={50} value={classes} onChange={(e) => setClasses(e.target.value)} /></Field>}
+        <Field label="Valid until (their old-app renew date)" hint="Their classes work for any class until the end of this day. Nothing renews automatically."><input className="input" type="date" value={renew} onChange={(e) => setRenew(e.target.value)} /></Field>
+        <Notice tone="info">They get a welcome email, and a pop-up in the app asking them to add their photo, answer the survey and rate the new app. Remember to cancel their old-app plan before {renew ? fmt.date(renew) : 'the renew date'}.</Notice>
+        <button className="btn-primary w-full" disabled={busy || !renew || (!unlimited && !(Number(classes) >= 1))} onClick={() => void go()}>{busy ? <Spinner /> : `Move ${unlimited ? 'Unlimited' : `${classes || '…'} classes`}`}</button>
       </div>
     </Sheet>
   );

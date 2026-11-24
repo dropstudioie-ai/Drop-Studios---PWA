@@ -2561,4 +2561,28 @@ run('database: plans, booking, allowances, pauses, security', () => {
       await expect(as(db, user(r), `select _rental_invoice($1)`, [pay])).rejects.toThrow();
     });
   });
+  describe('moving members from the old app', () => {
+    it('keeps the renew date, books any class, sends the welcome, and asks photo, survey and feedback', async () => {
+      const adm = await createUser(db, 'MoveAdmin', 'admin');
+      const m = await createUser(db, 'MoveMember', 'customer', { photo: false });
+      const email = (await db.query(`select email from profiles where id = $1`, [m])).rows[0].email;
+      const renew = (await db.query(`select (current_date + 12)::text d`)).rows[0].d as string;
+      await db.query(`insert into old_app_members (email, full_name, plan, status, next_payment_on, exported_on) values ($1, 'Move Member', 'CASUAL Monthly Renewal', 'ACTIVE', $2, current_date)`, [email, renew]);
+      await expectError(as(db, user(m), `select admin_move_old_member($1, 4, $2::date)`, [m, renew]), 'forbidden');
+      const [{ r }] = await as<{ r: { membership_id: string; plan: string } }>(db, user(adm), `select admin_move_old_member($1, 4, $2::date) r`, [m, renew]);
+      expect(r.plan).toBe('Multi-Style');
+      const mem = (await db.query(`select classes_remaining n, classes_total t, ((expires_at at time zone 'Europe/Dublin')::date - 1) = $2::date on_renew from memberships where id = $1`, [r.membership_id, renew])).rows[0];
+      expect(mem).toEqual({ n: 4, t: 4, on_renew: true });   // valid until the end of the renew date
+      expect((await db.query(`select count(*)::int n from notification_outbox where kind = 'moved_welcome' and user_id = $1`, [m])).rows[0].n).toBe(1);
+      await expectError(as(db, user(adm), `select admin_move_old_member($1, 4, $2::date)`, [m, renew]), 'already_moved');
+      const [{ w }] = await as<{ w: { has_photo: boolean; rated: boolean; classes: number } }>(db, user(m), `select my_welcome() w`);
+      expect(w).toMatchObject({ has_photo: false, rated: false, classes: 4 });
+      await expectError(as(db, user(m), `select submit_app_feedback(6)`), 'invalid_rating');
+      await as(db, user(m), `select submit_app_feedback(5, 'Love it')`);
+      expect((await as<{ w: { rated: boolean } }>(db, user(m), `select my_welcome() w`))[0].w.rated).toBe(true);
+      expect(await as(db, user(adm), `select * from app_feedback where user_id = $1`, [m])).toHaveLength(1);
+      await as(db, user(m), `select welcome_done()`);
+      expect((await as<{ w: unknown }>(db, user(m), `select my_welcome() w`))[0].w).toBeNull();
+    });
+  });
 });

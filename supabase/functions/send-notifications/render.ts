@@ -427,6 +427,14 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
         text: `${hi}\n\nYour ${p.title} class on ${slot(p.starts_at, null)} has been cancelled${p.reason ? ` (${p.reason})` : ''}.\n\nYou paid ${eur(p.amount_cents)}. What would you prefer?\n\n• A class credit: book a class up to ${eur(p.amount_cents)} in the next ${p.credit_days} days, nothing to pay\n• A refund of ${eur(p.amount_cents)} to your card\n\nChoose in the app:\n${site()}/account#choices\n\nDrop Studios`,
         url: '/account#choices',
       };
+    case 'moved_welcome': {
+      const until = longDate(p.valid_until);
+      return {
+        subject: `Welcome to the new Drop app 💛 your classes are here`,
+        text: `${hi}\n\nYou're all set in the new Drop app! We've moved your ${p.old_plan ? `${p.old_plan} ` : ''}membership across:\n\n${p.classes ? `🎟️ ${p.classes} ${Number(p.classes) === 1 ? 'class' : 'classes'}, for any class` : '♾️ Unlimited classes'}, valid until ${until}.\n\nThree quick things, please (2 minutes):\n1. 📸 Add your profile photo, so we can welcome you at the door (you need it to book).\n2. 🎄 Answer our 10-second December survey.\n3. ⭐ Tell us what you think of the new app.\n\nThey'll pop up when you open the app, or go to:\n${site()}/account\n\nImportant: please cancel your plan in the old app before ${until}, so you're not charged twice. After that, you choose your plan in the new app.\n\nSee you in class!\nDrop Studios`,
+        url: '/account',
+      };
+    }
     case 'refund_decided':
       return {
         subject: p.approved ? `💶 Your refund of ${eur(p.amount_cents)} is on its way` : `About your refund request: you have a class credit`,
