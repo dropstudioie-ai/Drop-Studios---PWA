@@ -122,7 +122,7 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
     ]);
     const sharedPhone = (unwrap(await supabase.rpc('admin_shared_phone', { p_user_id: userId })) ?? []) as { id: string; full_name: string; email: string | null }[];
     const oldApp = profile?.email ? ((unwrap(await supabase.from('old_app_members').select('plan, status, next_payment_on, end_on, price_cents, moved_at').ilike('email', profile.email).limit(1)) as OldAppRecord[])[0] ?? null) : null;
-    const cancelReq = ((unwrap(await supabase.from('cancel_requests').select('id, subscription_id, reason, created_at').eq('user_id', userId).eq('status', 'pending').limit(1)) as CancelReq[])[0] ?? null);
+    const cancelReq = ((unwrap(await supabase.from('cancel_requests').select('id, subscription_id, reason, rating, created_at').eq('user_id', userId).eq('status', 'pending').limit(1)) as CancelReq[])[0] ?? null);
     const held = profile?.email ? ((unwrap(await supabase.from('old_app_pending_moves').select('email, classes, renew_on, old_plan, held_at, applied_at, declined_at').ilike('email', profile.email).not('held_at', 'is', null).is('applied_at', null).is('declined_at', null).limit(1)) as HeldMove[])[0] ?? null) : null;
     return { profile, memberships, bookings, styles, ledger, payments, allowance, plans, subscriptions, sharedPhone, oldApp, held, cancelReq };
   }, [userId]);
@@ -765,7 +765,7 @@ function HeldMoveCard({ held, onDone }: { held: HeldMove; onDone: () => void }) 
   );
 }
 
-interface CancelReq { id: string; subscription_id: string; reason: string | null; created_at: string }
+interface CancelReq { id: string; subscription_id: string; reason: string | null; rating: number | null; created_at: string }
 
 /** A member asked to cancel their monthly membership: approve (stops future payments, Square too) or decline. */
 function CancelRequestCard({ req, onDone }: { req: CancelReq; onDone: () => void }) {
@@ -785,6 +785,7 @@ function CancelRequestCard({ req, onDone }: { req: CancelReq; onDone: () => void
   return (
     <div className="mb-6 rounded-2xl border-2 border-danger bg-red-50 p-4">
       <p className="font-bold">🚪 Asked to cancel their monthly membership · {fmt.date(req.created_at)}</p>
+      {req.rating && <p className="mt-1 text-sm">Their rating: {'⭐'.repeat(req.rating)} ({req.rating}/5)</p>}
       {req.reason && <p className="mt-1 text-sm text-ink-soft">“{req.reason}”</p>}
       <p className="mt-1 text-xs text-muted">Approving cancels it the usual way: no more payments, and they keep their classes until the end of the month they’ve paid for. Cancellations need 72 hours’ notice before a payment, so decide soon.</p>
       <div className="mt-3 flex gap-2">

@@ -1842,9 +1842,11 @@ run('database: plans, booking, allowances, pauses, security', () => {
     it('members ask to cancel and an admin approves or declines; the overview counts members', async () => {
       const adm = await createUser(db, 'CancelAdmin', 'admin');
       const { c, subId } = await subscribe('multi-8');
-      await expectError(as(db, user(adm), `select request_membership_cancel($1, 'x')`, [subId]), 'not_found');   // only their own
-      const [{ id }] = await as<{ id: string }>(db, user(c), `select request_membership_cancel($1, 'Moving abroad') id`, [subId]);
-      await expectError(as(db, user(c), `select request_membership_cancel($1, null)`, [subId]), 'cancel_already_requested');
+      await expectError(as(db, user(adm), `select request_membership_cancel($1, 'x', 4)`, [subId]), 'not_found');   // only their own
+      await expectError(as(db, user(c), `select request_membership_cancel($1, '  ', 4)`, [subId]), 'cancel_reason_required');
+      await expectError(as(db, user(c), `select request_membership_cancel($1, 'x', 0)`, [subId]), 'invalid_rating');
+      const [{ id }] = await as<{ id: string }>(db, user(c), `select request_membership_cancel($1, 'Moving abroad', 5) id`, [subId]);
+      await expectError(as(db, user(c), `select request_membership_cancel($1, 'again', 3)`, [subId]), 'cancel_already_requested');
       expect((await db.query(`select count(*)::int n from notification_outbox where kind = 'cancel_requested' and payload ->> 'user_id' = $1`, [c])).rows[0].n).toBeGreaterThan(0);
       expect((await as<{ r: { cancel_requests: number } }>(db, user(adm), `select admin_approvals() r`))[0].r.cancel_requests).toBeGreaterThan(0);
       const [{ r: counts }] = await as<{ r: { active: number; paused: number; cancel_requests: number } }>(db, user(adm), `select admin_member_counts() r`);
@@ -1854,7 +1856,7 @@ run('database: plans, booking, allowances, pauses, security', () => {
       await as(db, user(adm), `select admin_decide_cancel_request($1, false, 'Please talk to us first')`, [id]);
       expect((await db.query(`select status from cancel_requests where id = $1`, [id])).rows[0].status).toBe('declined');
       expect((await db.query(`select count(*)::int n from notification_outbox where kind = 'cancel_decided' and user_id = $1`, [c])).rows[0].n).toBe(1);
-      const [{ id: id2 }] = await as<{ id: string }>(db, user(c), `select request_membership_cancel($1, null) id`, [subId]);   // can ask again
+      const [{ id: id2 }] = await as<{ id: string }>(db, user(c), `select request_membership_cancel($1, 'Changed my mind again', 2) id`, [subId]);   // can ask again
       await as(db, user(adm), `select admin_decide_cancel_request($1, true)`, [id2]);
       expect((await db.query(`select status from cancel_requests where id = $1`, [id2])).rows[0].status).toBe('approved');
       await db.query(`update profiles set role = 'customer', finance_access = false where id = $1`, [adm]);

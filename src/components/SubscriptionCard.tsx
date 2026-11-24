@@ -1,7 +1,7 @@
 import { isUnlimited } from '../domain/plans';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { STUDIO } from '../config/studio';
+import { GOOGLE_REVIEW_URL, STUDIO } from '../config/studio';
 import { formatPrice } from '../domain/money';
 import { messageFor } from '../domain/messages';
 import { formatKey } from '../domain/time';
@@ -27,12 +27,15 @@ export function SubscriptionCard({ sub, onChanged }: { sub: Subscription; onChan
   const req = useAsync(async () => unwrap(await supabase.from('cancel_requests').select('id, created_at').eq('subscription_id', sub.id).eq('status', 'pending').maybeSingle()) as { id: string; created_at: string } | null, [sub.id]);
   const pending = req.data;
   const [reason, setReason] = useState('');
+  const [stars, setStars] = useState(0);
+  const [askReview, setAskReview] = useState(false);
   async function requestCancel() {
     setBusy(true);
     try {
-      unwrap(await supabase.rpc('request_membership_cancel', { p_subscription_id: sub.id, p_reason: reason || null }));
+      unwrap(await supabase.rpc('request_membership_cancel', { p_subscription_id: sub.id, p_reason: reason.trim(), p_rating: stars }));
       toast('Request sent. The studio will review it and email you.');
       setConfirming(false); req.reload();
+      if (stars >= 4) setAskReview(true);   // happy members: ask for a Google review
     } catch (e) { toast(messageFor((e as Error).message, 'Something went wrong. Please try again.'), 'error'); }
     finally { setBusy(false); }
   }
@@ -105,11 +108,33 @@ export function SubscriptionCard({ sub, onChanged }: { sub: Subscription; onChan
             <p className="text-xs text-muted">
               Just joined? You can cancel within 14 days for a refund if you haven’t used any classes. Contact us at {STUDIO.email} or at reception.
             </p>
-            <textarea className="input min-h-20 py-3" maxLength={1000} placeholder="Why are you leaving? (optional, it helps us improve)" value={reason} onChange={(e) => setReason(e.target.value)} />
+            <label className="block">
+              <span className="label">Tell us the reason for cancelling</span>
+              <textarea className="input min-h-20 py-3" maxLength={1000} placeholder="e.g. moving away, schedule changed, cost…" value={reason} onChange={(e) => setReason(e.target.value)} />
+            </label>
+            <div>
+              <p className="label">How would you rate your time at Drop?</p>
+              <div className="flex gap-1" role="radiogroup" aria-label="Rating">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button key={n} type="button" role="radio" aria-checked={stars === n} aria-label={`${n} star${n > 1 ? 's' : ''}`}
+                    className={`text-4xl transition ${n <= stars ? '' : 'opacity-25 grayscale'}`} onClick={() => setStars(n)}>⭐</button>
+                ))}
+              </div>
+            </div>
             <div className="flex gap-2">
               <button className="btn-ghost flex-1" onClick={() => setConfirming(false)}>Keep membership</button>
-              <button className="btn-danger flex-1" disabled={busy} onClick={() => void requestCancel()}>{busy && <Spinner />}Send request</button>
+              <button className="btn-danger flex-1" disabled={busy || !reason.trim() || !stars} onClick={() => void requestCancel()}>{busy && <Spinner />}Send request</button>
             </div>
+          </div>
+        </Sheet>
+      )}
+      {askReview && (
+        <Sheet open onClose={() => setAskReview(false)} title="Thank you for dancing with us 💛">
+          <div className="space-y-4 text-center">
+            <p className="text-5xl">⭐⭐⭐⭐⭐</p>
+            <p className="text-ink-soft">We’re sorry to see you go, and so glad you enjoyed your time at Drop. Would you leave us a quick Google review? It really helps other dancers find us.</p>
+            <a href={GOOGLE_REVIEW_URL} target="_blank" rel="noreferrer" className="btn-accent w-full text-lg" onClick={() => setAskReview(false)}>Leave a Google review</a>
+            <button className="btn-ghost w-full" onClick={() => setAskReview(false)}>Maybe later</button>
           </div>
         </Sheet>
       )}

@@ -430,7 +430,7 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
     case 'cancel_requested':
       return {
         subject: `🚪 ${p.member} asked to cancel their membership`,
-        text: `${hi}\n\n${p.member} has asked to cancel their ${p.plan ?? 'monthly'} membership.${p.reason ? `\n\nTheir reason: “${p.reason}”` : ''}\n\nApprove or decline it on their page (approving stops their future payments):\n${site()}/admin/customers?user=${p.user_id}\n\nDrop Studios`,
+        text: `${hi}\n\n${p.member} has asked to cancel their ${p.plan ?? 'monthly'} membership.${p.rating ? `\n\nTheir rating of Drop: ${'⭐'.repeat(Number(p.rating))} (${p.rating}/5)` : ''}${p.reason ? `\n\nTheir reason: “${p.reason}”` : ''}\n\nApprove or decline it on their page (approving stops their future payments):\n${site()}/admin/customers?user=${p.user_id}\n\nDrop Studios`,
         url: `/admin/customers?user=${p.user_id}`,
       };
     case 'cancel_decided':

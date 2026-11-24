@@ -229,8 +229,8 @@ function useScrollToHash(id: string, ready: boolean) {
 
 /** Members asking to cancel: open their page to approve or decline. */
 function CancelRequests() {
-  const list = useAsync(async () => unwrap(await supabase.from('cancel_requests').select('id, user_id, reason, created_at, member:profiles!cancel_requests_user_id_fkey(full_name)').eq('status', 'pending').order('created_at')) as unknown as
-    { id: string; user_id: string; reason: string | null; created_at: string; member: { full_name: string | null } | null }[], []);
+  const list = useAsync(async () => unwrap(await supabase.from('cancel_requests').select('id, user_id, reason, rating, created_at, member:profiles!cancel_requests_user_id_fkey(full_name)').eq('status', 'pending').order('created_at')) as unknown as
+    { id: string; user_id: string; reason: string | null; rating: number | null; created_at: string; member: { full_name: string | null } | null }[], []);
   const rows = list.data ?? [];
   useScrollToHash('cancels', rows.length > 0);
   if (!rows.length) return null;
@@ -240,7 +240,7 @@ function CancelRequests() {
       <ul className="mt-2 divide-y divide-danger/20 text-sm">
         {rows.map((r) => (
           <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-            <span><strong>{r.member?.full_name ?? 'Member'}</strong> · asked {fmt.date(r.created_at)}{r.reason && <span className="block text-xs text-muted">“{r.reason}”</span>}</span>
+            <span><strong>{r.member?.full_name ?? 'Member'}</strong> · asked {fmt.date(r.created_at)}{r.rating ? ` · ${'⭐'.repeat(r.rating)}` : ''}{r.reason && <span className="block text-xs text-muted">“{r.reason}”</span>}</span>
             <Link className="btn-primary btn-sm" to={`/admin/customers?user=${r.user_id}`}>Review</Link>
           </li>
         ))}
