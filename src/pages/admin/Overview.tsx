@@ -1,8 +1,8 @@
 import { ticketChoices } from '../../lib/ticketChoices';
 import { adminRefund } from '../../lib/payments';
 import { useAuth } from '../../auth/AuthProvider';
-import { Link } from 'react-router-dom';
-import { useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { unwrap } from '../../api';
 import { useAsync } from '../../lib/useAsync';
@@ -81,6 +81,7 @@ function SalesOverview() {
       </div>
       {a.loading && !d ? <PageSpinner /> : a.error ? <ErrorNotice error={a.error} onRetry={a.reload} /> : d && (
         <>
+          <PaymentsToReview />
           <CancelledPaidClasses />
           {d.test_payments_excluded > 0 && <div className="mb-4"><Notice tone="test">{d.test_payments_excluded} TEST payment(s) in this period are excluded from all revenue figures.</Notice></div>}
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -146,10 +147,11 @@ function CancelledPaidClasses() {
   const toast = useToast();
   const list = useAsync(() => ticketChoices.open(), []);
   const rows = list.data ?? [];
+  useScrollToHash('refunds', rows.length > 0);
   if (!rows.length) return null;
   const act = async (fn: () => Promise<unknown>, msg: string) => { try { await fn(); toast(msg); list.reload(); } catch (e) { toast((e as Error).message, 'error'); } };
   return (
-    <div className="mb-6 rounded-2xl border-2 border-accent-500 bg-accent-50 p-4">
+    <div id="refunds" className="mb-6 scroll-mt-20 rounded-2xl border-2 border-accent-500 bg-accent-50 p-4">
       <p className="font-bold">Cancelled paid classes</p>
       <ul className="mt-2 divide-y divide-accent-500/30 text-sm">
         {rows.map((c) => (
@@ -176,4 +178,50 @@ function CancelledPaidClasses() {
       </ul>
     </div>
   );
+}
+
+const REVIEW_REASON: Record<string, string> = {
+  paid_after_cancel: 'Paid after the booking had already been cancelled (the hold ran out). Check they have a booking or a credit, or refund them.',
+  rental_slot_lost: 'Paid for a studio rental, but someone else took one of the slots. Move them or refund that date.',
+};
+
+/** Payments flagged by the system: open the member to sort it, then mark it reviewed. */
+function PaymentsToReview() {
+  const toast = useToast();
+  const list = useAsync(async () => unwrap(await supabase.from('payments').select('id, amount_cents, currency, kind, created_at, review_reason, user_id, plan_snapshot, member:profiles!payments_user_id_fkey(full_name)').not('review_reason', 'is', null).order('created_at')) as unknown as
+    { id: string; amount_cents: number; currency: string; kind: string; created_at: string; review_reason: string; user_id: string; plan_snapshot: { plan_name?: string } | null; member: { full_name: string | null } | null }[], []);
+  const rows = list.data ?? [];
+  useScrollToHash('review', rows.length > 0);
+  if (!rows.length) return null;
+  const resolve = async (id: string) => {
+    const note = prompt('What did you do? (e.g. “She’s booked for Wed 2 Dec”, “Refunded”)');
+    if (note === null) return;
+    try { unwrap(await supabase.rpc('admin_resolve_payment_review', { p_payment_id: id, p_note: note || 'Reviewed' })); toast('Marked reviewed'); list.reload(); }
+    catch (e) { toast((e as Error).message, 'error'); }
+  };
+  return (
+    <div id="review" className="mb-6 scroll-mt-20 rounded-2xl border-2 border-danger bg-red-50 p-4">
+      <p className="font-bold">💳 Payments to review</p>
+      <ul className="mt-2 divide-y divide-danger/20 text-sm">
+        {rows.map((p) => (
+          <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+            <span><Link className="font-semibold underline" to={`/admin/customers?user=${p.user_id}`}>{p.member?.full_name ?? 'Member'}</Link> · {p.plan_snapshot?.plan_name ?? p.kind} · {formatPrice(p.amount_cents, p.currency)} · {fmt.date(p.created_at)}
+              <span className="block text-xs text-muted">{REVIEW_REASON[p.review_reason] ?? p.review_reason}</span></span>
+            <span className="flex gap-2">
+              <Link className="btn-outline btn-sm" to={`/admin/customers?user=${p.user_id}`}>Open member</Link>
+              <button className="btn-primary btn-sm" onClick={() => void resolve(p.id)}>Mark reviewed</button>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** Links like /admin#review jump to their section once it has loaded. */
+function useScrollToHash(id: string, ready: boolean) {
+  const { hash } = useLocation();
+  useEffect(() => {
+    if (ready && hash === `#${id}`) document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [ready, hash, id]);
 }

@@ -42,10 +42,10 @@ export function AdminApprovalsPrompt() {
     { n: a.dm_drafts, emoji: '💬', one: 'Instagram message reply to approve', many: 'Instagram message replies to approve', to: '/admin/thamires' },
     { n: a.comment_drafts, emoji: '💭', one: 'Instagram comment reply to approve', many: 'Instagram comment replies to approve', to: '/admin/thamires' },
     { n: a.questions, emoji: '❓', one: 'question for you from Thamires', many: 'questions for you from Thamires', to: '/admin/thamires' },
-    { n: a.payments_to_review, emoji: '💳', one: 'payment to review', many: 'payments to review', to: '/admin/customers' },
+    { n: a.payments_to_review, emoji: '💳', one: 'payment to review', many: 'payments to review', to: '/admin#review' },
     { n: a.held_moves ?? 0, emoji: '⏸', one: 'old-app member waiting for your OK (manually added credits)', many: 'old-app members waiting for your OK (manually added credits)', to: '/admin/customers' },
     { n: a.refund_requests ?? 0, emoji: '💶', one: 'Drop In refund request to approve', many: 'Drop In refund requests to approve', to: '/admin' },
-    { n: a.refunds, emoji: '↩️', one: 'refund to send', many: 'refunds to send', to: '/admin' },
+    { n: a.refunds, emoji: '↩️', one: 'refund to send', many: 'refunds to send', to: '/admin#refunds' },
   ].filter((i) => i.n > 0);
   if (!items.length) return null;
   const total = items.reduce((s, i) => s + i.n, 0);

@@ -94,8 +94,8 @@ function AdminToday({ todays, onOpen }: { todays: StaffSession[]; onOpen: (id: s
   const attention = v ? [
     { n: requests.data ?? 0, label: ['workshop request to approve', 'workshop requests to approve'], to: '/admin/events' },
     { n: v.failed_monthly_payments, label: ['monthly payment failed', 'monthly payments failed'], to: '/admin/customers' },
-    { n: v.payments_to_review, label: ['payment to review', 'payments to review'], to: '/admin/customers' },
-    { n: v.ticket_refunds, label: ['ticket needs a refund', 'tickets need a refund'], to: '/admin/audit' },
+    { n: v.payments_to_review, label: ['payment to review', 'payments to review'], to: '/admin#review' },
+    { n: v.ticket_refunds, label: ['ticket needs a refund', 'tickets need a refund'], to: '/admin#refunds' },
     { n: v.unfinished_checkouts, label: ['unfinished checkout (last 2 days)', 'unfinished checkouts (last 2 days)'], to: '/admin/customers' },
     { n: v.ending_monthly, label: ['monthly membership ending this week', 'monthly memberships ending this week'], to: '/admin/customers' },
   ].filter((a) => a.n > 0) : [];
