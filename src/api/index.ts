@@ -78,7 +78,7 @@ export const api = {
 
   myBookings: async (userId: string) =>
     unwrap(
-      await supabase.from('bookings').select(`*, session:class_sessions(${SESSION_SELECT}), payment:payments!bookings_payment_id_fkey(kind)`)
+      await supabase.from('bookings').select(`*, session:class_sessions(${SESSION_SELECT}), payment:payments!bookings_payment_id_fkey(kind, amount_cents)`)
         .eq('user_id', userId).order('booked_at', { ascending: false }).limit(200),
     ) as Booking[],
 

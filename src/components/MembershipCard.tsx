@@ -39,6 +39,7 @@ export function MembershipCard({ m, styles, reminderDays, onPause, onResume, bus
         <div>
           <h3 className="flex items-center gap-2 text-lg font-extrabold">{m.plan_name} {m.is_test && <TestBadge />}</h3>
           <p className="text-sm text-muted">Paid {formatPrice(m.purchase.price_cents, m.purchase.currency, { forceDecimals: true })} · bought {fmt.date(m.purchase.purchased_at)}</p>
+          {m.max_class_price_cents != null && <p className="mt-1 text-sm font-semibold text-brand-700">For a class up to {formatPrice(m.max_class_price_cents, 'EUR')}</p>}
         </div>
         <span className={`chip ${STATE_STYLE[m.state]}`}>{STATE_LABEL[m.state]}</span>
       </div>

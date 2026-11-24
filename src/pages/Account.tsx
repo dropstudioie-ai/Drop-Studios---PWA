@@ -48,6 +48,7 @@ export default function Account() {
 
   const [pausing, setPausing] = useState<Membership | null>(null);
   const [cancelling, setCancelling] = useState<Booking | null>(null);
+  const [dropCancel, setDropCancel] = useState<Booking | null>(null);
   const [busy, setBusy] = useState(false);
 
   if (data.loading && !data.data) return <PageSpinner />;
@@ -142,7 +143,9 @@ export default function Account() {
                 <ClassDoorCode sessionId={b.session_id} className="mt-2" />
               </div>
               {b.payment_id
-                ? <span className="max-w-28 text-right text-xs text-muted">Contact the studio to change</span>
+                ? (b.payment?.kind === 'drop_in' && new Date(b.session!.starts_at).getTime() - Date.now() > 60 * 60e3
+                  ? <button className="btn-sm btn-ghost text-danger" onClick={() => setDropCancel(b)}>Cancel</button>
+                  : <span className="max-w-28 text-right text-xs text-muted">{b.payment?.kind === 'drop_in' ? 'Less than 1 hour to go: contact the studio' : 'Contact the studio to change'}</span>)
                 : <button className="btn-sm btn-ghost text-danger" onClick={() => setCancelling(b)}>Cancel</button>}
             </div>
           ))}
@@ -191,6 +194,8 @@ export default function Account() {
       </div>
 
       {pausing && <PauseSheet membership={pausing} allowance={allowance} onClose={() => setPausing(null)} onDone={() => { toast('Membership paused.'); void data.reload(); }} />}
+
+      {dropCancel && <DropInCancelSheet booking={dropCancel} onClose={() => setDropCancel(null)} onDone={() => { setDropCancel(null); void data.reload(); }} />}
 
       {cancelling && (
         <CancelSheet booking={cancelling} policy={policy} onClose={() => setCancelling(null)} onDone={(restored) => {
@@ -346,6 +351,40 @@ function SendGift({ id, onSent }: { id: string; onSent: () => void }) {
   );
 }
 
+/** Cancel a paid Drop In (1 hour+ before): a class credit worth what they paid, or a refund request the studio approves. */
+function DropInCancelSheet({ booking, onClose, onDone }: { booking: Booking; onClose: () => void; onDone: () => void }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState<'credit' | 'refund' | null>(null);
+  const paid = booking.payment?.amount_cents;
+  const price = paid ? formatPrice(paid, 'EUR') : 'what you paid';
+  const go = async (credit: boolean) => {
+    setBusy(credit ? 'credit' : 'refund');
+    try {
+      const r = await ticketChoices.cancelDropIn(booking.id, credit);
+      toast(credit ? `Cancelled. Class credit added: book a class up to ${price} until ${fmt.date(r.expires_at!)} 💃` : 'Cancelled. Refund requested: the studio will review it and email you.');
+      onDone();
+    } catch (e) { toast(messageFor((e as Error).message), 'error'); setBusy(null); }
+  };
+  return (
+    <Sheet open onClose={onClose} title="Cancel your Drop In?">
+      <p className="text-ink-soft"><strong>{booking.session!.title}</strong>, {fmt.dateTime(booking.session!.starts_at)}. You paid {price}.</p>
+      <div className="mt-4 space-y-3">
+        <button className="flex w-full items-start gap-3 rounded-2xl border-2 border-brand-600 bg-brand-50 p-4 text-left" disabled={busy !== null} onClick={() => void go(true)}>
+          <span className="text-3xl">🎟️</span>
+          <span><span className="block font-bold">{busy === 'credit' ? 'Cancelling…' : 'Get a class credit'}</span>
+            <span className="block text-sm text-ink-soft">Book another class worth up to {price} within 1 month. Nothing to pay.</span></span>
+        </button>
+        <button className="flex w-full items-start gap-3 rounded-2xl border-2 border-line p-4 text-left" disabled={busy !== null} onClick={() => void go(false)}>
+          <span className="text-3xl">💶</span>
+          <span><span className="block font-bold">{busy === 'refund' ? 'Cancelling…' : 'Request a refund'}</span>
+            <span className="block text-sm text-ink-soft">The studio reviews refund requests. If it’s approved, {price} goes back to your card; if not, you get the class credit.</span></span>
+        </button>
+      </div>
+      <button className="btn-ghost mt-3 w-full" onClick={onClose}>Keep my booking</button>
+    </Sheet>
+  );
+}
+
 /** A cancelled paid class: the member picks a class credit (valid 1 month) or a refund. */
 function TicketChoices({ uid, onChanged }: { uid: string; onChanged: () => void }) {
   const toast = useToast();
@@ -356,7 +395,7 @@ function TicketChoices({ uid, onChanged }: { uid: string; onChanged: () => void 
     setBusy(id);
     try {
       const r = await ticketChoices.choose(id, credit);
-      toast(r.choice === 'credit' ? `Class credit added: book any class until ${fmt.date(r.expires_at!)} 💃` : 'Refund requested. The studio will refund it to your card.');
+      toast(r.choice === 'credit' ? `Class credit added: book a class up to ${formatPrice(list.data!.find((x) => x.id === id)!.amount_cents, 'EUR')} until ${fmt.date(r.expires_at!)} 💃` : 'Refund requested. The studio will refund it to your card.');
       list.reload(); onChanged();
     } catch (e) { toast(messageFor((e as Error).message), 'error'); } finally { setBusy(null); }
   };
@@ -367,7 +406,7 @@ function TicketChoices({ uid, onChanged }: { uid: string; onChanged: () => void 
           <p className="font-bold">Your {c.class_title} class on {fmt.dateTime(c.class_starts_at)} was cancelled.</p>
           <p className="mt-1 text-sm text-ink-soft">You paid {formatPrice(c.amount_cents, 'EUR')}. What would you prefer?</p>
           <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-            <button className="btn-primary" disabled={busy === c.id} onClick={() => void choose(c.id, true)}>{busy === c.id ? <Spinner className="h-4 w-4" /> : '🎟️ Class credit: book any class within 1 month'}</button>
+            <button className="btn-primary" disabled={busy === c.id} onClick={() => void choose(c.id, true)}>{busy === c.id ? <Spinner className="h-4 w-4" /> : `🎟️ Class credit: a class up to ${formatPrice(c.amount_cents, 'EUR')} within 1 month`}</button>
             <button className="btn-outline" disabled={busy === c.id} onClick={() => void choose(c.id, false)}>💶 Refund {formatPrice(c.amount_cents, 'EUR')} to my card</button>
           </div>
         </div>

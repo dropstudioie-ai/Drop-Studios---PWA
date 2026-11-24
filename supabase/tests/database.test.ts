@@ -925,6 +925,47 @@ run('database: plans, booking, allowances, pauses, security', () => {
       await expectError(as(db, user(c), `select cancel_booking($1)`, [r.r.booking_id]), 'ticket_contact_studio');
     });
 
+    it('lets members cancel a Drop In 1h+ before: a credit worth what they paid, or a refund the studio approves', async () => {
+      const owner = await createUser(db, 'DropInOwner', 'admin');
+      const paid = async (style: string, mins: number) => {
+        const c = await createUser(db, `DropInCancel${randomUUID().slice(0, 6)}`);
+        const s = await makeSession({ style, startsInMinutes: mins });
+        const t = await dropIn(c, s);
+        const [r] = await as<{ r: { booking_id: string } }>(db, service, `select fulfill_payment($1, 'square', 'sq_pay', $2, $3, 'EUR') as r`, [t.payment_id, `evt_${randomUUID()}`, t.amount_cents]);
+        return { c, s, booking: r.r.booking_id };
+      };
+      // Too late: under an hour to go.
+      const late = await paid('commercial', 45);
+      await expectError(as(db, user(late.c), `select cancel_drop_in($1, true)`, [late.booking]), 'dropin_cancel_too_late');
+
+      // Credit: €15, so a €17 Heels class can't use it but a €15 FitDance can.
+      const a = await paid('commercial', 600);
+      const [{ r }] = await as<{ r: { choice: string; membership_id: string } }>(db, user(a.c), `select cancel_drop_in($1, true) r`, [a.booking]);
+      expect(r.choice).toBe('credit');
+      expect((await db.query(`select status from bookings where id = $1`, [a.booking])).rows[0].status).toBe('cancelled');
+      expect((await db.query(`select max_class_price_cents m, classes_remaining n from memberships where id = $1`, [r.membership_id])).rows[0]).toEqual({ m: 1500, n: 1 });
+      expect((await db.query(`select count(*)::int n from notification_outbox where kind = 'ticket_choice' and user_id = $1`, [a.c])).rows[0].n).toBe(0);
+      await expectError(as(db, user(a.c), `select book_class($1, $2)`, [await makeSession({ style: 'heels', startsInMinutes: 900 }), r.membership_id]), 'class_price_above_credit');
+      await as(db, user(a.c), `select book_class($1, $2)`, [await makeSession({ style: 'fitdance', startsInMinutes: 950 }), r.membership_id]);
+
+      // Refund request: declined gives the credit; approved marks it refunded. Both tell the member.
+      const b = await paid('fitdance', 700);
+      expect((await as<{ r: { choice: string } }>(db, user(b.c), `select cancel_drop_in($1, false) r`, [b.booking]))[0].r.choice).toBe('refund_requested');
+      const [ch] = (await db.query(`select id, status from ticket_choices where booking_id = $1`, [b.booking])).rows;
+      expect(ch.status).toBe('refund_requested');
+      await expectError(as(db, user(b.c), `select admin_decide_refund_request($1, true)`, [ch.id]), 'forbidden');
+      await as(db, user(owner), `select admin_decide_refund_request($1, false, 'Less than 24h notice')`, [ch.id]);
+      expect((await db.query(`select status from ticket_choices where id = $1`, [ch.id])).rows[0].status).toBe('credit');
+      const d = await paid('fitdance', 720);
+      await as(db, user(d.c), `select cancel_drop_in($1, false)`, [d.booking]);
+      const [ch2] = (await db.query(`select id from ticket_choices where booking_id = $1`, [d.booking])).rows;
+      expect((await as<{ r: { refund_requests: number } }>(db, user(owner), `select admin_approvals() r`))[0].r.refund_requests).toBeGreaterThan(0);
+      await as(db, user(owner), `select admin_decide_refund_request($1, true)`, [ch2.id]);
+      expect((await db.query(`select status from ticket_choices where id = $1`, [ch2.id])).rows[0].status).toBe('refunded');
+      expect((await db.query(`select count(*)::int n from notification_outbox where kind = 'refund_decided' and user_id in ($1, $2)`, [b.c, d.c])).rows[0].n).toBe(2);
+      await db.query(`update profiles set role = 'customer', finance_access = false where id = $1`, [owner]);
+    });
+
     it('follows the 3-week booking window and refuses styles without a Drop In price', async () => {
       const c = await createUser(db, 'DropInRules');
       await expectError(dropIn(c, await makeSession({ style: 'hip-hop', startsInMinutes: 22 * 24 * 60 })), 'outside_booking_window');
@@ -2305,6 +2346,9 @@ run('database: plans, booking, allowances, pauses, security', () => {
       // The first Sunday of next month, 16:00–20:00, every week of that month.
       const first = (await db.query(`select ((d + ((7 - extract(isodow from d)::int) % 7)) + time '16:00') at time zone 'Europe/Dublin' t
         from (select (date_trunc('month', current_date) + interval '1 month')::date d) x`)).rows[0].t as Date;
+      // Other tests create classes relative to "now"; keep these Sunday afternoons free of them whatever date the tests run.
+      await db.query(`update class_sessions set status = 'cancelled' where status = 'scheduled' and starts_at >= $1 and starts_at < $1::timestamptz + interval '70 days'
+        and extract(isodow from starts_at at time zone 'Europe/Dublin') = 7`, [first]);
       const [{ r }] = await as<{ r: { booking_ids: string[]; series_id: string; total_cents: number } }>(db, user(zouk), `select request_rental($1, $2, false, 'Zouk practice', 'Zouk team', 20, true, true) r`, [first, plus(first, 240)]);
       expect(r.booking_ids.length).toBeGreaterThanOrEqual(4);
       expect(r.total_cents).toBe(r.booking_ids.length * 18000);
@@ -2475,7 +2519,7 @@ run('database: plans, booking, allowances, pauses, security', () => {
       const adm = await createUser(db, 'ApprovalsAdmin', 'admin'), m = await createUser(db, 'ApprovalsMember');
       await expectError(as(db, user(m), `select admin_approvals()`), 'forbidden');
       const before = (await as<{ r: { rentals: number; time_off: number } }>(db, user(adm), `select admin_approvals() r`))[0].r;
-      const s = new Date(Date.now() + 40 * 864e5);
+      const s = new Date(Date.now() + 77 * 864e5); s.setUTCHours(3, 0, 0, 0);   // a night slot no other test uses
       await db.query(`insert into rental_bookings (user_id, starts_at, ends_at, status, rent_cents, total_cents) values ($1, $2, $3, 'pending_approval', 2500, 2500)`, [m, s, new Date(s.getTime() + 3600e3)]);
       const after = (await as<{ r: { rentals: number } }>(db, user(adm), `select admin_approvals() r`))[0].r;
       expect(after.rentals).toBe(before.rentals + 1);

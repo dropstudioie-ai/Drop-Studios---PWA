@@ -155,7 +155,7 @@ export interface Booking {
   cancelled_at: string | null;
   cancel_reason: string | null;
   session?: ClassSession;
-  payment?: { kind: 'membership' | 'ticket' | 'drop_in' } | null;
+  payment?: { kind: 'membership' | 'ticket' | 'drop_in'; amount_cents?: number } | null;
 }
 
 export interface MembershipPurchase {
@@ -193,6 +193,8 @@ export interface Membership {
   selected_style_id: string | null;
   classes_total: number;
   classes_remaining: number;
+  /** Class credits from a cancelled Drop In only book classes up to this Drop In price. */
+  max_class_price_cents?: number | null;
   activated_at: string | null;
   expires_at: string | null;
   base_expires_at: string | null;

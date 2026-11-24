@@ -424,10 +424,23 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
     case 'ticket_choice':
       return {
         subject: `Your ${p.title} class was cancelled: choose a class credit or a refund`,
-        text: `${hi}\n\nYour ${p.title} class on ${slot(p.starts_at, null)} has been cancelled${p.reason ? ` (${p.reason})` : ''}.\n\nYou paid ${eur(p.amount_cents)}. What would you prefer?\n\n• A class credit: book any class in the next ${p.credit_days} days, nothing to pay\n• A refund of ${eur(p.amount_cents)} to your card\n\nChoose in the app:\n${site()}/account#choices\n\nDrop Studios`,
+        text: `${hi}\n\nYour ${p.title} class on ${slot(p.starts_at, null)} has been cancelled${p.reason ? ` (${p.reason})` : ''}.\n\nYou paid ${eur(p.amount_cents)}. What would you prefer?\n\n• A class credit: book a class up to ${eur(p.amount_cents)} in the next ${p.credit_days} days, nothing to pay\n• A refund of ${eur(p.amount_cents)} to your card\n\nChoose in the app:\n${site()}/account#choices\n\nDrop Studios`,
         url: '/account#choices',
       };
+    case 'refund_decided':
+      return {
+        subject: p.approved ? `💶 Your refund of ${eur(p.amount_cents)} is on its way` : `About your refund request: you have a class credit`,
+        text: p.approved
+          ? `${hi}\n\nYour refund request for the ${p.title} Drop In on ${slot(p.starts_at, null)} is approved. ${eur(p.amount_cents)} is being refunded to your card; it usually shows within 5–10 working days.${p.note ? `\n\nA note from the studio: ${p.note}` : ''}\n\nDrop Studios`
+          : `${hi}\n\nWe can't refund the ${p.title} Drop In on ${slot(p.starts_at, null)}${p.note ? ` (${p.note})` : ''}, but you haven't lost it: you have a class credit for a class up to ${eur(p.amount_cents)}${p.credit_expires_at ? `, valid until ${dateWithYear(String(p.credit_expires_at))}` : ''}. Book it in the app:\n${site()}/timetable\n\nDrop Studios`,
+        url: p.approved ? '/account' : '/timetable',
+      };
     case 'ticket_refund_requested':
+      if (p.needs_approval) return {
+        subject: `💶 Refund request to approve: ${p.member}, ${eur(p.amount_cents)}`,
+        text: `${hi}\n\n${p.member} cancelled their ${p.title} Drop In on ${slot(p.starts_at, null)} and asks for a refund of ${eur(p.amount_cents)} instead of a class credit.\n\nApprove (refunds their card) or decline (they get a class credit) in Admin → Overview:\n${site()}/admin\n\nDrop Studios`,
+        url: '/admin',
+      };
       return {
         subject: `💶 Refund requested: ${p.member}, ${eur(p.amount_cents)}`,
         text: `${hi}\n\n${p.member} chose a refund (not a class credit) for the cancelled ${p.title} class on ${slot(p.starts_at, null)}.\n\nRefund ${eur(p.amount_cents)} in Admin → Members → ${p.member} → Payments → Refund, then tap “Refunded” in Admin → Overview.\n${site()}/admin/customers?user=${p.user_id}\n\nDrop Studios`,

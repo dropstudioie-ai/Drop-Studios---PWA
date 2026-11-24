@@ -1,4 +1,5 @@
 import { ticketChoices } from '../../lib/ticketChoices';
+import { adminRefund } from '../../lib/payments';
 import { useAuth } from '../../auth/AuthProvider';
 import { Link } from 'react-router-dom';
 import { useState } from 'react';
@@ -154,8 +155,17 @@ function CancelledPaidClasses() {
         {rows.map((c) => (
           <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
             <span><Link className="font-semibold underline" to={`/admin/customers?user=${c.user_id}`}>{c.member?.full_name ?? 'Member'}</Link> · {c.class_title}, {fmt.dateTime(c.class_starts_at)} · {formatPrice(c.amount_cents, 'EUR')}
-              <span className="block text-xs text-muted">{c.status === 'waiting' ? 'Waiting for them to choose a class credit or a refund (asked by email and in the app)' : 'Chose a refund: refund it in Square (member → Payments → Refund)'}</span></span>
-            {c.status === 'waiting' ? (
+              <span className="block text-xs text-muted">{c.status === 'waiting' ? 'Waiting for them to choose a class credit or a refund (asked by email and in the app)' : c.status === 'refund_requested' ? '💶 They cancelled their Drop In and ask for a refund: approve (refunds their card) or decline (they get a class credit)' : 'Chose a refund: refund it in Square (member → Payments → Refund)'}</span></span>
+            {c.status === 'refund_requested' ? (
+              <span className="flex gap-2">
+                <button className="btn-primary btn-sm" onClick={() => void act(async () => {
+                  if (!confirm(`Refund ${formatPrice(c.amount_cents, 'EUR')} to ${c.member?.full_name ?? 'this member'}'s card?`)) throw new Error('Not refunded');
+                  await adminRefund(c.payment_id, c.amount_cents, `Drop In cancelled by member: ${c.class_title}`);
+                  await ticketChoices.decideRefund(c.id, true);
+                }, 'Refunded and member told')}>Approve &amp; refund</button>
+                <button className="btn-outline btn-sm" onClick={() => void act(() => ticketChoices.decideRefund(c.id, false, prompt('Note for them (optional)') ?? undefined), 'Declined: class credit given and member told')}>Decline (give credit)</button>
+              </span>
+            ) : c.status === 'waiting' ? (
               <span className="flex gap-2">
                 <button className="btn-outline btn-sm" onClick={() => void act(() => ticketChoices.adminChoose(c.id, true), 'Class credit given (valid 1 month)')}>Give credit</button>
                 <button className="btn-ghost btn-sm" onClick={() => void act(() => ticketChoices.adminChoose(c.id, false), 'Marked as refund')}>They want a refund</button>
