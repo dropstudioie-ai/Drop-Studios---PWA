@@ -680,7 +680,7 @@ function MoveSheet({ userId, name, old, onClose, onDone }: { userId: string; nam
         <p className="text-sm text-ink-soft">Old app: <strong>{old.plan}</strong>. Check their <strong>Credits</strong> tab in the old app for the classes left.</p>
         {!unlimited && <Field label="Classes left in the old app"><input className="input" type="number" min={1} max={50} value={classes} onChange={(e) => setClasses(e.target.value)} /></Field>}
         <Field label="Valid until (their old-app renew date)" hint="Their classes work for any class until the end of this day. Nothing renews automatically."><input className="input" type="date" value={renew} onChange={(e) => setRenew(e.target.value)} /></Field>
-        <Notice tone="info">They get a welcome email, and a pop-up in the app asking them to add their photo, answer the survey and rate the new app. Remember to cancel their old-app plan before {renew ? fmt.date(renew) : 'the renew date'}.</Notice>
+        <Notice tone="info">They get a welcome email, and a pop-up in the app asking them to add their photo, answer the survey and rate the new app. Then cancel their plan in Glofox before {renew ? fmt.date(renew) : 'the renew date'} (the email tells them the studio does it).</Notice>
         <button className="btn-primary w-full" disabled={busy || !renew || (!unlimited && !(Number(classes) >= 1))} onClick={() => void go()}>{busy ? <Spinner /> : `Move ${unlimited ? 'Unlimited' : `${classes || '…'} classes`}`}</button>
       </div>
     </Sheet>
