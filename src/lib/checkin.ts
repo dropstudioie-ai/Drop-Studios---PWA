@@ -11,6 +11,8 @@ export const checkin = {
   checkIn: async (sessionId: string, code: string) => unwrap(await supabase.rpc('check_in', { p_session_id: sessionId, p_code: code })) as CheckInResult | CheckInFailed,
   url: (sessionId: string, code: string) => `${window.location.origin}/checkin?s=${sessionId}&t=${code}`,
   studioCode: async () => unwrap(await supabase.rpc('studio_checkin_code')) as { code: string; valid_for: number },
+  /** Logged out: turn a fresh code into a 15-minute pass that survives logging in. */
+  pass: async (sessionId: string | null, code: string, studio: boolean) => unwrap(await supabase.rpc('checkin_pass', { p_session_id: sessionId, p_code: code, p_studio: studio })) as string,
   checkInStudio: async (code: string) => unwrap(await supabase.rpc('check_in_studio', { p_code: code })) as CheckInResult | CheckInFailed,
   bookAndCheckIn: async (sessionId: string, code: string, studio: boolean) => unwrap(await supabase.rpc('book_and_check_in', { p_session_id: sessionId, p_code: code, p_studio: studio })) as CheckInResult,
   alerts: async (sessionId: string) => unwrap(await supabase.rpc('checkin_alerts', { p_session_id: sessionId })) as CheckInAlert[],

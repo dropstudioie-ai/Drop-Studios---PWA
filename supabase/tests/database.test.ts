@@ -1063,6 +1063,25 @@ run('database: plans, booking, allowances, pauses, security', () => {
       await db.query(`update class_sessions set status = 'cancelled' where id = any($1)`, [[s1, outside]]);   // don't collide with later tests
     });
 
+    it('a scan while logged out becomes a 15-minute pass that checks them in after logging in', async () => {
+      const tp = await createUser(db, 'PassTeacher', 'instructor');
+      const { rows: [inst] } = await db.query(`insert into instructors (full_name, profile_id) values ('Pass Teacher', $1) returning id`, [tp]);
+      const m = await createUser(db, 'PassMember');
+      await buy(m, 'multi-5');
+      const sid = await makeSession({ style: 'hip-hop', startsInMinutes: 25 });
+      await db.query(`update class_sessions set instructor_id = $1 where id = $2`, [inst.id, sid]);
+      await book(m, sid);
+      const [{ c }] = await as<{ c: { code: string } }>(db, user(tp), `select checkin_code($1) c`, [sid]);
+      await expectError(as(db, anon, `select checkin_pass($1, 'wrong', false)`, [sid]), 'checkin_code_expired');
+      const [{ t }] = await as<{ t: string }>(db, anon, `select checkin_pass($1, $2, false) t`, [sid, c.code]);
+      // The pass only works for this class, and not once it has expired.
+      expect((await as<{ r: { ok: boolean } }>(db, user(m), `select check_in($1, $2) r`, [await makeSession({ style: 'hip-hop', startsInMinutes: 30 }), t]))[0].r.ok).toBe(false);
+      const [{ r }] = await as<{ r: { ok: boolean } }>(db, user(m), `select check_in($1, $2) r`, [sid, t]);
+      expect(r.ok).toBe(true);
+      await db.query(`update checkin_passes set expires_at = now() - interval '1 minute' where token = $1`, [t]);
+      expect((await as<{ r: { ok: boolean; reason: string } }>(db, user(m), `select check_in($1, $2) r`, [sid, t]))[0].r).toMatchObject({ ok: false, reason: 'checkin_code_expired' });
+    });
+
     it('QR check-in: the teacher’s code marks members attended; first class and birthday are flagged', async () => {
       const tp = await createUser(db, 'QrTeacher', 'instructor');
       const { rows: [inst] } = await db.query(`insert into instructors (full_name, profile_id) values ('Qr Teacher', $1) returning id`, [tp]);

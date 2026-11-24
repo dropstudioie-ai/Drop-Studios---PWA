@@ -368,7 +368,7 @@ function ReceptionCheckIn({ onClose }: { onClose: () => void }) {
       <div className="mt-4 w-full max-w-md rounded-3xl bg-white p-4">
         {img ? <img src={img} alt="Check-in QR code" className="w-full" /> : <div className="aspect-square w-full animate-pulse rounded-2xl bg-white/50" />}
       </div>
-      <p className="mt-3 text-center text-white/80">Scan with your phone camera to check in to your class.<br /><span className="text-xs">New code in {left}s</span></p>
+      <p className="mt-3 text-center text-white/80">Open the Drop app and tap <strong>📷 Check in</strong> (or scan with your phone camera).<br /><span className="text-xs">New code in {left}s</span></p>
       {shout && (
         <div className={`mt-4 w-full max-w-md rounded-2xl p-4 text-center ${shout.is_birthday ? 'bg-accent-500 text-ink' : shout.is_new ? 'bg-brand-600' : 'bg-success'}`}>
           <p className="text-2xl font-black">{shout.is_birthday ? '🎂 ' : shout.is_new ? '✨ ' : '✅ '}{shout.full_name}</p>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useAuth } from '../auth/AuthProvider';
 import { checkin, type CheckInFailed, type CheckInResult, type DoorOption } from '../lib/checkin';
 import { checkout } from '../lib/payments';
 import { formatPrice } from '../domain/money';
@@ -17,12 +18,23 @@ export default function CheckInPage() {
   const [res, setRes] = useState<CheckInResult | null>(null);
   const [failed, setFailed] = useState<CheckInFailed | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { session, loading } = useAuth();
+  const navigate = useNavigate();
   useEffect(() => {
+    if (loading) return;
     if (!code || (!sessionId && !studio)) { setError('checkin_code_expired'); return; }
+    if (!session) {
+      // Logged out (often: the phone camera opened the browser, not the app). Keep the scan as a 15-minute pass
+      // so after logging in they're checked in straight away, without scanning again.
+      checkin.pass(sessionId, code, studio)
+        .then((token) => navigate(`/login?next=${encodeURIComponent(`/checkin?${sessionId ? `s=${sessionId}` : 'studio=1'}&t=${token}`)}`, { replace: true }))
+        .catch((e) => setError((e as Error).message));
+      return;
+    }
     (sessionId ? checkin.checkIn(sessionId, code) : checkin.checkInStudio(code))
       .then((r) => (r.ok ? setRes(r) : setFailed(r)))
       .catch((e) => setError((e as Error).message));
-  }, [sessionId, code, studio]);
+  }, [sessionId, code, studio, session, loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (res) return <Welcome res={res} />;
   if (failed?.reason === 'checkin_not_booked') return <NotBooked options={failed.options} code={code} studio={studio} onDone={setRes} />;
@@ -34,7 +46,8 @@ export default function CheckInPage() {
         <h1 className="mt-3 text-2xl font-black">Couldn’t check you in</h1>
         <p className="mt-2 text-ink-soft">{messageFor(reason)}</p>
         <p className="mt-2 text-sm text-muted">Your teacher has been told, so they can help.</p>
-        <Link to="/timetable" className="btn-primary mt-6">Open the timetable</Link>
+        <Link to="/scan" className="btn-accent mt-6">📷 Scan again</Link>
+        <p className="mt-4 text-sm text-ink-soft">Tip: open the Drop app and tap <strong>📷 Check in</strong> to scan. You’re already logged in there.</p>
       </div>
     );
   }

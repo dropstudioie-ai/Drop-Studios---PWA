@@ -117,6 +117,7 @@ function BottomNav({ signedIn, staff, admin }: { signedIn: boolean; staff: boole
         <>
           <NavLink to="/" end className={item}><HomeIcon />Home</NavLink>
           <NavLink to="/timetable" className={item}><CalendarIcon />Timetable</NavLink>
+          {signedIn && <NavLink to="/scan" className={item}><span className="-mt-5 grid h-12 w-12 place-items-center rounded-full bg-accent-500 text-2xl shadow-lg shadow-accent-500/40" aria-hidden="true">📷</span>Check in</NavLink>}
           <NavLink to="/memberships" className={item}><TicketIcon />Plans</NavLink>
         </>
       )}
