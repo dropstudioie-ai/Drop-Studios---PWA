@@ -102,6 +102,9 @@ export interface StaffSession extends ClassSession {
   booked_count: number;
   birthdays: number;
   new_members: number;
+  attended?: number;
+  no_shows?: number;
+  late_cancels?: number;
 }
 
 export interface RosterEntry {
