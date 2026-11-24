@@ -332,6 +332,8 @@ async function dailyReport(db: Db, force = false) {
     reactions_week: (reactions.data ?? []).length,
     last_story: lastStory.data ? { date: (lastStory.data as { story_date: string }).story_date, ...((lastStory.data as { insights: Record<string, number> }).insights ?? {}) } : null,
   };
+  // New sign-ups in the last 24 hours and what they did.
+  const signups = (await db.rpc('_signup_report', { p_from: since, p_to: new Date().toISOString() })).data ?? null;
   const client = anthropic();
   const said = [...inbound.map((m) => m.text), ...((comments.data ?? []) as { text: string }[]).map((c) => `(comment on a post) ${c.text}`)];
   const sum = client ? await summariseDay({ client }, said.slice(-200)) : null;
@@ -339,10 +341,29 @@ async function dailyReport(db: Db, force = false) {
   const { data: row } = await db.from('assistant_reports').upsert(report, { onConflict: 'report_date' }).select().single();
   await db.rpc('_assistant_notify_owner', {
     p_kind: 'assistant_report',
-    p_payload: { date: today, ...stats, summary: report.summary, themes: report.themes, suggestions: report.suggestions },
+    p_payload: { date: today, ...stats, summary: report.summary, themes: report.themes, suggestions: report.suggestions, signups },
     p_key: force ? `report:${today}:${Date.now()}` : `report:${today}`,
   });
   return { created: row?.id ?? null, ...stats };
+}
+
+/** Monday morning: last week's new sign-ups, what they did and their activity, plus earlier sign-ups who still haven't started. */
+async function weeklyReview(db: Db, force = false) {
+  const { today, hour } = dublinNow();
+  const weekday = new Date(`${today}T12:00:00Z`).getUTCDay();
+  if (!force && (weekday !== 1 || hour < 9)) return { skipped: 'not_now' };
+  const weekStart = new Date(`${today}T00:00:00Z`); weekStart.setUTCDate(weekStart.getUTCDate() - 7);
+  const ws = weekStart.toISOString().slice(0, 10);
+  if (!force) {
+    const { data: done } = await db.from('notification_outbox').select('id').eq('kind', 'weekly_review').eq('payload->>week_start', ws).limit(1);
+    if (done?.length) return { skipped: 'done' };
+  }
+  const from = new Date(`${ws}T00:00:00Z`).toISOString(), to = new Date(`${today}T00:00:00Z`).toISOString();
+  const week = (await db.rpc('_signup_report', { p_from: from, p_to: to })).data;
+  const earlier = (await db.rpc('_signup_report', { p_from: new Date(Date.parse(from) - 28 * 864e5).toISOString(), p_to: from })).data as { people?: { outcome: string }[] } | null;
+  const stuck = (earlier?.people ?? []).filter((x) => x.outcome === 'nothing');
+  await db.rpc('_assistant_notify_owner', { p_kind: 'weekly_review', p_payload: { week_start: ws, week_end: today, signups: week, still_nothing: stuck }, p_key: force ? `weekly_review:${ws}:${Date.now()}` : `weekly_review:${ws}` });
+  return { week_start: ws, signups: (week as { count?: number } | null)?.count ?? 0, still_nothing: stuck.length };
 }
 
 /** Prepare today's Story from the timetable (rendered and published from the admin page). */
@@ -576,7 +597,8 @@ Deno.serve(async (req) => {
     const report = await dailyReport(db).catch((e) => ({ error: (e as Error).message }));
     const promos = await runPromos(db).catch((e) => ({ error: (e as Error).message }));
     const weekly = await weeklyStory(db).catch((e) => ({ error: (e as Error).message }));
-    return Response.json({ story, report, promos, weekly });
+    const review = await weeklyReview(db).catch((e) => ({ error: (e as Error).message }));
+    return Response.json({ story, report, promos, weekly, review });
   }
 
   // Admin actions from the Drop app.
@@ -682,6 +704,8 @@ Deno.serve(async (req) => {
         return json(req, await runPromos(db, String(body.promo_id)));
       case 'report_now':
         return json(req, await dailyReport(db, true));
+      case 'weekly_review_now':
+        return json(req, await weeklyReview(db, true));
       case 'story_skip':
         await db.from('assistant_stories').update({ status: 'skipped', decided_by: actor }).eq('id', String(body.story_id));
         return json(req, { ok: true });

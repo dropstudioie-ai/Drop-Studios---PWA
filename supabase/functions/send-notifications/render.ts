@@ -39,6 +39,22 @@ const longDate = (d: unknown) => new Intl.DateTimeFormat('en-IE', { timeZone: TZ
   .format(new Date(`${String(d)}T12:00:00Z`));
 
 
+type SignupPerson = { name: string; joined: string; outcome: string; plans: string[]; drop_ins: number; other_kinds?: string[]; tried_to_pay: number; photo: boolean; bookings: number; attended: number; last_seen: string | null };
+type Signups = { count: number; membership: number; drop_in: number; moved: number; gift: number; other: number; nothing: number; with_photo: number; booked: number; attended: number; people: SignupPerson[] };
+const OUTCOME: Record<string, string> = { membership: '💳 bought a membership', drop_in: '🎟️ bought a Drop In', moved: '📦 moved from the old app', gift: '🎁 used a gift card', other: '🛍️ bought something else', nothing: '😶 nothing yet' };
+const personLine = (x: SignupPerson) => {
+  const kinds: Record<string, string> = { rental: '🏠 studio rental', ticket: '🎫 event ticket', gift: '🎁 gift card for someone' };
+  const did = x.outcome === 'membership' ? `💳 ${x.plans.join(', ')}` : x.outcome === 'drop_in' ? `🎟️ ${x.drop_ins} Drop In${x.drop_ins === 1 ? '' : 's'}`
+    : x.outcome === 'other' && x.other_kinds?.length ? x.other_kinds.map((k) => kinds[k] ?? k).join(', ') : OUTCOME[x.outcome] ?? x.outcome;
+  const act = [x.photo ? '📸 photo' : 'no photo', x.bookings ? `${x.bookings} booking${x.bookings === 1 ? '' : 's'}` : 'no bookings', x.attended ? `${x.attended} attended` : '', x.outcome === 'nothing' && x.tried_to_pay ? `started a payment ${x.tried_to_pay}×, didn't finish` : ''].filter(Boolean).join(' · ');
+  return `• ${x.name || 'No name'}: ${did} (${act})`;
+};
+const signupBlock = (s: Signups | null | undefined, title: string) => !s || !s.count ? '' : [
+  `\n${title}: ${s.count}`,
+  [s.membership && `${s.membership} bought a membership`, s.drop_in && `${s.drop_in} a Drop In`, s.moved && `${s.moved} moved from the old app`, s.gift && `${s.gift} used a gift card`, s.other && `${s.other} bought something else`, s.nothing && `${s.nothing} nothing yet`].filter(Boolean).join(' · '),
+  ...s.people.map(personLine),
+].join('\n');
+
 const site = () => Deno.env.get('SITE_URL') ?? '';
 const monthName = (d: unknown) => new Intl.DateTimeFormat('en-IE', { timeZone: TZ, month: 'long' }).format(new Date(`${String(d)}T12:00:00Z`));
 const shortDay = (d: unknown) => new Intl.DateTimeFormat('en-IE', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(`${String(d)}T12:00:00Z`));
@@ -356,6 +372,24 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
         text: `${hi}\n\nThamires just posted ${Array.isArray(p.items) ? (p.items as string[]).join(', then ') : 'the promo'} to Drop's Instagram Stories (post ${p.posts_done}${p.ends_on ? `, the schedule runs until ${longDate(String(p.ends_on))}` : ''}).\n\nTip: open the Stories in Instagram to add a song or a Link sticker.\n\n${site()}/admin/thamires\n\nDrop Studios`,
         url: '/admin/thamires',
       };
+    case 'weekly_review': {
+      const w = p.signups as Signups | null;
+      const stuck = (Array.isArray(p.still_nothing) ? p.still_nothing : []) as SignupPerson[];
+      const pct = (a: number, b: number) => (b ? `${Math.round((a / b) * 100)}%` : '0%');
+      const lines = [
+        `${hi}`, '',
+        `Thamires' weekly review: ${longDate(String(p.week_start))} to ${longDate(String(p.week_end))}.`,
+        !w || !w.count ? '\n👋 No new sign-ups this week.' : [
+          `\n👋 ${w.count} new sign-up${w.count === 1 ? '' : 's'}`,
+          `Added a photo: ${w.with_photo} (${pct(w.with_photo, w.count)}) · Booked a class: ${w.booked} (${pct(w.booked, w.count)}) · Came to a class: ${w.attended} (${pct(w.attended, w.count)})`,
+          `Bought a membership: ${w.membership} · a Drop In: ${w.drop_in} · moved from the old app: ${w.moved}${w.gift ? ` · gift card: ${w.gift}` : ''} · nothing yet: ${w.nothing}`,
+          '', ...w.people.map(personLine),
+        ].join('\n'),
+        stuck.length ? `\n😶 Signed up in the 4 weeks before and still haven't bought or booked (${stuck.length}), worth a friendly message:\n${stuck.map(personLine).join('\n')}` : '',
+        '', `${site()}/admin/customers`, '', 'Drop Studios',
+      ];
+      return { subject: `📊 Weekly review: ${w?.count ?? 0} new sign-up${w?.count === 1 ? '' : 's'}, ${w?.membership ?? 0} bought a membership`, text: lines.filter((l) => l !== '').join('\n'), url: '/admin/customers' };
+    }
     case 'assistant_report': {
       const n = (v: unknown) => Number(v) || 0;
       const themes = (Array.isArray(p.themes) ? p.themes : []) as { theme: string; count: number }[];
@@ -375,6 +409,7 @@ export function render(n: Pick<Claimed, 'kind' | 'payload' | 'full_name'>): Mess
         n(p.comments) ? `💭 ${n(p.comments)} comment${n(p.comments) === 1 ? '' : 's'} on Drop’s posts, ${n(p.comments_replied)} replied${n(p.comments_waiting) ? `, ${n(p.comments_waiting)} waiting for you` : ''}.` : '',
         n(p.reactions_week) ? `❤️ People reacted to ${n(p.reactions_week)} of Thamires’ messages this week.` : '',
         p.last_story && typeof p.last_story === 'object' ? (() => { const st = p.last_story as Record<string, unknown>; return `🗓️ Last Story (${longDate(String(st.date))}): ${n(st.reach)} people reached${n(st.replies) ? `, ${n(st.replies)} replies` : ''}${n(st.taps_forward) ? `, ${n(st.taps_forward)} taps forward` : ''}.`; })() : '',
+        signupBlock(p.signups as Signups | null, '👋 New sign-ups today'),
         tips.length ? `\nIdeas from Thamires:\n${tips.map((t) => `• ${t}`).join('\n')}` : '',
         '',
         `${site()}/admin/thamires`,

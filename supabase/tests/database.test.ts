@@ -2658,4 +2658,14 @@ run('database: plans, booking, allowances, pauses, security', () => {
       expect((await db.query(`select count(*)::int n from memberships where user_id = $1`, [n])).rows[0].n).toBe(0);
     });
   });
+  describe('sign-ups report', () => {
+    it('lists new sign-ups with what they did', async () => {
+      const a = await createUser(db, 'SignupNothing'), b = await createUser(db, 'SignupMember');
+      await buy(b, 'multi-5');
+      const [{ r }] = await as<{ r: { people: { name: string; outcome: string; plans: string[] }[] } }>(db, service, `select _signup_report(now() - interval '1 minute', now() + interval '1 minute') r`);
+      expect(r.people.find((x) => x.name === 'SignupNothing')?.outcome).toBe('nothing');
+      expect(r.people.find((x) => x.name === 'SignupMember')?.outcome).toBe('membership');
+      await expect(as(db, user(a), `select _signup_report(now() - interval '1 day', now())`)).rejects.toThrow();
+    });
+  });
 });
