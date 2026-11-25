@@ -2360,6 +2360,16 @@ run('database: plans, booking, allowances, pauses, security', () => {
       expect(new Set(busy.map((x) => x.what))).toEqual(new Set(['Booked', 'Drop class']));
     });
 
+    it('renters the owner marked always need approval, even after paying before', async () => {
+      const a = await confirmedRenter('RentAlways');
+      await db.query(`insert into rental_always_review (user_id, note) values ($1, 'owner approves every time')`, [a]);
+      const s = await at(6, 2, '11:00');
+      await db.query(`update class_sessions set status = 'cancelled' where starts_at < $2 and ends_at > $1`, [s, plus(s, 120)]);
+      const [{ r }] = await as<{ r: { needs_approval: boolean; reasons: string[] } }>(db, user(a), `select request_rental($1, $2, false, 'x', null, 3, false, true) r`, [s, plus(s, 120)]);
+      expect(r).toMatchObject({ needs_approval: true, reasons: ['always_review'] });
+      await expect(as(db, user(a), `select * from rental_always_review`)).resolves.toEqual([]);   // renters can't see the list
+    });
+
     it('first-time renters, late nights and bookings over 12 weeks ahead wait for the owner before paying', async () => {
       const fresh = await createUser(db, 'RentNew');
       const s = await at(4, 2, '10:00');
