@@ -56,6 +56,13 @@ export function SurveyDialog({ survey: sv, userId, onClose, preview = false }: {
   const [allowance, setAllowance] = useState<PauseAllowance | null>(null);
   const [pausing, setPausing] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [shake, setShake] = useState(true);
+  // Get the member's attention: shake for 2 seconds, and vibrate where the phone allows it (Android; iPhones don't let web apps vibrate).
+  useEffect(() => {
+    try { if (!preview) navigator.vibrate?.([400, 150, 400, 150, 400, 150, 350]); } catch { /* not supported */ }
+    const t = setTimeout(() => setShake(false), 2000);
+    return () => clearTimeout(t);
+  }, [preview]);
 
   async function notNow() {
     if (!preview) {
@@ -91,29 +98,29 @@ export function SurveyDialog({ survey: sv, userId, onClose, preview = false }: {
   }
 
   const option = (emoji: string, label: string, onClick: () => void) => (
-    <button className="flex w-full items-center gap-3 rounded-xl border border-line px-4 py-3 text-left font-semibold transition hover:border-brand-400 hover:bg-brand-50 disabled:opacity-50" disabled={busy} onClick={onClick}>
+    <button className="xmas-option flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left font-semibold transition disabled:opacity-50" disabled={busy} onClick={onClick}>
       <span className="text-2xl">{emoji}</span><span>{label}</span>
     </button>
   );
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/60 p-3 sm:items-center" role="dialog" aria-modal="true" aria-labelledby="sv-h">
-      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+      <div className={`xmas-card w-full max-w-md rounded-3xl p-6 ${shake ? 'xmas-shake' : ''}`}>
         {step === 'intro' && (
           <>
-            <p className="text-4xl">🎄</p>
-            <h2 id="sv-h" className="mt-2 text-2xl font-black">Got 10 seconds?</h2>
-            <p className="mt-2 text-ink-soft">We’re planning December’s timetable and would love to know your plans. It’s one quick question.</p>
+            <p className="text-5xl">🎄🎁✨</p>
+            <h2 id="sv-h" className="mt-2 text-3xl font-black">Got 10 seconds?</h2>
+            <p className="mt-2 xmas-soft">We’re planning December’s timetable and would love to know your plans. It’s one quick question.</p>
             <div className="mt-5 flex flex-col gap-2">
-              <button className="btn-accent text-lg" onClick={() => setStep('question')}>Sure, ask me</button>
-              <button className="btn-outline" onClick={() => void notNow()}>Not now</button>
+              <button className="btn xmas-gold text-lg" onClick={() => setStep('question')}>Sure, ask me</button>
+              <button className="btn xmas-ghost" onClick={() => void notNow()}>Not now</button>
             </div>
           </>
         )}
 
         {step === 'question' && (
           <>
-            <p className="text-xs font-bold uppercase tracking-wide text-brand-700">December plans</p>
+            <p className="xmas-eyebrow text-xs font-bold uppercase tracking-wide">🎄 December plans 🎅</p>
             <h2 id="sv-h" className="mt-1 text-2xl font-black">Will you be dancing with us in December?</h2>
             <div className="mt-5 space-y-2">
               {option('💃', 'Yes, I’ll keep dancing all month', () => void save('all_month'))}
@@ -122,7 +129,7 @@ export function SurveyDialog({ survey: sv, userId, onClose, preview = false }: {
               {option('🤔', 'Not sure yet', () => void save('not_sure'))}
             </div>
             {busy && <div className="mt-3 flex justify-center"><Spinner /></div>}
-            {error && <p className="mt-3 text-sm font-semibold text-danger">{error}</p>}
+            {error && <p className="mt-3 text-sm font-semibold text-[#ffd1d1]">{error}</p>}
           </>
         )}
 
@@ -130,15 +137,15 @@ export function SurveyDialog({ survey: sv, userId, onClose, preview = false }: {
           <>
             <p className="text-4xl">✈️</p>
             <h2 id="sv-h" className="mt-2 text-2xl font-black">When will you be away?</h2>
-            <p className="mt-1 text-ink-soft">Roughly is fine.</p>
+            <p className="mt-1 xmas-soft">Roughly is fine.</p>
             <div className="mt-4 grid grid-cols-2 gap-3">
               <Field label="First day away"><input className="input" type="date" min={today} value={from} onChange={(e) => { setFrom(e.target.value); if (to < e.target.value) setTo(e.target.value); }} /></Field>
               <Field label="Last day away"><input className="input" type="date" min={from} value={to} onChange={(e) => setTo(e.target.value)} /></Field>
             </div>
-            {error && <p className="mt-3 text-sm font-semibold text-danger">{error}</p>}
+            {error && <p className="mt-3 text-sm font-semibold text-[#ffd1d1]">{error}</p>}
             <div className="mt-5 flex flex-col gap-2">
-              <button className="btn-accent text-lg" disabled={busy || !from || !to || to < from} onClick={() => void save('some_days', { from, to })}>{busy ? <Spinner /> : 'Send'}</button>
-              <button className="btn-ghost" onClick={() => setStep('question')}>Back</button>
+              <button className="btn xmas-gold text-lg" disabled={busy || !from || !to || to < from} onClick={() => void save('some_days', { from, to })}>{busy ? <Spinner /> : 'Send'}</button>
+              <button className="btn xmas-ghost" onClick={() => setStep('question')}>Back</button>
             </div>
           </>
         )}
@@ -147,12 +154,12 @@ export function SurveyDialog({ survey: sv, userId, onClose, preview = false }: {
           <>
             <p className="text-4xl">⏸️</p>
             <h2 id="sv-h" className="mt-2 text-2xl font-black">Pause your membership while you’re away?</h2>
-            <p className="mt-2 text-ink-soft">
+            <p className="mt-2 xmas-soft">
               Pause it for <strong>{range(away.from, away.to)}</strong> and you won’t lose anything: your end date moves back by the days you’re away.
             </p>
             <div className="mt-5 flex flex-col gap-2">
-              <button className="btn-accent text-lg" onClick={() => (preview ? setStep('thanks') : setPausing(true))}>Schedule my pause</button>
-              <button className="btn-outline" onClick={() => setStep('thanks')}>No thanks</button>
+              <button className="btn xmas-gold text-lg" onClick={() => (preview ? setStep('thanks') : setPausing(true))}>Schedule my pause</button>
+              <button className="btn xmas-ghost" onClick={() => setStep('thanks')}>No thanks</button>
             </div>
           </>
         )}
@@ -161,10 +168,10 @@ export function SurveyDialog({ survey: sv, userId, onClose, preview = false }: {
           <>
             <p className="text-4xl">💛</p>
             <h2 id="sv-h" className="mt-2 text-2xl font-black">Thank you!</h2>
-            <p className="mt-2 text-ink-soft">
+            <p className="mt-2 xmas-soft">
               {paused ? 'Your pause is scheduled. ' : ''}This helps us plan December’s classes. We’ll let you know about any timetable changes.
             </p>
-            <button className="btn-primary mt-5 w-full" onClick={onClose}>Done</button>
+            <button className="btn xmas-gold mt-5 w-full" onClick={onClose}>Done</button>
           </>
         )}
       </div>
