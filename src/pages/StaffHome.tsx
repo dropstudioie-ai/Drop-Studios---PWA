@@ -92,7 +92,7 @@ function AdminToday({ todays, onOpen }: { todays: StaffSession[]; onOpen: (id: s
   const requests = useAsync(async () => (await events.all()).filter((e) => e.status === 'pending').length, []);
   const v = d.data;
   const attention = v ? [
-    { n: requests.data ?? 0, label: ['workshop request to approve', 'workshop requests to approve'], to: '/admin/events' },
+    { n: requests.data ?? 0, label: ['workshop request to approve', 'workshop requests to approve'], to: '/admin/events#requests' },
     { n: v.failed_monthly_payments, label: ['monthly payment failed', 'monthly payments failed'], to: '/admin/customers' },
     { n: v.payments_to_review, label: ['payment to review', 'payments to review'], to: '/admin#review' },
     { n: v.ticket_refunds, label: ['ticket needs a refund', 'tickets need a refund'], to: '/admin#refunds' },

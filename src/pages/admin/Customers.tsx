@@ -1,6 +1,7 @@
 import { UNLIMITED_CLASSES, isUnlimited } from '../../domain/plans';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useFocus } from '../../lib/focus';
 import { endsOn } from '../../domain/subscription';
 import { adminMemberEmail, adminRefund, manageSubscription } from '../../lib/payments';
 import { messageFor } from '../../domain/messages';
@@ -363,7 +364,7 @@ function CustomerDetail({ userId, onBack }: { userId: string; onBack: () => void
       )}
 
       {d.cancelReq && <CancelRequestCard req={d.cancelReq} onDone={() => void data.reload()} />}
-      {d.held && <HeldMoveCard held={d.held} onDone={() => void data.reload()} />}
+      {d.held && <HeldFocus><HeldMoveCard held={d.held} onDone={() => void data.reload()} /></HeldFocus>}
       {d.oldApp && !d.held && (
         <div className={`mb-6 rounded-2xl border-2 p-4 ${d.oldApp.moved_at ? 'border-success/40 bg-[#dff5ea]' : 'border-accent-500 bg-accent-50'}`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -732,6 +733,12 @@ function QueueMoveSheet({ onClose, onDone }: { onClose: () => void; onDone: () =
       </div>
     </Sheet>
   );
+}
+
+/** /admin/customers?user=…#held: scroll to and highlight the move waiting for approval. */
+function HeldFocus({ children }: { children: React.ReactNode }) {
+  const focus = useFocus('held', true);
+  return <div id="held" className={`mb-6 ${focus}`}>{children}</div>;
 }
 
 interface HeldMove { email: string; classes: number | null; renew_on: string | null; old_plan: string | null; held_at: string }

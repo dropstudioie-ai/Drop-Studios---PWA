@@ -1,8 +1,8 @@
 import { ticketChoices } from '../../lib/ticketChoices';
 import { adminRefund } from '../../lib/payments';
 import { useAuth } from '../../auth/AuthProvider';
-import { Link, useLocation } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { unwrap } from '../../api';
 import { useAsync } from '../../lib/useAsync';
@@ -10,6 +10,7 @@ import { formatPrice } from '../../domain/money';
 import { addDaysToKey, fmt, localDateKey } from '../../domain/time';
 import { ErrorNotice, Notice, PageSpinner, useToast } from '../../components/ui';
 import { Section, Table, Td } from './shared';
+import { useFocus } from '../../lib/focus';
 import { SurveyResults } from './SurveyResults';
 
 interface Analytics {
@@ -82,6 +83,7 @@ function SalesOverview() {
       {a.loading && !d ? <PageSpinner /> : a.error ? <ErrorNotice error={a.error} onRetry={a.reload} /> : d && (
         <>
           <CancelRequests />
+          <HeldMoves />
           <PaymentsToReview />
           <CancelledPaidClasses />
           {d.test_payments_excluded > 0 && <div className="mb-4"><Notice tone="test">{d.test_payments_excluded} TEST payment(s) in this period are excluded from all revenue figures.</Notice></div>}
@@ -148,11 +150,11 @@ function CancelledPaidClasses() {
   const toast = useToast();
   const list = useAsync(() => ticketChoices.open(), []);
   const rows = list.data ?? [];
-  useScrollToHash('refunds', rows.length > 0);
+  const focus = useFocus('refunds', rows.length > 0);
   if (!rows.length) return null;
   const act = async (fn: () => Promise<unknown>, msg: string) => { try { await fn(); toast(msg); list.reload(); } catch (e) { toast((e as Error).message, 'error'); } };
   return (
-    <div id="refunds" className="mb-6 scroll-mt-20 rounded-2xl border-2 border-accent-500 bg-accent-50 p-4">
+    <div id="refunds" className={`mb-6 ${focus} rounded-2xl border-2 border-accent-500 bg-accent-50 p-4`}>
       <p className="font-bold">Cancelled paid classes</p>
       <ul className="mt-2 divide-y divide-accent-500/30 text-sm">
         {rows.map((c) => (
@@ -192,7 +194,7 @@ function PaymentsToReview() {
   const list = useAsync(async () => unwrap(await supabase.from('payments').select('id, amount_cents, currency, kind, created_at, review_reason, user_id, plan_snapshot, member:profiles!payments_user_id_fkey(full_name)').not('review_reason', 'is', null).order('created_at')) as unknown as
     { id: string; amount_cents: number; currency: string; kind: string; created_at: string; review_reason: string; user_id: string; plan_snapshot: { plan_name?: string } | null; member: { full_name: string | null } | null }[], []);
   const rows = list.data ?? [];
-  useScrollToHash('review', rows.length > 0);
+  const focus = useFocus('review', rows.length > 0);
   if (!rows.length) return null;
   const resolve = async (id: string) => {
     const note = prompt('What did you do? (e.g. “She’s booked for Wed 2 Dec”, “Refunded”)');
@@ -201,7 +203,7 @@ function PaymentsToReview() {
     catch (e) { toast((e as Error).message, 'error'); }
   };
   return (
-    <div id="review" className="mb-6 scroll-mt-20 rounded-2xl border-2 border-danger bg-red-50 p-4">
+    <div id="review" className={`mb-6 ${focus} rounded-2xl border-2 border-danger bg-red-50 p-4`}>
       <p className="font-bold">💳 Payments to review</p>
       <ul className="mt-2 divide-y divide-danger/20 text-sm">
         {rows.map((p) => (
@@ -219,12 +221,31 @@ function PaymentsToReview() {
   );
 }
 
-/** Links like /admin#review jump to their section once it has loaded. */
-function useScrollToHash(id: string, ready: boolean) {
-  const { hash } = useLocation();
-  useEffect(() => {
-    if (ready && hash === `#${id}`) document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, [ready, hash, id]);
+
+/** Old-app members whose move waits for the owner's OK (manually added credits): open them to decide. */
+function HeldMoves() {
+  const list = useAsync(async () => {
+    const held = unwrap(await supabase.from('old_app_pending_moves').select('email, classes, renew_on, old_plan, held_at').not('held_at', 'is', null).is('applied_at', null).is('declined_at', null).order('held_at')) as { email: string; classes: number | null; renew_on: string | null; old_plan: string | null; held_at: string }[];
+    if (!held.length) return [];
+    const people = unwrap(await supabase.from('profiles').select('id, full_name, email').in('email', held.map((h) => h.email))) as { id: string; full_name: string | null; email: string }[];
+    return held.map((h) => ({ ...h, person: people.find((p) => p.email.toLowerCase() === h.email.toLowerCase()) ?? null }));
+  }, []);
+  const rows = list.data ?? [];
+  const focus = useFocus('held', rows.length > 0);
+  if (!rows.length) return null;
+  return (
+    <div id="held" className={`mb-6 ${focus} rounded-2xl border-2 border-accent-500 bg-accent-50 p-4`}>
+      <p className="font-bold">⏸ Old-app members waiting for your OK (manually added credits)</p>
+      <ul className="mt-2 divide-y divide-accent-500/30 text-sm">
+        {rows.map((h) => (
+          <li key={h.email} className="flex flex-wrap items-center justify-between gap-2 py-2">
+            <span><strong>{h.person?.full_name ?? h.email}</strong> · {h.old_plan ?? 'Old app'}{h.classes != null ? ` · ${h.classes} classes` : ''}{h.renew_on ? ` · renews ${fmt.date(h.renew_on)}` : ''}</span>
+            {h.person && <Link className="btn-primary btn-sm" to={`/admin/customers?user=${h.person.id}#held`}>Approve or decline</Link>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 /** Members asking to cancel: open their page to approve or decline. */
@@ -232,10 +253,10 @@ function CancelRequests() {
   const list = useAsync(async () => unwrap(await supabase.from('cancel_requests').select('id, user_id, reason, rating, created_at, member:profiles!cancel_requests_user_id_fkey(full_name)').eq('status', 'pending').order('created_at')) as unknown as
     { id: string; user_id: string; reason: string | null; rating: number | null; created_at: string; member: { full_name: string | null } | null }[], []);
   const rows = list.data ?? [];
-  useScrollToHash('cancels', rows.length > 0);
+  const focus = useFocus('cancels', rows.length > 0);
   if (!rows.length) return null;
   return (
-    <div id="cancels" className="mb-6 scroll-mt-20 rounded-2xl border-2 border-danger bg-red-50 p-4">
+    <div id="cancels" className={`mb-6 ${focus} rounded-2xl border-2 border-danger bg-red-50 p-4`}>
       <p className="font-bold">🚪 Members asking to cancel</p>
       <ul className="mt-2 divide-y divide-danger/20 text-sm">
         {rows.map((r) => (

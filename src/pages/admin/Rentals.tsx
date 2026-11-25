@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAsync } from '../../lib/useAsync';
+import { useFocus } from '../../lib/focus';
 import { REASON_LABEL, rentals, STATUS_LABEL, type AdminRental, type RentalBlock, type RentalSettings } from '../../lib/rentals';
 import { cancelRental } from '../../lib/payments';
 import { formatPrice, parseEurosToCents } from '../../domain/money';
@@ -95,6 +96,7 @@ function RegularHires() {
   const toast = useToast();
   const list = useAsync(() => rentals.blocks(new Date()), []);
   const [open, setOpen] = useState(false);
+  const focusHires = useFocus('hires', (list.data ?? []).some((r) => r.confirm_by));
   const rows = list.data ?? [];
   if (!rows.length) return null;
   const dayOnly = (iso: string) => new Intl.DateTimeFormat('en-IE', { timeZone: 'Europe/Dublin', weekday: 'long' }).format(new Date(iso));
@@ -122,7 +124,7 @@ function RegularHires() {
       {pending.map((d) => {
         const titles = [...new Set(rows.filter((r) => r.confirm_by === d).map((r) => r.title))];
         return (
-          <div key={d} className="mt-4 rounded-2xl border-2 border-accent-500 p-3">
+          <div key={d} id={d === pending[0] ? 'hires' : undefined} className={`mt-4 rounded-2xl border-2 border-accent-500 p-3 ${d === pending[0] ? focusHires : ''}`}>
             <p className="text-sm font-semibold">Please confirm by {by(d)}: do these stay in the new month?</p>
             <ul className="mt-2 space-y-1.5 text-sm">
               {titles.map((ti) => (
@@ -160,6 +162,7 @@ export default function AdminRentals() {
   const list = useAsync(() => rentals.admin(from, to), []);
   const settings = useAsync(() => rentals.settings(), []);
   const [busy, setBusy] = useState<string | null>(null);
+  const focusReq = useFocus('requests', !!list.data && list.data.some((r) => r.status === 'pending_approval'));
   if (list.loading && !list.data) return <PageSpinner />;
   if (list.error) return <ErrorNotice error={list.error} onRetry={list.reload} />;
   const rows = list.data ?? [];
@@ -175,7 +178,7 @@ export default function AdminRentals() {
         <span className="chip bg-success/10 text-success">💶 {euro(weekRevenue)} booked in the next 7 days</span>
         <Link to="/rent" className="chip bg-canvas font-semibold">Open the booking page ↗</Link>
       </div>
-      <Section title="Requests waiting for you">
+      <Section id="requests" title="Requests waiting for you" className={focusReq}>
         {firstOfSeries.length ? <ul className="space-y-3">{firstOfSeries.map((r) => <Request key={r.booking_id} r={r} count={pending.filter((x) => r.series_id && x.series_id === r.series_id).length || 1} onDone={list.reload} />)}</ul>
           : <p className="text-sm text-muted">Nothing to approve. 🎉</p>}
       </Section>

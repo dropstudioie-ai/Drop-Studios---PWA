@@ -35,17 +35,17 @@ export function AdminApprovalsPrompt() {
 
   const by = a.rental_blocks_by ? ` (by ${formatKey(a.rental_blocks_by, { weekday: 'short', day: 'numeric', month: 'short' })})` : '';
   const items = [
-    { n: a.rentals, emoji: '🏠', one: 'studio rental request to approve', many: 'studio rental requests to approve', to: '/admin/rentals' },
-    { n: a.rental_blocks, emoji: '📆', one: `regular hire to confirm${by}`, many: `regular hires to confirm${by}`, to: '/admin/rentals' },
-    { n: a.workshops, emoji: '✨', one: 'workshop request to approve', many: 'workshop requests to approve', to: '/admin/events' },
-    { n: a.time_off, emoji: '🌴', one: 'instructor holiday request', many: 'instructor holiday requests', to: '/admin/timetable' },
-    { n: a.dm_drafts, emoji: '💬', one: 'Instagram message reply to approve', many: 'Instagram message replies to approve', to: '/admin/thamires' },
-    { n: a.comment_drafts, emoji: '💭', one: 'Instagram comment reply to approve', many: 'Instagram comment replies to approve', to: '/admin/thamires' },
-    { n: a.questions, emoji: '❓', one: 'question for you from Thamires', many: 'questions for you from Thamires', to: '/admin/thamires' },
+    { n: a.rentals, emoji: '🏠', one: 'studio rental request to approve', many: 'studio rental requests to approve', to: '/admin/rentals#requests' },
+    { n: a.rental_blocks, emoji: '📆', one: `regular hire to confirm${by}`, many: `regular hires to confirm${by}`, to: '/admin/rentals#hires' },
+    { n: a.workshops, emoji: '✨', one: 'workshop request to approve', many: 'workshop requests to approve', to: '/admin/events#requests' },
+    { n: a.time_off, emoji: '🌴', one: 'instructor holiday request', many: 'instructor holiday requests', to: '/admin/timetable#holidays' },
+    { n: a.dm_drafts, emoji: '💬', one: 'Instagram message reply to approve', many: 'Instagram message replies to approve', to: '/admin/thamires#inbox' },
+    { n: a.comment_drafts, emoji: '💭', one: 'Instagram comment reply to approve', many: 'Instagram comment replies to approve', to: '/admin/thamires#comments' },
+    { n: a.questions, emoji: '❓', one: 'question for you from Thamires', many: 'questions for you from Thamires', to: '/admin/thamires#questions' },
     { n: a.payments_to_review, emoji: '💳', one: 'payment to review', many: 'payments to review', to: '/admin#review' },
     { n: a.cancel_requests ?? 0, emoji: '🚪', one: 'member asking to cancel', many: 'members asking to cancel', to: '/admin#cancels' },
-    { n: a.held_moves ?? 0, emoji: '⏸', one: 'old-app member waiting for your OK (manually added credits)', many: 'old-app members waiting for your OK (manually added credits)', to: '/admin/customers' },
-    { n: a.refund_requests ?? 0, emoji: '💶', one: 'Drop In refund request to approve', many: 'Drop In refund requests to approve', to: '/admin' },
+    { n: a.held_moves ?? 0, emoji: '⏸', one: 'old-app member waiting for your OK (manually added credits)', many: 'old-app members waiting for your OK (manually added credits)', to: '/admin#held' },
+    { n: a.refund_requests ?? 0, emoji: '💶', one: 'Drop In refund request to approve', many: 'Drop In refund requests to approve', to: '/admin#refunds' },
     { n: a.refunds, emoji: '↩️', one: 'refund to send', many: 'refunds to send', to: '/admin#refunds' },
   ].filter((i) => i.n > 0);
   if (!items.length) return null;
