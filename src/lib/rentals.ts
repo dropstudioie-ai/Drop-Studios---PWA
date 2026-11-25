@@ -13,7 +13,7 @@ export interface RentalBooking {
 }
 export interface AdminRental { booking_id: string; starts_at: string; ends_at: string; is_party: boolean; purpose: string | null; group_name: string | null; people: number | null; total_cents: number; renter: string | null; renter_email: string | null; renter_phone: string | null; series: boolean; reasons: string[]; status: RentalStatus; series_id: string | null; month_key: string | null; hold_expires_at: string | null; refund_cents: number | null; refund_status: string | null; paid: boolean; created_at: string }
 
-export const REASON_LABEL: Record<string, string> = { first_time: 'first booking', outside_hours: 'outside 07:00–24:00', beyond_12_weeks: 'more than 12 weeks ahead' };
+export const REASON_LABEL: Record<string, string> = { first_time: 'first booking', outside_hours: 'outside 07:00–24:00', beyond_12_weeks: 'more than 12 weeks ahead', always_review: 'confirmed by the studio' };
 export const STATUS_LABEL: Record<RentalStatus, string> = {
   pending_approval: 'Waiting for the studio to confirm', awaiting_payment: 'Waiting for payment', held: 'Kept for you: pay to confirm', confirmed: 'Confirmed',
   cancelled: 'Cancelled', declined: 'Not available', expired: 'Expired (not paid in time)', released: 'Released (not paid in time)',
