@@ -201,3 +201,17 @@ export async function summariseDay(deps: BrainDeps, messages: string[]): Promise
     return null;
   }
 }
+
+/** Promos in the same spacing group (e.g. the two studio rental videos) are never on display together:
+ *  a Story stays up for 24 hours, so a promo waits while a sibling posted less than 23 hours ago
+ *  (siblings scheduled on alternate days at the same hour hand over at that hour) or is mid-post. */
+export const SIBLING_GAP_MS = 23 * 3600e3;
+export function blockedBySibling(
+  p: { id: string; spacing_group: string | null },
+  all: { id: string; spacing_group: string | null; last_posted_at: string | null; progress: { date: string } | null }[],
+  now: Date, today: string,
+): boolean {
+  if (!p.spacing_group) return false;
+  return all.some((q) => q.id !== p.id && q.spacing_group === p.spacing_group && (
+    q.progress?.date === today || (q.last_posted_at != null && now.getTime() - Date.parse(q.last_posted_at) < SIBLING_GAP_MS)));
+}
