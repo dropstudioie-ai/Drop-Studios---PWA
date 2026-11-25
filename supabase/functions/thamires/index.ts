@@ -6,7 +6,7 @@ import { encodeBase64 } from 'jsr:@std/encoding@1/base64';
 import Anthropic from 'npm:@anthropic-ai/sdk@1.8.0';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.118.0';
 import { adminClient, corsHeaders, json, userClient } from '../_shared/http.ts';
-import { canAutoSend, canAutoSendHolding, draftReply, summariseDay, type Draft, type Turn } from './brain.ts';
+import { blockedBySibling, canAutoSend, canAutoSendHolding, draftReply, summariseDay, type Draft, type Turn } from './brain.ts';
 import { ig, igConfig, parseWebhook, verifySignature, type IgEvent } from './instagram.ts';
 import { artworkFor, DROP_LOGO, photoSource, renderClassStory, renderWeekStory, type Assets, type StoryPhoto, type WeekDay } from './story_render.ts';
 
@@ -135,7 +135,7 @@ async function publishStories(db: Db, storyId: string, paths: string[], actor: s
   return done;
 }
 
-interface PromoRow { id: string; title: string; items: { path: string; kind: 'image' | 'video'; label?: string }[]; every_days: number; post_hour: number; starts_on: string | null; ends_on: string | null; enabled: boolean; last_posted_on: string | null; progress: { date: string; ids: string[] } | null; posts_done: number }
+interface PromoRow { id: string; title: string; items: { path: string; kind: 'image' | 'video'; label?: string }[]; every_days: number; post_hour: number; starts_on: string | null; ends_on: string | null; enabled: boolean; last_posted_on: string | null; progress: { date: string; ids: string[] } | null; posts_done: number; spacing_group: string | null; last_posted_at: string | null }
 
 /** Post scheduled promo Stories that are due (in order; a run that stops part-way continues on the next hourly check). */
 async function runPromos(db: Db, force?: string) {
@@ -150,6 +150,7 @@ async function runPromos(db: Db, force?: string) {
     const due = p.id === force || midRun || (p.enabled && s?.enabled && p.starts_on && today >= p.starts_on && (!p.ends_on || today <= p.ends_on)
       && hour >= p.post_hour && (!p.last_posted_on || (Date.parse(today) - Date.parse(p.last_posted_on)) / 864e5 >= p.every_days));
     if (!due || (p.last_posted_on === today && p.id !== force)) continue;
+    if (!midRun && p.id !== force && blockedBySibling(p, (data ?? []) as PromoRow[], new Date(), today)) { out[p.title] = { waiting: 'sibling_on_display' }; continue; }
     const ids = midRun ? [...(p.progress?.ids ?? [])] : [];
     try {
       for (let i = ids.length; i < p.items.length; i++) {
@@ -158,7 +159,9 @@ async function runPromos(db: Db, force?: string) {
         ids.push(r.id);
         await db.from('assistant_promos').update({ progress: { date: today, ids } }).eq('id', p.id);
       }
-      await db.from('assistant_promos').update({ last_posted_on: today, progress: null, last_error: null, posts_done: p.posts_done + 1 }).eq('id', p.id);
+      const postedAt = new Date().toISOString();
+      p.last_posted_at = postedAt; p.progress = null;   // siblings later in this run see it
+      await db.from('assistant_promos').update({ last_posted_on: today, last_posted_at: postedAt, progress: null, last_error: null, posts_done: p.posts_done + 1 }).eq('id', p.id);
       await db.rpc('_assistant_notify_owner', { p_kind: 'assistant_promo', p_payload: { title: p.title, items: p.items.map((x) => x.label ?? x.kind), posts_done: p.posts_done + 1, ends_on: p.ends_on }, p_key: `promo:${p.id}:${today}` });
       out[p.title] = { posted: ids.length };
     } catch (e) {

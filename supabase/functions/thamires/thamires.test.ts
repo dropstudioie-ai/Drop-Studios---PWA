@@ -137,3 +137,15 @@ Deno.test('comment replies are public, short and signed', async () => {
   await draftReply({ client: fakeClient({ ...HANDOFF, reply: 'Thank you! 💃 – Thamires 🤖', needs_human: false }) }, { history: [{ from: 'member', text: 'Love this!' }], knowledge: {}, disclose: false, task: 'comment' });
   assertStringIncludes(JSON.stringify(lastReq.system), 'public comment');
 });
+
+Deno.test('promo spacing: siblings never post within 23h of each other', async () => {
+  const { blockedBySibling } = await import('./brain.ts');
+  const now = new Date('2026-11-27T12:01:00Z');
+  const a = { id: 'a', spacing_group: 'rental', last_posted_at: '2026-11-26T12:01:30Z', progress: null };
+  const b = { id: 'b', spacing_group: 'rental', last_posted_at: '2026-11-25T12:01:00Z', progress: null };
+  const other = { id: 'c', spacing_group: null, last_posted_at: '2026-11-27T12:00:00Z', progress: null };
+  assertEquals(blockedBySibling(b, [a, b, other], now, '2026-11-27'), false); // a went up just under 24h ago: hand over
+  assertEquals(blockedBySibling(b, [{ ...a, last_posted_at: '2026-11-27T02:00:00Z' }, b], now, '2026-11-27'), true); // a posted late after a missed day
+  assertEquals(blockedBySibling(b, [{ ...a, last_posted_at: null, progress: { date: '2026-11-27' } }, b], now, '2026-11-27'), true); // a mid-post
+  assertEquals(blockedBySibling(other, [a, b, other], now, '2026-11-27'), false); // no group: never blocked
+});
