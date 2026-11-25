@@ -91,6 +91,26 @@ export function Sheet({ open, onClose, title, children }: { open: boolean; onClo
   );
 }
 
+/** "Are you sure?" pop-up for actions members take on bookings. */
+export function ConfirmDialog({ open, title, children, confirmLabel, danger = false, busy = false, onConfirm, onClose }: {
+  open: boolean; title: string; children?: ReactNode; confirmLabel: string; danger?: boolean; busy?: boolean; onConfirm: () => void; onClose: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end justify-center p-3 sm:items-center" role="alertdialog" aria-modal="true" aria-label={title}>
+      <div className="absolute inset-0 bg-ink/60" onClick={busy ? undefined : onClose} />
+      <div className="relative w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
+        <h2 className="text-xl font-black">{title}</h2>
+        {children && <div className="mt-2 text-ink-soft">{children}</div>}
+        <div className="mt-5 flex flex-col gap-2">
+          <button className={`${danger ? 'btn bg-danger text-white hover:opacity-90' : 'btn-primary'} w-full text-lg`} disabled={busy} onClick={onConfirm}>{busy && <Spinner />}{confirmLabel}</button>
+          <button className="btn-outline w-full" disabled={busy} onClick={onClose}>Go back</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---- Toasts --------------------------------------------------------------
 type Toast = { id: number; text: string; tone: 'success' | 'error' | 'info' };
 const ToastCtx = createContext<(text: string, tone?: Toast['tone']) => void>(() => {});

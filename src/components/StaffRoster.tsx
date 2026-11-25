@@ -12,6 +12,7 @@ import QRCode from 'qrcode';
 import { ALERT_REASON, checkin, type CheckInAlert } from '../lib/checkin';
 import { Celebration } from './Celebration';
 import { MemberPhotoButton } from './MemberPhotoButton';
+import { RosterMemberProfile } from './RosterMemberProfile';
 import { CancelSessionSheet, EditSessionSheet } from './SessionAdminSheets';
 import { ErrorNotice, Notice, PageSpinner, Sheet, Spinner, useToast } from './ui';
 
@@ -36,6 +37,7 @@ export function StaffRoster({ sessionId, onClose, onChanged, isAdmin = false, st
   const [editing, setEditing] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [qr, setQr] = useState(startWithQr);
+  const [openId, setOpenId] = useState<string | null>(null);
   const r = roster.data;
   const started = r ? new Date(r.starts_at).getTime() - 3_600_000 <= Date.now() : false;
 
@@ -67,7 +69,10 @@ export function StaffRoster({ sessionId, onClose, onChanged, isAdmin = false, st
 
   return (
     <Sheet open onClose={onClose} title={r?.title ?? 'Class list'}>
-      {roster.loading && !r ? <PageSpinner /> : roster.error ? <ErrorNotice error={roster.error} onRetry={roster.reload} /> : r && (
+      {roster.loading && !r ? <PageSpinner /> : roster.error ? <ErrorNotice error={roster.error} onRetry={roster.reload} /> : r && openId && r.bookings.some((x) => x.booking_id === openId) ? (
+        <RosterMemberProfile b={r.bookings.find((x) => x.booking_id === openId)!} isAdmin={isAdmin} canMark={started}
+          onBack={() => setOpenId(null)} onMark={(st) => void mark(r.bookings.find((x) => x.booking_id === openId)!, st)} onPhotoSaved={() => void roster.reload()} />
+      ) : r && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-canvas p-4">
             <div>
@@ -101,9 +106,9 @@ export function StaffRoster({ sessionId, onClose, onChanged, isAdmin = false, st
             {r.bookings.length === 0 && <li className="py-4 text-sm text-muted">Nobody booked yet.</li>}
             {r.bookings.map((b) => (
               <li key={b.booking_id} className="flex flex-wrap items-center gap-3 py-3">
-                <Avatar path={b.avatar_path} name={b.full_name} size={52} />
+                <button className="shrink-0 rounded-full" onClick={() => setOpenId(b.booking_id)} aria-label={`Open ${b.full_name}’s profile`}><Avatar path={b.avatar_path} name={b.full_name} size={52} /></button>
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold">{b.full_name}{b.guest_name && <span className="chip ml-2 bg-accent-100 align-middle text-xs text-ink">+1 friend: {b.guest_name}</span>}</p>
+                  <p className="font-semibold"><button className="text-left underline decoration-line underline-offset-4 hover:decoration-brand-400" onClick={() => setOpenId(b.booking_id)}>{b.full_name}</button>{b.guest_name && <span className="chip ml-2 bg-accent-100 align-middle text-xs text-ink">+{b.guest_count ?? 1} {(b.guest_count ?? 1) > 1 ? 'friends' : 'friend'}: {b.guest_name}</span>}</p>
                   {(b.phone || b.email) && (
                     <p className="flex flex-wrap gap-x-3 text-xs">
                       {b.phone && <a className="font-semibold text-brand-700" href={`tel:${b.phone.replace(/\s/g, '')}`}>📞 {b.phone}</a>}
