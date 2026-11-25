@@ -1341,6 +1341,41 @@ run('database: plans, booking, allowances, pauses, security', () => {
     await expectError(as(db, user(regular), `select create_ticket_checkout($1, $2, 'square', 'Pal')`, [s, randomUUID()]), 'friend_offer_not_eligible');
   });
 
+  it('members bring friends with their class credits (1 each); cancelling gives the credits back', async () => {
+    const m = await createUser(db, 'Host');
+    const { membershipId } = await buy(m, 'multi-5');   // 5 classes
+    const left = async () => (await db.query(`select classes_remaining n from memberships where id = $1`, [membershipId])).rows[0].n as number;
+    const count = async (sid: string) => (await db.query(`select booked_count n from class_sessions where id = $1`, [sid])).rows[0].n as number;
+    const s = await makeSession({ style: 'fitdance', startsInMinutes: 3000, capacity: 10 });
+    // Book for me + 2 friends: 3 credits, 3 spots.
+    const [b] = await as<{ r: { booking_id: string; classes_remaining: number } }>(db, user(m), `select book_class_with_guests($1, $2, $3) r`, [s, membershipId, ['Ana', 'Bia']]);
+    expect(b.r.classes_remaining).toBe(2);
+    expect(await count(s)).toBe(3);
+    // Later, one more friend from the home page.
+    await as(db, user(m), `select add_guests($1, $2)`, [b.r.booking_id, ['Caio']]);
+    expect(await left()).toBe(1);
+    await expectError(as(db, user(m), `select add_guests($1, $2)`, [b.r.booking_id, ['Duda', 'Edu']]), 'not_enough_credits_for_friends');
+    const [home] = await as<{ r: { friends: { id: string; name: string }[]; credits_left: number; can_add_friends: boolean }[] }>(db, user(m), `select my_upcoming_bookings() r`);
+    expect(home.r[0]).toMatchObject({ credits_left: 1, can_add_friends: true });
+    expect(home.r[0].friends.map((f) => f.name)).toEqual(['Ana', 'Bia', 'Caio']);
+    const [roster] = await as<{ r: { bookings: { guest_name: string; guest_count: number }[] } }>(db, user(admin), `select staff_roster($1) r`, [s]);
+    expect(roster.r.bookings[0]).toMatchObject({ guest_name: 'Ana, Bia, Caio', guest_count: 3 });
+    // One friend can't come: credit back (early enough), spot freed. Others can't cancel my friends.
+    const other = await createUser(db, 'Stranger');
+    await expectError(as(db, user(other), `select cancel_guest($1)`, [home.r[0].friends[0].id]), 'guest_not_found');
+    await as(db, user(m), `select cancel_guest($1)`, [home.r[0].friends[0].id]);
+    expect(await left()).toBe(2);
+    expect(await count(s)).toBe(3);
+    // Cancelling my booking releases the remaining friends and returns all credits.
+    await as(db, user(m), `select cancel_booking($1)`, [b.r.booking_id]);
+    expect(await left()).toBe(5);
+    expect(await count(s)).toBe(0);
+    // A full class has no room for friends.
+    const small = await makeSession({ style: 'fitdance', startsInMinutes: 3100, capacity: 2 });
+    await expectError(as(db, user(m), `select book_class_with_guests($1, $2, $3)`, [small, membershipId, ['Ana', 'Bia']]), 'not_enough_spots_for_friend');
+    expect(await left()).toBe(5);   // nothing booked, nothing charged
+  });
+
   it('asks for feedback after the first class in a style, every 6th, and after events', async () => {
     const m = await createUser(db, 'Rater');
     const { membershipId } = await buy(m, 'multi-8');

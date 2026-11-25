@@ -115,6 +115,7 @@ export interface RosterEntry {
   email?: string | null;
   phone?: string | null;
   guest_name?: string | null;
+  guest_count?: number;
   status: BookingStatus;
   class_restored: boolean;
   booked_at: string;
@@ -252,4 +253,13 @@ export interface PauseAllowance {
   max_days: number;
   remaining_days: number;
   min_days: number;
+}
+
+/** A class the member is booked for (home page), with the friends they're bringing. */
+export interface UpcomingBooking {
+  booking_id: string; session_id: string; title: string; starts_at: string; ends_at: string;
+  style: string | null; color: string | null; instructor: string | null;
+  is_ticket: boolean; is_special: boolean; late: boolean; cutoff_minutes: number; late_restores: boolean;
+  spots_left: number; membership_id: string | null; plan_name: string | null; credits_left: number | null; can_add_friends: boolean;
+  friends: { id: string; name: string; credit: boolean }[];
 }

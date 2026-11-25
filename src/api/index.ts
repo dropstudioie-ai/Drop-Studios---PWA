@@ -3,8 +3,7 @@ import { supabase, AppError, errorCode } from '../lib/supabase';
 import { messageFor } from '../domain/messages';
 import type {
   AppSettings, Booking, BookingOptions, ClassSession, DanceStyle, Instructor, Membership,
-  MembershipPlan, MemberMatch, PauseAllowance, Profile, Roster, StaffSession,
-} from './types';
+  MembershipPlan, MemberMatch, PauseAllowance, Profile, Roster, StaffSession, UpcomingBooking } from './types';
 
 // Thin typed wrappers over Supabase. Anything that changes bookings,
 // allowances or memberships is an RPC executed atomically on the server.
@@ -69,6 +68,16 @@ export const api = {
     Boolean((unwrap(await supabase.from('bookings').select('staff_free').eq('id', bookingId).maybeSingle()) as { staff_free: boolean } | null)?.staff_free),
   setAttendance: async (bookingId: string, status: 'attended' | 'no_show' | 'booked') =>
     unwrap(await supabase.rpc('admin_set_attendance', { p_booking_id: bookingId, p_status: status })),
+
+  /** Upcoming classes the member is booked for, with their friends. */
+  myUpcoming: async () => unwrap(await supabase.rpc('my_upcoming_bookings')) as UpcomingBooking[],
+  /** Book for me and friends (1 class credit each). */
+  bookWithGuests: async (sessionId: string, membershipId: string | null, names: string[]) =>
+    unwrap(await supabase.rpc('book_class_with_guests', { p_session_id: sessionId, p_membership_id: membershipId, p_guest_names: names })) as { booking_id: string; classes_remaining: number },
+  addGuests: async (bookingId: string, names: string[]) =>
+    unwrap(await supabase.rpc('add_guests', { p_booking_id: bookingId, p_guest_names: names })) as { classes_remaining: number },
+  cancelGuest: async (guestId: string) =>
+    unwrap(await supabase.rpc('cancel_guest', { p_guest_id: guestId })) as { class_restored: boolean; late: boolean },
 
   myBookingsBetween: async (fromIso: string, toIso: string) =>
     unwrap(

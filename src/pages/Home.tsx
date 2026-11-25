@@ -12,6 +12,7 @@ import { isStandalone } from '../components/pwa';
 import { classImage } from '../config/classImages';
 import StaffHome from './StaffHome';
 import { FeedbackPrompt } from './Feedback';
+import { MyBookings } from '../components/MyBookings';
 
 export default function Home() {
   const { isStaff } = useAuth();
@@ -56,6 +57,7 @@ function MemberHome() {
       </section>
 
       {session && <div className="container-page pt-6"><FeedbackPrompt /></div>}
+      {session && <MyBookings />}
 
       <section className="container-page py-10 sm:py-12">
         <div className="flex items-end justify-between">

@@ -18,7 +18,7 @@ import { useAuth } from '../auth/AuthProvider';
 import { PhoneGate } from './PhoneGate';
 import { PhotoGate } from './PhotoGate';
 import { ClockIcon, UserIcon } from './icons';
-import { ErrorNotice, Notice, Sheet, Spinner, useToast } from './ui';
+import { ConfirmDialog, ErrorNotice, Notice, Sheet, Spinner, useToast } from './ui';
 
 interface Props {
   session: ClassSession | null;
@@ -50,6 +50,9 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
   const [giftFriend, setGiftFriend] = useState(false);
   const [giftFriendName, setGiftFriendName] = useState('');
   const [myGuest, setMyGuest] = useState<string | null>(null);
+  const [friends, setFriends] = useState<string[]>([]);
+  const [friendDraft, setFriendDraft] = useState('');
+  const [confirmFriends, setConfirmFriends] = useState(false);
   const userId = auth.session?.user.id;
   const isStaff = auth.isStaff;
   const [staffFree, setStaffFree] = useState(false);
@@ -92,6 +95,8 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
   const start = new Date(session.starts_at);
   const ticketPrice = session.is_special ? (opts?.ticket_price_cents ?? session.ticket_price_cents) : null;
   const eligible = opts?.memberships?.filter((m) => !m.issue) ?? [];
+  const chosen = eligible.find((m) => m.membership_id === membershipId) ?? (eligible.length === 1 ? eligible[0] : null);
+  const maxFriends = chosen && !isUnlimited(chosen.classes_remaining) ? Math.max(0, Math.min(chosen.classes_remaining - 1, 10)) : 0;
   const blocking = opts?.memberships?.find((m) => m.issue && !DEAD_ISSUES.has(m.issue)) ?? opts?.memberships?.find((m) => m.issue);
   const policy = {
     booking_window_days: 21,
@@ -124,8 +129,11 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
 
   const withFriend = Boolean(membershipId && passes.includes(membershipId) && giftFriend && giftFriendName.trim());
   const book = () => run(async () => {
-    const res = withFriend ? await gifts.bookWithFriend(session.id, membershipId!, giftFriendName.trim()) : await api.book(session.id, membershipId);
+    setConfirmFriends(false);
+    const res = withFriend ? await gifts.bookWithFriend(session.id, membershipId!, giftFriendName.trim())
+      : friends.length ? await api.bookWithGuests(session.id, membershipId, friends) : await api.book(session.id, membershipId);
     if (withFriend) toast(`Booked for you and ${giftFriendName.trim()}! 👯`);
+    else if (friends.length) toast(`Booked for you and ${friends.join(', ')}! 👯 ${res.classes_remaining} ${res.classes_remaining === 1 ? 'class' : 'classes'} left.`);
     else toast(isUnlimited(res.classes_remaining) ? 'Booked! Enjoy the class 💃' : `Booked! ${res.classes_remaining} ${res.classes_remaining === 1 ? 'class' : 'classes'} left.`);
     onChanged();
     onClose();
@@ -315,7 +323,27 @@ export function BookingSheet({ session, onClose, onChanged, onOpenSession }: Pro
                 {giftFriend && <input className="input mt-2" value={giftFriendName} onChange={(e) => setGiftFriendName(e.target.value)} placeholder="Your friend’s name" maxLength={80} />}
               </div>
             )}
-            <button className="btn-primary w-full text-lg" disabled={busy || (giftFriend && membershipId != null && passes.includes(membershipId) && !giftFriendName.trim())} onClick={book}>{busy && <Spinner />}{withFriend ? 'Book for 2' : 'Book this class'}</button>
+            {chosen && !isUnlimited(chosen.classes_remaining) && !(giftFriend && passes.includes(chosen.membership_id)) && (
+              <div className="rounded-xl border-2 border-dashed border-accent-500 bg-accent-50 p-3 text-sm">
+                <p><strong>Bring friends 👯</strong> <span className="text-ink-soft">· 1 class each from your pack</span></p>
+                {friends.length > 0 && (
+                  <ul className="mt-2 flex flex-wrap gap-2">
+                    {friends.map((f, i) => <li key={`${f}-${i}`} className="chip bg-white text-ink">{f}<button className="ml-1 font-bold text-muted hover:text-danger" aria-label={`Remove ${f}`} onClick={() => setFriends(friends.filter((_, j) => j !== i))}>✕</button></li>)}
+                  </ul>
+                )}
+                {friends.length < maxFriends ? (
+                  <form className="mt-2 flex gap-2" onSubmit={(e) => { e.preventDefault(); if (friendDraft.trim()) { setFriends([...friends, friendDraft.trim()]); setFriendDraft(''); } }}>
+                    <input className="input min-w-0 flex-1" value={friendDraft} onChange={(e) => setFriendDraft(e.target.value)} placeholder="Friend’s name" maxLength={80} aria-label="Friend’s name" />
+                    <button className="btn-outline" disabled={!friendDraft.trim()}>Add</button>
+                  </form>
+                ) : <p className="mt-2 text-ink-soft">{maxFriends === 0 ? 'You need at least 2 classes left (one for you, one per friend).' : 'That’s all the classes you have left for friends.'}</p>}
+              </div>
+            )}
+            <button className="btn-primary w-full text-lg" disabled={busy || (giftFriend && membershipId != null && passes.includes(membershipId) && !giftFriendName.trim())} onClick={() => (friends.length ? setConfirmFriends(true) : void book())}>{busy && <Spinner />}{withFriend ? 'Book for 2' : friends.length ? `Book for ${friends.length + 1} · ${friends.length + 1} classes` : 'Book this class'}</button>
+            <ConfirmDialog open={confirmFriends} busy={busy} onConfirm={() => void book()} onClose={() => setConfirmFriends(false)}
+              title={`Book for you and ${friends.length === 1 ? friends[0] : `${friends.length} friends`}?`} confirmLabel={`Yes, book ${friends.length + 1} spots`}>
+              <p>{session.title}, {fmt.dateTime(session.starts_at)}{friends.length > 1 ? ` with ${friends.join(', ')}` : ''}. This uses <strong>{friends.length + 1} classes</strong> from your {chosen?.plan_name}.</p>
+            </ConfirmDialog>
             <p className="text-center text-xs text-muted">Cancel at least {cutoffLabel(policy.cancellation_cutoff_minutes)} before to get the class back.</p>
           </div>
         )}
