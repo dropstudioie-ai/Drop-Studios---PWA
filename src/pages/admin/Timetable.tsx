@@ -11,6 +11,7 @@ import { addDaysToKey, fmt, localDateKey, weekStartKey, zonedTime } from '../../
 import { formatPrice, parseEurosToCents } from '../../domain/money';
 import { ErrorNotice, Field, PageSpinner, Sheet, Spinner, useToast } from '../../components/ui';
 import { Section, Table, Td, WEEKDAYS } from './shared';
+import { useFocus } from '../../lib/focus';
 import { StaffRoster } from '../../components/StaffRoster';
 import { CancelSessionSheet, EditSessionSheet } from '../../components/SessionAdminSheets';
 import { holidays, range, type CoverNeeded } from '../../lib/holidays';
@@ -253,6 +254,7 @@ function InstructorHolidays({ instructors, onChanged }: { instructors: Instructo
     try { await fn(); toast(ok); reload(); } catch (e) { toast(messageFor((e as Error).message), 'error'); } finally { setBusy(null); }
   };
   const p = pending.data ?? [], c = cover.data ?? [];
+  const focus = useFocus('holidays', p.length > 0);
   if (!p.length && !c.length) return null;
   const active = instructors.filter((i) => i.is_active);
   const replace = (x: CoverNeeded) => run(x.session_id, async () => unwrap(await supabase.rpc('admin_update_session', {
@@ -263,7 +265,7 @@ function InstructorHolidays({ instructors, onChanged }: { instructors: Instructo
     void run(x.session_id, async () => unwrap(await supabase.rpc('admin_cancel_session', { p_session_id: x.session_id, p_reason: `${x.instructor} is on holiday` })), 'Class cancelled');
   };
   return (
-    <Section title="🌴 Instructor holidays">
+    <Section id="holidays" title="🌴 Instructor holidays" className={focus}>
       {p.length > 0 && (
         <ul className="space-y-3">
           {p.map((t) => (

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useFocus } from '../../lib/focus';
 import { Link } from 'react-router-dom';
 import { useAsync } from '../../lib/useAsync';
 import { events, type StudioEvent } from '../../lib/events';
@@ -10,6 +11,7 @@ import { ErrorNotice, Field, Notice, PageSpinner, Sheet, Spinner, useToast } fro
 /** Admin: workshop requests to approve, and what's coming up (with decorations to get). */
 export default function AdminEvents() {
   const list = useAsync(() => events.all(), []);
+  const focusReq = useFocus('requests', (list.data ?? []).some((e) => e.status === 'pending'));
   const [deciding, setDeciding] = useState<StudioEvent | null>(null);
   const [editing, setEditing] = useState<StudioEvent | null>(null);
   if (list.loading && !list.data) return <PageSpinner />;
@@ -30,7 +32,7 @@ export default function AdminEvents() {
         <Link to="/teach/events/new" className="btn-primary btn-sm">+ Add an event</Link>
       </div>
 
-      <section>
+      <section id="requests" className={pending.length ? focusReq : ''}>
         <h2 className="text-xl font-black">Workshop requests</h2>
         {pending.length === 0 ? <p className="mt-2 text-sm text-muted">Nothing waiting.</p> : (
           <ul className="mt-3 space-y-3">

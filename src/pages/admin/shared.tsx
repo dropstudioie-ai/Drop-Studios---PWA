@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 
-export function Section({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
+export function Section({ title, actions, children, id, className = '' }: { title: string; actions?: ReactNode; children: ReactNode; id?: string; className?: string }) {
   return (
-    <section className="mb-8">
+    <section id={id} className={`mb-8 ${className}`}>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-lg font-extrabold">{title}</h2>
         {actions && <div className="flex flex-wrap gap-2">{actions}</div>}

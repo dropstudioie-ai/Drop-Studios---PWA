@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
+import { useFocus } from '../../lib/focus';
 import { useAsync } from '../../lib/useAsync';
 import { STORY_PHOTOS, storyCount, storyPhoto, thamires, uploadStoryPhoto, type ThComment, type ThPromo, type ThGuidance, type ThMessage, type ThMention, type ThReport, type ThSettings, type ThThread, type ThStory, type Turn } from '../../lib/thamires';
 import { ErrorNotice, PageSpinner, Spinner, useToast } from '../../components/ui';
@@ -547,7 +549,13 @@ export default function AdminThamires() {
   const pendingComments = useMemo(() => (comments.data ?? []).filter((c) => c.reply_status === 'draft').length, [comments.data]);
   const pendingTags = useMemo(() => (mentions.data ?? []).filter((m) => m.reply_status === 'draft').length, [mentions.data]);
   const openQuestions = useMemo(() => (guidance.data ?? []).filter((g) => g.status === 'open').length, [guidance.data]);
-  const [tab, setTab] = useState<'inbox' | 'questions' | 'chats' | 'comments' | 'tags' | 'story' | 'promos' | 'reports' | 'try'>('inbox');
+  type Tab = 'inbox' | 'questions' | 'chats' | 'comments' | 'tags' | 'story' | 'promos' | 'reports' | 'try';
+  const { hash } = useLocation();
+  const linked = (['inbox', 'questions', 'comments', 'tags'] as Tab[]).find((t) => hash === `#${t}`);
+  const [tab, setTab] = useState<Tab>(linked ?? 'inbox');
+  useEffect(() => { if (linked) setTab(linked); }, [linked]);
+  // Opened from the "waiting for you" pop-up: highlight what needs approving in that tab.
+  const focus = useFocus(linked ?? '-', !!linked && tab === linked && !settings.loading);
   useEffect(() => { const h = setInterval(() => setTick((n) => n + 1), 30000); return () => clearInterval(h); }, []);
   if (settings.loading && !settings.data) return <PageSpinner />;
   if (settings.error || !settings.data) return <ErrorNotice error={settings.error ?? 'Thamires isn’t set up yet.'} onRetry={settings.reload} />;
@@ -563,6 +571,7 @@ export default function AdminThamires() {
       <div className="flex gap-1 overflow-x-auto border-b border-line">
         {tabs.map(([id, label]) => <button key={id} onClick={() => setTab(id)} className={`shrink-0 border-b-2 px-3 py-2 text-sm font-semibold ${tab === id ? 'border-brand-600 text-brand-700' : 'border-transparent text-muted'}`}>{label}</button>)}
       </div>
+      <div id={tab} className={tab === linked ? focus : ''}>
       {tab === 'inbox' && (drafts.data?.length ? <ul className="space-y-3">{drafts.data.map((m) => <DraftCard key={m.id} m={m} onDone={refresh} />)}</ul> : <p className="text-sm text-muted">Nothing waiting. New replies Thamires drafts appear here, and you get an email.</p>)}
       {tab === 'questions' && <Guidance list={guidance.data ?? []} onDone={refresh} />}
       {tab === 'chats' && <Conversations reload={tick} />}
@@ -572,6 +581,7 @@ export default function AdminThamires() {
       {tab === 'promos' && <Promos reload={tick} />}
       {tab === 'reports' && <Reports reload={tick} />}
       {tab === 'try' && <TryHer />}
+      </div>
     </div>
   );
 }
