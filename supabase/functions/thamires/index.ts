@@ -8,6 +8,7 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.118.0';
 import { adminClient, corsHeaders, json, userClient } from '../_shared/http.ts';
 import { blockedBySibling, canAutoSend, canAutoSendHolding, draftReply, summariseDay, type Draft, type Turn } from './brain.ts';
 import { ig, igConfig, parseWebhook, verifySignature, type IgEvent } from './instagram.ts';
+import { authorizeUrl, exchangeCode, publishStatus, refreshTokens, sendToDrafts, ttConfig, userInfo } from './tiktok.ts';
 import { artworkFor, DROP_LOGO, photoSource, renderClassStory, renderWeekStory, type Assets, type StoryPhoto, type WeekDay } from './story_render.ts';
 
 type Db = SupabaseClient;
@@ -517,9 +518,79 @@ async function postWeek(db: Db, date: string) {
   }
 }
 
+// ---- TikTok -------------------------------------------------------------
+const SITE = Deno.env.get('SITE_URL') || 'https://www.dropstudios.ie';
+const ttBack = (msg: string) => Response.redirect(`${SITE}/admin/thamires?tiktok=${encodeURIComponent(msg)}#tiktok`, 302);
+
+/** TikTok sends the owner back here after they approve Drop's account. */
+async function tiktokCallback(db: Db, url: URL) {
+  const cfg = ttConfig();
+  if (!cfg) return ttBack('not_configured');
+  if (url.searchParams.get('error')) return ttBack('cancelled');
+  const state = url.searchParams.get('state') ?? '', code = url.searchParams.get('code') ?? '';
+  const { data: st } = await db.from('tiktok_login_states').delete().eq('state', state).gte('created_at', new Date(Date.now() - 15 * 60e3).toISOString()).select().maybeSingle();
+  if (!st || !code) return ttBack('expired');
+  try {
+    const t = await exchangeCode(cfg, code);
+    const me = await userInfo(t.access_token).catch(() => ({ open_id: t.open_id } as { open_id: string; display_name?: string; avatar_url?: string }));
+    await db.from('tiktok_connection').upsert({
+      id: true, open_id: t.open_id, display_name: me.display_name ?? null, avatar_url: me.avatar_url ?? null,
+      access_token: t.access_token, refresh_token: t.refresh_token, scope: t.scope,
+      access_expires_at: new Date(Date.now() + t.expires_in * 1000).toISOString(),
+      refresh_expires_at: new Date(Date.now() + t.refresh_expires_in * 1000).toISOString(),
+      connected_by: (st as { created_by: string | null }).created_by, connected_at: new Date().toISOString(),
+    });
+    return ttBack('connected');
+  } catch (e) {
+    console.error('tiktok connect failed', (e as Error).message);
+    return ttBack('failed');
+  }
+}
+
+/** A valid access token for Drop's account, refreshed when it's about to run out. */
+async function tiktokToken(db: Db) {
+  const cfg = ttConfig();
+  if (!cfg) throw new Error('tiktok_not_configured');
+  const { data: c } = await db.from('tiktok_connection').select('*').maybeSingle();
+  if (!c) throw new Error('tiktok_not_connected');
+  if (Date.parse(c.access_expires_at) > Date.now() + 5 * 60e3) return c.access_token as string;
+  if (Date.parse(c.refresh_expires_at) <= Date.now()) throw new Error('tiktok_reconnect');
+  const t = await refreshTokens(cfg, c.refresh_token);
+  await db.from('tiktok_connection').update({
+    access_token: t.access_token, refresh_token: t.refresh_token,
+    access_expires_at: new Date(Date.now() + t.expires_in * 1000).toISOString(),
+    refresh_expires_at: new Date(Date.now() + t.refresh_expires_in * 1000).toISOString(),
+  }).eq('id', true);
+  return t.access_token;
+}
+
+async function tiktokSend(db: Db, path: string, label: string | null, caption: string | null, actor: string | null) {
+  const token = await tiktokToken(db);
+  const { data: row } = await db.from('tiktok_posts').insert({ path, label, caption, sent_by: actor }).select('id').single();
+  try {
+    const file = await db.storage.from('assistant-media').download(path);
+    if (file.error || !file.data) throw new Error('Video not found in Drop’s media');
+    const publishId = await sendToDrafts(token, new Uint8Array(await file.data.arrayBuffer()));
+    let status = 'sending';
+    for (let i = 0; i < 10; i++) {   // TikTok processes the upload, then puts it in the inbox
+      await new Promise((r) => setTimeout(r, 3000));
+      const st = await publishStatus(token, publishId).catch(() => null);
+      if (st?.status === 'SEND_TO_USER_INBOX' || st?.status === 'PUBLISH_COMPLETE') { status = 'in_drafts'; break; }
+      if (st?.status === 'FAILED') throw new Error(`TikTok: ${st.fail_reason ?? 'upload failed'}`);
+    }
+    await db.from('tiktok_posts').update({ publish_id: publishId, status }).eq('id', row!.id);
+    return { id: row!.id, publish_id: publishId, status };
+  } catch (e) {
+    await db.from('tiktok_posts').update({ status: 'failed', error: (e as Error).message.slice(0, 500) }).eq('id', row!.id);
+    throw e;
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(req) });
   const url = new URL(req.url);
+
+  if (req.method === 'GET' && url.pathname.endsWith('/tiktok/callback')) return tiktokCallback(adminClient(), url);
 
   // Meta's one-time webhook check.
   if (req.method === 'GET') {
@@ -594,6 +665,22 @@ Deno.serve(async (req) => {
     switch (body.action) {
       case 'status':
         return json(req, { instagram: Boolean(igConfig()), account: igConfig() ? await ig.check(igConfig()!).then((r) => r.account.username ?? null).catch(() => null) : null, claude: Boolean(Deno.env.get('ANTHROPIC_API_KEY')), webhook: Boolean(Deno.env.get('META_APP_SECRET') && Deno.env.get('IG_VERIFY_TOKEN')) });
+      case 'tiktok_status': {
+        const { data: c } = await db.from('tiktok_connection').select('display_name, avatar_url, open_id, connected_at, refresh_expires_at').maybeSingle();
+        return json(req, { configured: Boolean(ttConfig()), connected: c ? { display_name: c.display_name, avatar_url: c.avatar_url, connected_at: c.connected_at, reconnect_by: c.refresh_expires_at } : null });
+      }
+      case 'tiktok_connect': {
+        const cfg = ttConfig();
+        if (!cfg) return json(req, { error: 'tiktok_not_configured' }, 400);
+        const state = crypto.randomUUID();
+        await db.from('tiktok_login_states').insert({ state, created_by: actor });
+        return json(req, { url: authorizeUrl(cfg, state) });
+      }
+      case 'tiktok_disconnect':
+        await db.from('tiktok_connection').delete().eq('id', true);
+        return json(req, { ok: true });
+      case 'tiktok_send':
+        return json(req, await tiktokSend(db, String(body.path), body.label ? String(body.label) : null, body.caption ? String(body.caption).slice(0, 2200) : null, actor));
       case 'test': {
         const turns = (Array.isArray(body.history) ? body.history : []) as Turn[];
         const who = (body.person ?? {}) as Person;
