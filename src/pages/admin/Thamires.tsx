@@ -300,7 +300,7 @@ function TikTok() {
             <div className="mt-2 flex flex-wrap items-center gap-3">
               {s.connected.avatar_url && <img src={s.connected.avatar_url} alt="" className="h-12 w-12 rounded-full object-cover" />}
               <p className="flex-1 text-sm"><strong>{s.connected.display_name ?? 'Connected'}</strong><br /><span className="text-muted">Connected {new Date(s.connected.connected_at).toLocaleDateString('en-IE')} · reconnect before {new Date(s.connected.reconnect_by).toLocaleDateString('en-IE')}</span></p>
-              <button className="btn-ghost btn-sm" disabled={busy === 'dc'} onClick={() => confirm('Disconnect Drop’s TikTok?') && void run('dc', () => thamires.tiktokDisconnect(), 'TikTok disconnected')}>Disconnect</button>
+              <button className="btn-outline btn-sm" disabled={busy === 'dc'} onClick={() => confirm('Disconnect Drop’s TikTok?') && void run('dc', () => thamires.tiktokDisconnect(), 'TikTok disconnected')}>Disconnect</button>
             </div>
           ) : (
             <>
