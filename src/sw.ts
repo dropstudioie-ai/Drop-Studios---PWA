@@ -16,7 +16,7 @@ self.addEventListener('message', (event) => {
 });
 
 // App shell for client-side routes.
-registerRoute(new NavigationRoute(createHandlerBoundToURL('index.html'), { denylist: [/^\/auth\//] }));
+registerRoute(new NavigationRoute(createHandlerBoundToURL('index.html'), { denylist: [/^\/auth\//, /\.(txt|xml|json|webmanifest|pdf)$/i] }));   // real files (site verification, sitemap) open as files
 
 // Public timetable/catalogue reads: network first, fall back to the last copy
 // so the timetable can still be viewed offline.
