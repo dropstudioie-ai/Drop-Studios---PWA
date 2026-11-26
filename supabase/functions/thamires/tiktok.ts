@@ -7,8 +7,8 @@ export const TT_SCOPES = 'user.info.basic,video.upload';
 
 export interface TtConfig { clientKey: string; clientSecret: string; redirectUri: string }
 export function ttConfig(): TtConfig | null {
-  const clientKey = Deno.env.get('TIKTOK_CLIENT_KEY');
-  const clientSecret = Deno.env.get('TIKTOK_CLIENT_SECRET');
+  const clientKey = Deno.env.get('TIKTOK_CLIENT_KEY')?.trim().replace(/^["']|["']$/g, '');
+  const clientSecret = Deno.env.get('TIKTOK_CLIENT_SECRET')?.trim().replace(/^["']|["']$/g, '');
   const base = Deno.env.get('SUPABASE_URL');
   if (!clientKey || !clientSecret || !base) return null;
   return { clientKey, clientSecret, redirectUri: `${base}/functions/v1/thamires/tiktok/callback` };
