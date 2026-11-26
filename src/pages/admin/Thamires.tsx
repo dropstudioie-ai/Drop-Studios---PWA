@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { useFocus } from '../../lib/focus';
 import { useAsync } from '../../lib/useAsync';
 import { STORY_PHOTOS, storyCount, storyPhoto, thamires, uploadStoryPhoto, type ThComment, type ThPromo, type ThGuidance, type ThMessage, type ThMention, type ThReport, type ThSettings, type ThThread, type ThStory, type Turn } from '../../lib/thamires';
-import { ErrorNotice, PageSpinner, Spinner, useToast } from '../../components/ui';
+import { ErrorNotice, Notice, PageSpinner, Spinner, useToast } from '../../components/ui';
 import { fmt, localDateKey } from '../../domain/time';
 
 function Switch({ label, hint, checked, onChange, disabled }: { label: string; hint: string; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
@@ -268,6 +268,78 @@ function PhotoPicker({ story, index, onChanged }: { story: ThStory; index: numbe
         ))}
       </div>
       {(story.photos?.[String(index)] || (index === 0 && story.photo_url)) && <button className="mt-2 text-xs font-semibold text-muted underline" disabled={busy} onClick={() => void choose(null)}>Back to the automatic photo</button>}
+    </div>
+  );
+}
+
+/** Drop's TikTok: connect the account once, then send videos to its drafts (the owner adds a sound and posts in TikTok). */
+function TikTok() {
+  const toast = useToast();
+  const { search } = useLocation();
+  const st = useAsync(() => thamires.tiktokStatus(), []);
+  const promos = useAsync(() => thamires.promos(), []);
+  const posts = useAsync(() => thamires.tiktokPosts().catch(() => []), []);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [captions, setCaptions] = useState<Record<string, string>>({});
+  const result = new URLSearchParams(search).get('tiktok');
+  const RESULT: Record<string, string> = { connected: '✅ TikTok connected.', cancelled: 'TikTok login was cancelled.', expired: 'That login link expired. Try Connect TikTok again.', failed: 'TikTok didn’t accept the login. Try again.', not_configured: 'The TikTok keys aren’t saved yet.' };
+  const videos = [...new Map((promos.data ?? []).flatMap((p) => p.items.filter((i) => i.kind === 'video').map((i) => [i.path, { path: i.path, label: i.label ?? p.title }] as const))).values()];
+  const run = async (key: string, fn: () => Promise<unknown>, ok: string) => {
+    setBusy(key);
+    try { await fn(); toast(ok); st.reload(); posts.reload(); } catch (e) { toast((e as Error).message, 'error'); } finally { setBusy(null); }
+  };
+  if (st.loading && !st.data) return <Spinner />;
+  const s = st.data;
+  return (
+    <div className="space-y-5">
+      {result && RESULT[result] && <Notice tone={result === 'connected' ? 'success' : 'warn'}>{RESULT[result]}</Notice>}
+      <section className="card p-4">
+        <h3 className="text-lg font-black">Drop’s TikTok account</h3>
+        {!s?.configured ? <p className="mt-1 text-sm text-muted">Waiting for the TikTok app keys (TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET in Supabase secrets).</p>
+          : s.connected ? (
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              {s.connected.avatar_url && <img src={s.connected.avatar_url} alt="" className="h-12 w-12 rounded-full object-cover" />}
+              <p className="flex-1 text-sm"><strong>{s.connected.display_name ?? 'Connected'}</strong><br /><span className="text-muted">Connected {new Date(s.connected.connected_at).toLocaleDateString('en-IE')} · reconnect before {new Date(s.connected.reconnect_by).toLocaleDateString('en-IE')}</span></p>
+              <button className="btn-ghost btn-sm" disabled={busy === 'dc'} onClick={() => confirm('Disconnect Drop’s TikTok?') && void run('dc', () => thamires.tiktokDisconnect(), 'TikTok disconnected')}>Disconnect</button>
+            </div>
+          ) : (
+            <>
+              <p className="mt-1 text-sm text-muted">Log in with Drop’s TikTok account and approve. Thamires can then send videos to its drafts.</p>
+              <button className="btn-primary mt-3" disabled={busy === 'c'} onClick={() => void run('c', async () => { const r = await thamires.tiktokConnect(); window.location.href = r.url; }, 'Opening TikTok…')}>Connect TikTok</button>
+            </>
+          )}
+      </section>
+
+      {s?.connected && (
+        <section className="space-y-3">
+          <h3 className="text-lg font-black">Send a video to TikTok drafts</h3>
+          <p className="text-sm text-muted">It arrives in TikTok → Inbox as a draft. Open it, add a sound, paste the caption and post.</p>
+          {videos.length === 0 && <p className="text-sm text-muted">No videos yet. Videos from Promos appear here.</p>}
+          <ul className="space-y-3">
+            {videos.map((v) => (
+              <li key={v.path} className="card space-y-2 p-4">
+                <p className="font-semibold">🎬 {v.label}</p>
+                <textarea className="input min-h-20 text-sm" placeholder="Caption and hashtags (optional), e.g. New app, same Drop 💃 #dublindance #fitdance" value={captions[v.path] ?? ''} onChange={(e) => setCaptions({ ...captions, [v.path]: e.target.value })} maxLength={2200} />
+                <button className="btn-accent btn-sm" disabled={busy === v.path} onClick={() => void run(v.path, () => thamires.tiktokSend(v.path, v.label, captions[v.path] ?? ''), 'Sent to TikTok drafts. Check TikTok → Inbox.')}>{busy === v.path ? <Spinner /> : 'Send to TikTok drafts'}</button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {(posts.data?.length ?? 0) > 0 && (
+        <section>
+          <h3 className="text-lg font-black">Sent to TikTok</h3>
+          <ul className="mt-2 divide-y divide-line text-sm">
+            {posts.data!.map((p) => (
+              <li key={p.id} className="py-2">
+                <strong>{p.label ?? p.path}</strong> · {new Date(p.created_at).toLocaleString('en-IE', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} · {p.status === 'in_drafts' ? '✅ In drafts' : p.status === 'failed' ? `❌ ${p.error ?? 'Failed'}` : '⏳ Processing'}
+                {p.caption && <span className="block text-muted">Caption: {p.caption}</span>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   );
 }
@@ -549,9 +621,9 @@ export default function AdminThamires() {
   const pendingComments = useMemo(() => (comments.data ?? []).filter((c) => c.reply_status === 'draft').length, [comments.data]);
   const pendingTags = useMemo(() => (mentions.data ?? []).filter((m) => m.reply_status === 'draft').length, [mentions.data]);
   const openQuestions = useMemo(() => (guidance.data ?? []).filter((g) => g.status === 'open').length, [guidance.data]);
-  type Tab = 'inbox' | 'questions' | 'chats' | 'comments' | 'tags' | 'story' | 'promos' | 'reports' | 'try';
+  type Tab = 'inbox' | 'questions' | 'chats' | 'comments' | 'tags' | 'story' | 'promos' | 'tiktok' | 'reports' | 'try';
   const { hash } = useLocation();
-  const linked = (['inbox', 'questions', 'comments', 'tags'] as Tab[]).find((t) => hash === `#${t}`);
+  const linked = (['inbox', 'questions', 'comments', 'tags', 'tiktok'] as Tab[]).find((t) => hash === `#${t}`);
   const [tab, setTab] = useState<Tab>(linked ?? 'inbox');
   useEffect(() => { if (linked) setTab(linked); }, [linked]);
   // Opened from the "waiting for you" pop-up: highlight what needs approving in that tab.
@@ -560,7 +632,7 @@ export default function AdminThamires() {
   if (settings.loading && !settings.data) return <PageSpinner />;
   if (settings.error || !settings.data) return <ErrorNotice error={settings.error ?? 'Thamires isn’t set up yet.'} onRetry={settings.reload} />;
   const refresh = () => setTick((n) => n + 1);
-  const tabs: [typeof tab, string][] = [['inbox', `To approve${drafts.data?.length ? ` (${drafts.data.length})` : ''}`], ['questions', `Questions for you${openQuestions ? ` (${openQuestions})` : ''}`], ['chats', 'Conversations'], ['comments', `Comments${pendingComments ? ` (${pendingComments})` : ''}`], ['tags', `Tags${pendingTags ? ` (${pendingTags})` : ''}`], ['story', 'Today’s Story'], ['promos', 'Promos'], ['reports', 'Daily reports'], ['try', 'Try her']];
+  const tabs: [typeof tab, string][] = [['inbox', `To approve${drafts.data?.length ? ` (${drafts.data.length})` : ''}`], ['questions', `Questions for you${openQuestions ? ` (${openQuestions})` : ''}`], ['chats', 'Conversations'], ['comments', `Comments${pendingComments ? ` (${pendingComments})` : ''}`], ['tags', `Tags${pendingTags ? ` (${pendingTags})` : ''}`], ['story', 'Today’s Story'], ['promos', 'Promos'], ['tiktok', 'TikTok'], ['reports', 'Daily reports'], ['try', 'Try her']];
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
@@ -579,6 +651,7 @@ export default function AdminThamires() {
       {tab === 'tags' && <Tags list={mentions.data ?? []} onDone={refresh} />}
       {tab === 'story' && <><TodayStory reload={refresh} /><RecentStories reload={tick} /></>}
       {tab === 'promos' && <Promos reload={tick} />}
+      {tab === 'tiktok' && <TikTok />}
       {tab === 'reports' && <Reports reload={tick} />}
       {tab === 'try' && <TryHer />}
       </div>

@@ -149,3 +149,31 @@ Deno.test('promo spacing: siblings never post within 23h of each other', async (
   assertEquals(blockedBySibling(b, [{ ...a, last_posted_at: null, progress: { date: '2026-11-27' } }, b], now, '2026-11-27'), true); // a mid-post
   assertEquals(blockedBySibling(other, [a, b, other], now, '2026-11-27'), false); // no group: never blocked
 });
+
+Deno.test('tiktok: login link, token exchange and sending a video to drafts', async () => {
+  const { authorizeUrl, exchangeCode, sendToDrafts } = await import('./tiktok.ts');
+  const cfg = { clientKey: 'ck', clientSecret: 'cs', redirectUri: 'https://x.supabase.co/functions/v1/thamires/tiktok/callback' };
+  const u = new URL(authorizeUrl(cfg, 'st1'));
+  assertEquals(u.origin + u.pathname, 'https://www.tiktok.com/v2/auth/authorize/');
+  assertEquals(u.searchParams.get('scope'), 'user.info.basic,video.upload');
+  assertEquals(u.searchParams.get('redirect_uri'), cfg.redirectUri);
+  assertEquals(u.searchParams.get('state'), 'st1');
+
+  const calls: { url: string; init?: RequestInit }[] = [];
+  const fake = (async (url: string | URL | Request, init?: RequestInit) => {
+    calls.push({ url: String(url), init });
+    if (String(url).endsWith('/oauth/token/')) return Response.json({ access_token: 'at', refresh_token: 'rt', expires_in: 86400, refresh_expires_in: 31536000, open_id: 'oid', scope: 'video.upload' });
+    if (String(url).endsWith('/inbox/video/init/')) return Response.json({ data: { publish_id: 'p1', upload_url: 'https://upload.example/u' }, error: { code: 'ok' } });
+    return new Response(null, { status: 201 });
+  }) as typeof fetch;
+  const t = await exchangeCode(cfg, 'code1', fake);
+  assertEquals(t.access_token, 'at');
+  const form = new URLSearchParams(String(calls[0].init?.body));
+  assertEquals([form.get('grant_type'), form.get('code'), form.get('client_key')], ['authorization_code', 'code1', 'ck']);
+
+  const id = await sendToDrafts('at', new Uint8Array(1000), fake);
+  assertEquals(id, 'p1');
+  const init = JSON.parse(String(calls[1].init?.body));
+  assertEquals(init.source_info, { source: 'FILE_UPLOAD', video_size: 1000, chunk_size: 1000, total_chunk_count: 1 });
+  assertEquals((calls[2].init?.headers as Record<string, string>)['Content-Range'], 'bytes 0-999/1000');
+});
