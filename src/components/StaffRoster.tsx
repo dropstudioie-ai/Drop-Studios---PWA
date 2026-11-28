@@ -139,8 +139,8 @@ export function StaffRoster({ sessionId, onClose, onChanged, isAdmin = false, st
             ))}
           </ul>
 
-          {r.status === 'scheduled' && new Date(r.ends_at) > new Date() && (
-            <AddMember sessionId={sessionId} onAdded={() => { void roster.reload(); onChanged?.(); }} />
+          {r.status === 'scheduled' && (new Date(r.ends_at) > new Date() || isAdmin) && (
+            <AddMember sessionId={sessionId} finished={new Date(r.ends_at) <= new Date()} onAdded={() => { void roster.reload(); onChanged?.(); }} />
           )}
         </div>
       )}
@@ -154,7 +154,7 @@ export function StaffRoster({ sessionId, onClose, onChanged, isAdmin = false, st
 }
 
 /** Search a member and book them into this class with their membership. */
-function AddMember({ sessionId, onAdded }: { sessionId: string; onAdded: () => void }) {
+function AddMember({ sessionId, finished = false, onAdded }: { sessionId: string; finished?: boolean; onAdded: () => void }) {
   const toast = useToast();
   const [q, setQ] = useState('');
   const [results, setResults] = useState<MemberMatch[]>([]);
@@ -181,7 +181,7 @@ function AddMember({ sessionId, onAdded }: { sessionId: string; onAdded: () => v
     setError(null);
     try {
       const res = await api.staffBook(sessionId, m.id);
-      toast(`${m.full_name} booked in · ${isUnlimited(res.classes_remaining) ? 'unlimited plan' : `${res.classes_remaining} ${res.classes_remaining === 1 ? 'class' : 'classes'} left`}.`);
+      toast(`${m.full_name} ${res.after_class ? 'added as attended' : 'booked in'} · ${isUnlimited(res.classes_remaining) ? 'unlimited plan' : `${res.classes_remaining} ${res.classes_remaining === 1 ? 'class' : 'classes'} left`}.`);
       setQ('');
       onAdded();
     } catch (e) {
@@ -193,8 +193,10 @@ function AddMember({ sessionId, onAdded }: { sessionId: string; onAdded: () => v
 
   return (
     <section className="rounded-2xl border border-line p-4">
-      <h3 className="font-bold">Add a member</h3>
-      <p className="text-xs text-muted">Uses one class from their membership, as if they booked themselves.</p>
+      <h3 className="font-bold">{finished ? 'Add a member who came' : 'Add a member'}</h3>
+      <p className="text-xs text-muted">{finished
+        ? 'This class has finished. They’re added as Attended and it uses one class from the membership they had on the day.'
+        : 'Uses one class from their membership, as if they booked themselves.'}</p>
       <input className="input mt-3" placeholder="Search by name, email or mobile" value={q} onChange={(e) => setQ(e.target.value)} />
       {error && <div className="mt-3"><ErrorNotice error={error} /></div>}
       <ul className="mt-2 divide-y divide-line">
