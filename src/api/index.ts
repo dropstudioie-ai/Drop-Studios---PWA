@@ -56,7 +56,7 @@ export const api = {
   findMembers: async (query: string) =>
     unwrap(await supabase.rpc('staff_find_members', { p_query: query })) as MemberMatch[],
   staffBook: async (sessionId: string, userId: string) =>
-    unwrap(await supabase.rpc('staff_book_member', { p_session_id: sessionId, p_user_id: userId })) as { booking_id: string; classes_remaining: number },
+    unwrap(await supabase.rpc('staff_book_member', { p_session_id: sessionId, p_user_id: userId })) as { booking_id: string; classes_remaining: number; after_class?: boolean },
   photoRequirementMet: async () => Boolean(unwrap(await supabase.rpc('has_profile_photo'))),
   friendOffer: async (sessionId: string) =>
     Boolean(unwrap(await supabase.rpc('friend_offer', { p_session_id: sessionId }))),

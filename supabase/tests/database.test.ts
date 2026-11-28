@@ -1787,6 +1787,34 @@ run('database: plans, booking, allowances, pauses, security', () => {
       await expectError(as(db, user(m), `select staff_find_members('walk')`), 'forbidden');
     });
 
+    it('admins can book a member after the class has finished; instructors cannot', async () => {
+      const t = await teacher('AfterTeach');
+      const s = await taughtBy(t.instructorId, -120); // finished an hour ago
+      await db.query(`update class_sessions set capacity = 1, booked_count = 1 where id = $1`, [s]); // full doesn't matter afterwards
+      const m = await createUser(db, 'CameAnyway');
+      const { membershipId } = await buy(m, 'multi-5');
+
+      await expectError(as(db, user(m), `select book_class($1)`, [s]), 'session_started');
+      await expectError(as(db, user(t.uid), `select staff_book_member($1, $2)`, [s, m]), 'session_started');
+
+      const [r] = await as<{ r: { booking_id: string; classes_remaining: number; after_class: boolean } }>(db, user(admin), `select staff_book_member($1, $2) as r`, [s, m]);
+      expect(r.r).toMatchObject({ classes_remaining: 4, after_class: true });
+      const { rows: [b] } = await db.query(`select status, attendance_marked_by from bookings where id = $1`, [r.r.booking_id]);
+      expect(b).toMatchObject({ status: 'attended', attendance_marked_by: admin });
+      expect(await remaining(membershipId)).toBe(4);
+      await expectError(as(db, user(admin), `select staff_book_member($1, $2)`, [s, m]), 'already_booked');
+
+      // A pack that has expired since still covers a class from when it was valid…
+      const older = await taughtBy(t.instructorId, -3 * 24 * 60);
+      await db.query(`update memberships set expires_at = now() - interval '1 day' where id = $1`, [membershipId]);
+      await as(db, user(admin), `select staff_book_member($1, $2)`, [older, m]);
+      expect(await remaining(membershipId)).toBe(3);
+      // …but not a class after it ran out, and not future classes.
+      const afterExpiry = await taughtBy(t.instructorId, -12 * 60); // yesterday's pack expiry came first
+      await expectError(as(db, user(admin), `select staff_book_member($1, $2)`, [afterExpiry, m]), 'membership_expired');
+      await expectError(as(db, user(m), `select book_class($1)`, [await taughtBy(t.instructorId, 600)]), 'membership_expired');
+    });
+
     it('instructors can only mark attendance in their own classes', async () => {
       const t = await teacher('Joao');
       const other = await teacher('Outro');
